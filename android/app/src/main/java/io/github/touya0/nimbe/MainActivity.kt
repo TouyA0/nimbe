@@ -8,6 +8,7 @@ import androidx.activity.compose.setContent
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import io.github.touya0.nimbe.core.network.ConnectivityMonitor
 import io.github.touya0.nimbe.core.storage.LauncherPrefs
 import io.github.touya0.nimbe.crashguard.CrashGuard
@@ -19,6 +20,7 @@ import io.github.touya0.nimbe.feature.apps.AppLauncher
 import io.github.touya0.nimbe.feature.apps.AppsRepository
 import io.github.touya0.nimbe.feature.apps.rememberInstalledApps
 import io.github.touya0.nimbe.shell.NimbeApp
+import io.github.touya0.nimbe.ui.theme.DisplaySettings
 import io.github.touya0.nimbe.ui.theme.NimbeTheme
 
 class MainActivity : ComponentActivity() {
@@ -35,7 +37,9 @@ class MainActivity : ComponentActivity() {
         simulateCrashIfAsked(intent)
 
         setContent {
-            NimbeTheme {
+            // Réglages d'affichage appliqués partout, y compris aux écrans Secours et sans échec.
+            val display by prefs.display.collectAsStateWithLifecycle(initialValue = DisplaySettings())
+            NimbeTheme(display) {
                 when (mode) {
                     StartupMode.Rescue -> RescueScreen(
                         onOpenStock = {

@@ -16,10 +16,12 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import io.github.touya0.nimbe.core.network.ConnectivityMonitor
 import io.github.touya0.nimbe.core.network.rememberConnectivity
 import io.github.touya0.nimbe.core.storage.LauncherPrefs
+import io.github.touya0.nimbe.crashguard.StockLauncher
 import io.github.touya0.nimbe.feature.apps.AppActions
 import io.github.touya0.nimbe.feature.apps.AppLauncher
 import io.github.touya0.nimbe.feature.apps.AppsRepository
@@ -30,8 +32,11 @@ import io.github.touya0.nimbe.feature.apps.hiddenAppsMenu
 import io.github.touya0.nimbe.feature.apps.rememberInstalledApps
 import io.github.touya0.nimbe.feature.home.ComingSoonScreen
 import io.github.touya0.nimbe.feature.home.HomeScreen
+import io.github.touya0.nimbe.feature.settings.SettingsLinks
+import io.github.touya0.nimbe.feature.settings.SettingsScreen
 import io.github.touya0.nimbe.ui.components.MenuHost
 import io.github.touya0.nimbe.ui.components.MenuState
+import io.github.touya0.nimbe.ui.theme.LocalDisplay
 import io.github.touya0.nimbe.ui.theme.Nuit
 import kotlinx.coroutines.launch
 
@@ -42,6 +47,11 @@ fun NimbeApp(
     launcher: AppLauncher,
     connectivityMonitor: ConnectivityMonitor,
 ) {
+    var settingsOpen by rememberSaveable { mutableStateOf(false) }
+    var returnToSettingsButton by remember { mutableStateOf(false) }
+    val context = LocalContext.current
+    val settingsRequester = remember { FocusRequester() }
+    val display = LocalDisplay.current
     var tab by rememberSaveable { mutableStateOf(Tab.Home) }
     val requesters = remember { Tab.entries.associateWith { FocusRequester() } }
     fun focusTab(target: Tab) {
@@ -91,9 +101,35 @@ fun NimbeApp(
 
     LaunchedEffect(Unit) { focusTab(tab) }
 
+    if (settingsOpen) {
+        SettingsScreen(
+            display = display,
+            onDisplayChange = { scope.launch { prefs.setDisplay(it) } },
+            links = SettingsLinks(
+                accessibility = launcher::openAccessibilitySettings,
+                androidSettings = launcher::openAndroidSettings,
+                stockLauncher = { StockLauncher.open(context) },
+            ),
+            onClose = { settingsOpen = false },
+        )
+        return
+    }
+    // Au retour des réglages, le focus revient sur la roue crantée.
+    LaunchedEffect(Unit) { if (returnToSettingsButton) runCatching { settingsRequester.requestFocus() } }
+
     MenuHost(menu) {
         Column(Modifier.fillMaxSize().background(Nuit)) {
-            Header(selected = tab, onSelect = { tab = it }, requesters = requesters, connectivity = connectivity)
+            Header(
+                selected = tab,
+                onSelect = { tab = it },
+                requesters = requesters,
+                connectivity = connectivity,
+                onSettings = {
+                    returnToSettingsButton = true
+                    settingsOpen = true
+                },
+                settingsRequester = settingsRequester,
+            )
             Box(Modifier.weight(1f).fillMaxWidth()) {
                 when (tab) {
                     Tab.Home -> HomeScreen(

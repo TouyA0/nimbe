@@ -5,6 +5,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -65,6 +66,8 @@ fun Header(
     onSelect: (Tab) -> Unit,
     requesters: Map<Tab, FocusRequester>,
     connectivity: ConnectivityStatus,
+    onSettings: () -> Unit,
+    settingsRequester: FocusRequester,
     modifier: Modifier = Modifier,
 ) {
     Row(
@@ -85,6 +88,8 @@ fun Header(
         }
         Spacer(Modifier.weight(1f))
         ConnectivityPill(connectivity.state)
+        Spacer(Modifier.width(12.dp))
+        SettingsButton(onSettings, Modifier.focusRequester(settingsRequester))
         Spacer(Modifier.width(16.dp))
         Clock()
     }
@@ -120,6 +125,31 @@ private fun TabPill(tab: Tab, selected: Boolean, onSelect: () -> Unit, struck: B
             textDecoration = if (struck) TextDecoration.LineThrough else null,
             modifier = Modifier.padding(horizontal = 14.dp, vertical = 6.dp),
         )
+    }
+}
+
+/** Roue crantée : ouvre les réglages (OK, pas au simple passage du focus). */
+@Composable
+private fun SettingsButton(onClick: () -> Unit, modifier: Modifier) {
+    var focused by remember { mutableStateOf(false) }
+    Surface(
+        onClick = onClick,
+        modifier = modifier
+            .size(40.dp)
+            .onFocusChanged { focused = it.isFocused }
+            .focusRing(focused, 20.dp, grow = false),
+        shape = ClickableSurfaceDefaults.shape(CircleShape),
+        colors = ClickableSurfaceDefaults.colors(
+            containerColor = PanneauClair,
+            contentColor = Lune,
+            focusedContainerColor = Lune,
+            focusedContentColor = Nuit,
+        ),
+        scale = ClickableSurfaceDefaults.scale(focusedScale = 1f),
+    ) {
+        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+            Text("⚙", style = MaterialTheme.typography.titleMedium)
+        }
     }
 }
 

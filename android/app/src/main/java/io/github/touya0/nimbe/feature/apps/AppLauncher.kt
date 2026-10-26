@@ -30,6 +30,10 @@ class AppLauncher(private val context: Context, private val repository: AppsRepo
         }
     }
 
+    fun openAccessibilitySettings() = start(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS), "Impossible d'ouvrir l'accessibilité")
+
+    fun openAndroidSettings() = start(Intent(Settings.ACTION_SETTINGS), "Impossible d'ouvrir les réglages Android")
+
     private fun start(intent: Intent?, error: String) {
         if (!tryStart(intent)) Toast.makeText(context, error, Toast.LENGTH_SHORT).show()
     }

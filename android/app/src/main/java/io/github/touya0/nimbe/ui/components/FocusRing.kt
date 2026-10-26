@@ -14,6 +14,8 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import io.github.touya0.nimbe.ui.theme.Focus
+import io.github.touya0.nimbe.ui.theme.LocalDisplay
+import io.github.touya0.nimbe.ui.theme.Lune
 import io.github.touya0.nimbe.ui.theme.NimbeFocus
 
 /**
@@ -23,11 +25,15 @@ import io.github.touya0.nimbe.ui.theme.NimbeFocus
  */
 @Composable
 fun Modifier.focusRing(focused: Boolean, cornerRadius: Dp, grow: Boolean = true): Modifier {
+    val display = LocalDisplay.current
     val scale by animateFloatAsState(
-        targetValue = if (focused && grow) NimbeFocus.SCALE else 1f,
+        targetValue = if (focused && grow && !display.reduceMotion) NimbeFocus.SCALE else 1f,
         animationSpec = tween(durationMillis = 150),
         label = "focus",
     )
+    // Contraste élevé : anneau blanc et plus épais, comme dans la maquette.
+    val ringColor = if (display.highContrast) Lune else Focus
+    val ringWidth = if (display.highContrast) 5.dp else RingWidth
     return this
         .graphicsLayer {
             scaleX = scale
@@ -36,10 +42,10 @@ fun Modifier.focusRing(focused: Boolean, cornerRadius: Dp, grow: Boolean = true)
         .drawWithContent {
             drawContent()
             if (focused) {
-                val stroke = RingWidth.toPx()
+                val stroke = ringWidth.toPx()
                 val offset = RingGap.toPx() + stroke / 2
                 drawRoundRect(
-                    color = Focus,
+                    color = ringColor,
                     topLeft = Offset(-offset, -offset),
                     size = Size(size.width + 2 * offset, size.height + 2 * offset),
                     cornerRadius = CornerRadius(cornerRadius.toPx() + offset),

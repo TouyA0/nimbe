@@ -1,10 +1,13 @@
 package io.github.touya0.nimbe.core.storage
 
 import android.content.Context
+import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.core.stringSetPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
+import io.github.touya0.nimbe.ui.theme.DisplaySettings
+import io.github.touya0.nimbe.ui.theme.TextSize
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 
@@ -28,6 +31,24 @@ class LauncherPrefs(context: Context) {
 
     val hidden: Flow<Set<String>> = store.data.map { it[HIDDEN].orEmpty() }
 
+    val display: Flow<DisplaySettings> = store.data.map { prefs ->
+        DisplaySettings(
+            textSize = TextSize.fromKey(prefs[TEXT_SIZE]),
+            highContrast = prefs[HIGH_CONTRAST] ?: false,
+            reduceMotion = prefs[REDUCE_MOTION] ?: false,
+            keyHints = prefs[KEY_HINTS] ?: true,
+        )
+    }
+
+    suspend fun setDisplay(display: DisplaySettings) {
+        store.edit {
+            it[TEXT_SIZE] = display.textSize.key
+            it[HIGH_CONTRAST] = display.highContrast
+            it[REDUCE_MOTION] = display.reduceMotion
+            it[KEY_HINTS] = display.keyHints
+        }
+    }
+
     suspend fun setDock(packages: List<String>) {
         store.edit { it[DOCK] = packages.joinToString(",") }
     }
@@ -39,5 +60,9 @@ class LauncherPrefs(context: Context) {
     private companion object {
         val DOCK = stringPreferencesKey("dock")
         val HIDDEN = stringSetPreferencesKey("hidden_apps")
+        val TEXT_SIZE = stringPreferencesKey("text_size")
+        val HIGH_CONTRAST = booleanPreferencesKey("high_contrast")
+        val REDUCE_MOTION = booleanPreferencesKey("reduce_motion")
+        val KEY_HINTS = booleanPreferencesKey("key_hints")
     }
 }
