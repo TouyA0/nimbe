@@ -53,6 +53,10 @@ android {
     }
 
     buildTypes {
+        // La version de développement s'installe à côté de la version publiée, sans la remplacer.
+        debug {
+            applicationIdSuffix = ".debug"
+        }
         release {
             signingConfig = signingConfigs.findByName("release")
             optimization {

@@ -64,7 +64,8 @@ jobs:
         env:
           NIMBE_KEYSTORE: ${{ runner.temp }}/nimbe-release.p12
           NIMBE_KEYSTORE_PASSWORD: ${{ secrets.NIMBE_KEYSTORE_PASSWORD }}
-          NIMBE_KEY_ALIAS: ${{ secrets.NIMBE_KEY_ALIAS }}
+          # Le nom de la clé n'est pas secret : en secret, GitHub masquerait « nimbe » dans tout le journal.
+          NIMBE_KEY_ALIAS: nimbe
           VERSION: ${{ steps.version.outputs.version }}
         run: ./gradlew --console=plain -Pnimbe.version="$VERSION" testDebugUnitTest assembleRelease
 

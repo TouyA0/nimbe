@@ -81,7 +81,7 @@ class MainActivity : ComponentActivity() {
 
     /**
      * Pour tester le garde-fou, uniquement dans les versions de développement :
-     * adb shell am start -n io.github.touya0.nimbe/.MainActivity --ez nimbe.simulate_crash true
+     * adb shell am start -n io.github.touya0.nimbe.debug/io.github.touya0.nimbe.MainActivity --ez nimbe.simulate_crash true
      */
     private fun simulateCrashIfAsked(intent: Intent?) {
         val debuggable = applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE != 0

@@ -26,4 +26,12 @@ class NimbeApplication : Application() {
         // Après une mise à jour, on oublie la proposition qui vient d'être installée.
         scope.launch { runCatching { Updater(this@NimbeApplication).reconcile() } }
     }
+
+    companion object {
+        /**
+         * Paquet de Nimbe et de son code. La version de développement s'installe sous BASE_PACKAGE.debug :
+         * pour reconnaître notre code ou nos paquets, on compare à cette valeur, pas à context.packageName.
+         */
+        const val BASE_PACKAGE = "io.github.touya0.nimbe"
+    }
 }

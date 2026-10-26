@@ -1,0 +1,4 @@
+<resources>
+    <!-- Nom distinct pour reconnaître la version de développement à côté de la version publiée. -->
+    <string name="app_name">Nimbe dev</string>
+</resources>

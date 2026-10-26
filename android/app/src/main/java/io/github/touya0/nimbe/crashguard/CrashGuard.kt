@@ -3,6 +3,7 @@ package io.github.touya0.nimbe.crashguard
 import android.annotation.SuppressLint
 import android.content.Context
 import android.content.SharedPreferences
+import io.github.touya0.nimbe.NimbeApplication
 import kotlin.system.exitProcess
 
 /** Dernière erreur enregistrée : résumé sans données personnelles et heure. */
@@ -28,7 +29,7 @@ object CrashGuard {
     /** À appeler en tout premier dans Application.onCreate. */
     fun install(context: Context) {
         val prefs = prefs(context)
-        val ownPackage = context.packageName
+        val ownPackage = NimbeApplication.BASE_PACKAGE
         val previous = Thread.getDefaultUncaughtExceptionHandler()
         Thread.setDefaultUncaughtExceptionHandler { thread, error ->
             // Jamais d'exception depuis ici : on laisserait l'appli dans un état pire.
