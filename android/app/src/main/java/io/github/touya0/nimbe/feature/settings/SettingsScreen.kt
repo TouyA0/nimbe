@@ -42,7 +42,13 @@ import androidx.tv.material3.ClickableSurfaceDefaults
 import androidx.tv.material3.MaterialTheme
 import androidx.tv.material3.Surface
 import androidx.tv.material3.Text
+import io.github.touya0.nimbe.data.jellyfin.JellyfinAccount
+import io.github.touya0.nimbe.data.jellyfin.JellyfinLink
+import io.github.touya0.nimbe.feature.onboarding.JellyfinConnectScreen
+import io.github.touya0.nimbe.feature.onboarding.ServiceInitial
 import io.github.touya0.nimbe.ui.components.focusRing
+import io.github.touya0.nimbe.ui.theme.Alerte
+import io.github.touya0.nimbe.ui.theme.EnLigne
 import io.github.touya0.nimbe.ui.theme.Focus
 import io.github.touya0.nimbe.ui.theme.DisplaySettings
 import io.github.touya0.nimbe.ui.theme.Lune
@@ -63,11 +69,13 @@ import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.util.Locale
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 
 /** Les rubriques déjà construites ; les autres de la maquette arriveront avec leurs fonctions. */
 enum class SettingsSection(val label: String) {
     Display("Affichage et accessibilité"),
+    Servers("Serveurs et comptes"),
     Updates("Mises à jour"),
     About("À propos et diagnostic"),
 }
@@ -85,14 +93,24 @@ fun SettingsScreen(
     onDisplayChange: (DisplaySettings) -> Unit,
     links: SettingsLinks,
     updates: UpdateController,
+    jellyfin: JellyfinAccount,
     onOpenUpdate: () -> Unit,
     onClose: () -> Unit,
 ) {
     val updateState by updates.state.collectAsStateWithLifecycle(initialValue = UpdateState())
     var section by rememberSaveable { mutableStateOf(SettingsSection.Display) }
-    val firstSection = remember { FocusRequester() }
+    val sectionRequesters = remember { SettingsSection.entries.associateWith { FocusRequester() } }
+
+    // Ouvert par-dessus les réglages : en revenant, on retrouve la même rubrique.
+    var jellyfinConnectOpen by rememberSaveable { mutableStateOf(false) }
+    val jellyfinLink by remember(jellyfin) { jellyfin.link.map { Linked(it) } }.collectAsStateWithLifecycle(initialValue = null)
+    if (jellyfinConnectOpen) {
+        JellyfinConnectScreen(jellyfin, jellyfinLink?.link?.serverUrl, onClose = { jellyfinConnectOpen = false })
+        return
+    }
+
     BackHandler(onBack = onClose)
-    LaunchedEffect(Unit) { runCatching { firstSection.requestFocus() } }
+    LaunchedEffect(Unit) { runCatching { sectionRequesters.getValue(section).requestFocus() } }
 
     // Recalculé à chaque changement de rubrique, et après « Vider le cache ».
     var aboutVersion by remember { mutableIntStateOf(0) }
@@ -112,14 +130,14 @@ fun SettingsScreen(
             NavItem("‹  Retour à l'accueil", selected = false, onClick = onClose)
             Text("Réglages", style = MaterialTheme.typography.displaySmall, modifier = Modifier.padding(vertical = 12.dp))
             Column(Modifier.focusRestorer(), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                SettingsSection.entries.forEachIndexed { index, item ->
+                SettingsSection.entries.forEach { item ->
                     NavItem(
                         label = item.label,
                         selected = item == section,
                         onClick = { section = item },
                         onFocus = { section = item },
                         badge = item == SettingsSection.Updates && updates.isNewer(updateState.available),
-                        modifier = if (index == 0) Modifier.focusRequester(firstSection) else Modifier,
+                        modifier = Modifier.focusRequester(sectionRequesters.getValue(item)),
                     )
                 }
             }
@@ -137,6 +155,7 @@ fun SettingsScreen(
         ) {
             when (section) {
                 SettingsSection.Display -> DisplayPage(display, onDisplayChange, about, links)
+                SettingsSection.Servers -> ServersPage(jellyfin, jellyfinLink, onConnectJellyfin = { jellyfinConnectOpen = true })
                 SettingsSection.Updates -> UpdatesPage(updateState, updates, onOpenUpdate)
                 SettingsSection.About -> AboutPage(about, links, onCacheCleared = { aboutVersion++ })
             }
@@ -164,6 +183,76 @@ private fun DisplayPage(display: DisplaySettings, onChange: (DisplaySettings) ->
         value = if (about?.talkBackOn == true) "Activé" else "Désactivé",
         onClick = links.accessibility,
     )
+}
+
+/** Enveloppe pour distinguer « pas encore lu » (null) de « pas connecté ». */
+private data class Linked(val link: JellyfinLink?)
+
+@Composable
+private fun ServersPage(jellyfin: JellyfinAccount, linked: Linked?, onConnectJellyfin: () -> Unit) {
+    val scope = rememberCoroutineScope()
+    PageTitle("Serveurs et comptes", "Chaque accès est un jeton révocable. Aucun mot de passe n'est enregistré sur la TV.")
+    SettingsGroupTitle("Sur ton réseau")
+    if (linked == null) {
+        Text("Chargement…", style = MaterialTheme.typography.bodyLarge, color = LuneAttenuee)
+        return
+    }
+    val link = linked.link
+    val jellyfinRow = remember { FocusRequester() }
+    if (link == null) {
+        SettingRow(
+            title = "Jellyfin",
+            detail = "Films et séries · pas encore connecté",
+            onClick = onConnectJellyfin,
+            modifier = Modifier.focusRequester(jellyfinRow),
+            leading = { ServiceInitial() },
+            trailing = {
+                Status("Non connecté", LuneAttenuee)
+                Value("Connecter")
+            },
+        )
+        return
+    }
+
+    // Vérifié à l'ouverture de la page : le serveur répond-il encore ?
+    val reachable by produceState<Boolean?>(null, link.serverUrl) {
+        value = runCatching { jellyfin.api.publicInfo(link.serverUrl) }.isSuccess
+    }
+    SettingRow(
+        title = "Jellyfin",
+        detail = "${link.serverUrl.substringAfter("://")} · compte ${link.userName} par Quick Connect",
+        onClick = onConnectJellyfin,
+        modifier = Modifier.focusRequester(jellyfinRow),
+        leading = { ServiceInitial() },
+        trailing = {
+            when (reachable) {
+                null -> Status("Vérification…", LuneAttenuee)
+                true -> Status("Connecté", EnLigne)
+                false -> Status("Injoignable", Alerte)
+            }
+            Value("Changer")
+        },
+    )
+    // Deux appuis sur OK : un appui de trop ne doit pas couper l'accès.
+    var confirm by remember { mutableStateOf(false) }
+    LinkRow(
+        title = "Déconnecter Jellyfin",
+        detail = "Retire l'accès de cette TV, sur le serveur aussi",
+        value = if (confirm) "OK pour confirmer" else "Déconnecter",
+        onClick = {
+            if (!confirm) {
+                confirm = true
+            } else {
+                runCatching { jellyfinRow.requestFocus() }
+                scope.launch { jellyfin.disconnect() }
+            }
+        },
+    )
+}
+
+@Composable
+private fun RowScope.Status(text: String, color: Color) {
+    Text("● $text", style = MaterialTheme.typography.labelMedium, color = color)
 }
 
 @Composable

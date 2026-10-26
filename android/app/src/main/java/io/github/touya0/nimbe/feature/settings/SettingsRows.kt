@@ -47,6 +47,7 @@ fun SettingRow(
     detail: String?,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
+    leading: (@Composable () -> Unit)? = null,
     trailing: @Composable RowScope.() -> Unit = {},
     below: (@Composable () -> Unit)? = null,
 ) {
@@ -69,6 +70,7 @@ fun SettingRow(
     ) {
         Column(Modifier.padding(horizontal = 16.dp, vertical = 12.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                leading?.invoke()
                 Column(Modifier.weight(1f)) {
                     Text(title, style = MaterialTheme.typography.titleSmall)
                     detail?.let { Text(it, style = MaterialTheme.typography.labelMedium, color = LuneAttenuee) }

@@ -68,6 +68,7 @@ class MainActivity : ComponentActivity() {
                         connectivityMonitor = connectivity,
                         launches = database.appLaunches(),
                         updates = updates,
+                        jellyfin = (application as NimbeApplication).jellyfin,
                     )
                 }
             }

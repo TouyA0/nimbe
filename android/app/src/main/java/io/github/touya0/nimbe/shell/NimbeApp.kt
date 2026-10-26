@@ -23,6 +23,7 @@ import io.github.touya0.nimbe.core.network.rememberConnectivity
 import io.github.touya0.nimbe.core.storage.AppLaunchDao
 import io.github.touya0.nimbe.core.storage.LauncherPrefs
 import io.github.touya0.nimbe.crashguard.StockLauncher
+import io.github.touya0.nimbe.data.jellyfin.JellyfinAccount
 import io.github.touya0.nimbe.feature.apps.AppActions
 import io.github.touya0.nimbe.feature.apps.AppLauncher
 import io.github.touya0.nimbe.feature.apps.AppsRepository
@@ -53,6 +54,7 @@ fun NimbeApp(
     connectivityMonitor: ConnectivityMonitor,
     launches: AppLaunchDao,
     updates: UpdateController,
+    jellyfin: JellyfinAccount,
 ) {
     var settingsOpen by rememberSaveable { mutableStateOf(false) }
     var returnToSettingsButton by remember { mutableStateOf(false) }
@@ -133,6 +135,7 @@ fun NimbeApp(
                 stockLauncher = { StockLauncher.open(context) },
             ),
             updates = updates,
+            jellyfin = jellyfin,
             onOpenUpdate = { updateOpen = true },
             onClose = { settingsOpen = false },
         )

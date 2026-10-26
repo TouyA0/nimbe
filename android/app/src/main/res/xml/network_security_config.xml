@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Jellyfin, Home Assistant et la gateway répondent souvent en HTTP sur le réseau de la maison.
+     Android ne sait pas limiter le HTTP aux adresses privées : c'est le code qui le fait
+     (ServerAddress n'accepte http:// que vers une adresse locale ; GitHub n'est joint qu'en HTTPS). -->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="true">
+        <trust-anchors>
+            <certificates src="system" />
+        </trust-anchors>
+    </base-config>
+</network-security-config>
