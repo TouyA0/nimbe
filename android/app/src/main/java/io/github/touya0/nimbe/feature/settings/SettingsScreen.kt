@@ -4,14 +4,18 @@ import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -23,6 +27,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
@@ -32,11 +37,13 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.LifecycleResumeEffect
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.tv.material3.ClickableSurfaceDefaults
 import androidx.tv.material3.MaterialTheme
 import androidx.tv.material3.Surface
 import androidx.tv.material3.Text
 import io.github.touya0.nimbe.ui.components.focusRing
+import io.github.touya0.nimbe.ui.theme.Focus
 import io.github.touya0.nimbe.ui.theme.DisplaySettings
 import io.github.touya0.nimbe.ui.theme.Lune
 import io.github.touya0.nimbe.ui.theme.LuneAttenuee
@@ -44,6 +51,14 @@ import io.github.touya0.nimbe.ui.theme.NimbeFocus
 import io.github.touya0.nimbe.ui.theme.Nuit
 import io.github.touya0.nimbe.ui.theme.Panneau
 import io.github.touya0.nimbe.ui.theme.PanneauClair
+import io.github.touya0.nimbe.update.CheckResult
+import io.github.touya0.nimbe.update.Releases
+import io.github.touya0.nimbe.update.UpdateChannel
+import io.github.touya0.nimbe.update.UpdateController
+import io.github.touya0.nimbe.update.UpdateInstaller
+import io.github.touya0.nimbe.update.UpdateProgress
+import io.github.touya0.nimbe.update.UpdateState
+import io.github.touya0.nimbe.update.formatSize
 import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
@@ -53,6 +68,7 @@ import kotlinx.coroutines.launch
 /** Les rubriques déjà construites ; les autres de la maquette arriveront avec leurs fonctions. */
 enum class SettingsSection(val label: String) {
     Display("Affichage et accessibilité"),
+    Updates("Mises à jour"),
     About("À propos et diagnostic"),
 }
 
@@ -68,8 +84,11 @@ fun SettingsScreen(
     display: DisplaySettings,
     onDisplayChange: (DisplaySettings) -> Unit,
     links: SettingsLinks,
+    updates: UpdateController,
+    onOpenUpdate: () -> Unit,
     onClose: () -> Unit,
 ) {
+    val updateState by updates.state.collectAsStateWithLifecycle(initialValue = UpdateState())
     var section by rememberSaveable { mutableStateOf(SettingsSection.Display) }
     val firstSection = remember { FocusRequester() }
     BackHandler(onBack = onClose)
@@ -99,6 +118,7 @@ fun SettingsScreen(
                         selected = item == section,
                         onClick = { section = item },
                         onFocus = { section = item },
+                        badge = item == SettingsSection.Updates && updates.isNewer(updateState.available),
                         modifier = if (index == 0) Modifier.focusRequester(firstSection) else Modifier,
                     )
                 }
@@ -117,6 +137,7 @@ fun SettingsScreen(
         ) {
             when (section) {
                 SettingsSection.Display -> DisplayPage(display, onDisplayChange, about, links)
+                SettingsSection.Updates -> UpdatesPage(updateState, updates, onOpenUpdate)
                 SettingsSection.About -> AboutPage(about, links, onCacheCleared = { aboutVersion++ })
             }
         }
@@ -175,6 +196,93 @@ private fun AboutPage(about: AboutInfo?, links: SettingsLinks, onCacheCleared: (
 }
 
 @Composable
+private fun UpdatesPage(state: UpdateState, updates: UpdateController, onOpenUpdate: () -> Unit) {
+    PageTitle("Mises à jour", "Nimbe se met à jour tout seul depuis son dépôt GitHub, après avoir vérifié la signature.")
+    val available = state.available?.takeIf(updates::isNewer)
+    val progress = updates.progress
+
+    val failure = state.failure
+    if (failure != null) {
+        LinkRow(
+            title = "La version ${failure.versionName} n'a pas été installée",
+            detail = failure.reason,
+            value = "Voir",
+            onClick = onOpenUpdate,
+        )
+    } else if (available != null) {
+        LinkRow(
+            title = "Version ${available.versionName} disponible · ${formatSize(available.size)}",
+            detail = listOfNotNull(
+                available.notes.firstOrNull(),
+                if (state.ready) "Signature vérifiée, prête à installer" else "Pas encore téléchargée",
+            ).joinToString(" · "),
+            value = "Voir et installer",
+            onClick = onOpenUpdate,
+        )
+    }
+
+    SettingsGroupTitle("Comment mettre à jour")
+    LinkRow(
+        "Canal",
+        "Bêta : nouveautés plus tôt, un peu moins stable",
+        value = state.channel.label,
+        onClick = { updates.setChannel(if (state.channel == UpdateChannel.Stable) UpdateChannel.Beta else UpdateChannel.Stable) },
+    )
+    if (UpdateInstaller.canInstallUnattended) {
+        SettingRow("Installation", "La nuit entre 3 h et 4 h, seulement si rien ne joue", onClick = {}, trailing = { Value("Automatique") })
+    } else {
+        SettingRow(
+            "Installation",
+            "Téléchargée la nuit, puis proposée à l'écran : cette version d'Android demande un OK",
+            onClick = {},
+            trailing = { Value("Avec confirmation") },
+        )
+    }
+    if (!updates.canInstall()) {
+        LinkRow(
+            "Autoriser Nimbe à installer",
+            "Nécessaire une fois pour les mises à jour · réglé dans Android",
+            value = "À accorder",
+            onClick = updates::openInstallPermission,
+        )
+    }
+    SettingRow(
+        title = "Vérifier maintenant",
+        detail = checkDetail(state, updates.checkResult, progress),
+        onClick = updates::checkNow,
+        trailing = { Value(if (progress == UpdateProgress.Checking) "Vérification…" else "Vérifier") },
+    )
+    SettingRow(
+        "Vérification de la signature",
+        "Toujours active, ne peut pas être désactivée",
+        onClick = {},
+        trailing = { Value("Obligatoire") },
+    )
+
+    SettingsGroupTitle("Version installée")
+    SettingRow(
+        title = "Nimbe ${updates.installed.versionName}",
+        detail = "Installée le ${formatDate(updates.installedAt)} · github.com/${Releases.REPO}",
+        onClick = {},
+    )
+}
+
+@Composable
+private fun RowScope.Value(text: String) {
+    Text(text, style = MaterialTheme.typography.titleSmall)
+}
+
+private fun checkDetail(state: UpdateState, result: CheckResult?, progress: UpdateProgress?): String = when {
+    progress == UpdateProgress.Checking -> "Recherche d'une nouvelle version sur GitHub…"
+    result == CheckResult.UpToDate -> "Nimbe est à jour"
+    result is CheckResult.Available -> "Version ${result.manifest.versionName} trouvée"
+    result is CheckResult.Failed -> "${result.message}, réessaie plus tard"
+    state.lastCheckAt == null -> "Pas encore vérifié · chaque nuit vers 3 h"
+    state.lastCheckError != null -> "${state.lastCheckError} le ${formatDate(state.lastCheckAt)}"
+    else -> "Dernière vérification le ${formatDate(state.lastCheckAt)}"
+}
+
+@Composable
 private fun PageTitle(title: String, subtitle: String) {
     Text(title, style = MaterialTheme.typography.displaySmall)
     Text(subtitle, style = MaterialTheme.typography.bodyMedium, color = LuneAttenuee, modifier = Modifier.padding(bottom = 8.dp))
@@ -187,6 +295,7 @@ private fun NavItem(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
     onFocus: () -> Unit = {},
+    badge: Boolean = false,
 ) {
     var focused by remember { mutableStateOf(false) }
     Surface(
@@ -209,7 +318,15 @@ private fun NavItem(
         ),
         scale = ClickableSurfaceDefaults.scale(focusedScale = 1f),
     ) {
-        Text(label, style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp))
+        Row(Modifier.padding(horizontal = 14.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+            Text(label, style = MaterialTheme.typography.titleSmall, modifier = Modifier.weight(1f))
+            // Pastille « 1 » : une mise à jour attend.
+            if (badge) {
+                Box(Modifier.size(20.dp).background(Focus, CircleShape), contentAlignment = Alignment.Center) {
+                    Text("1", style = MaterialTheme.typography.labelMedium, color = Nuit)
+                }
+            }
+        }
     }
 }
 

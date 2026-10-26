@@ -1,0 +1,133 @@
+name: Release
+
+# Un tag v1.2.0 publie une version stable, v1.2.0-beta.1 une bêta (pré-version GitHub).
+# Le launcher vérifie chaque nuit les releases du dépôt et s'installe tout seul.
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    name: APK signé
+    runs-on: ubuntu-latest
+    # La clé de signature n'existe que dans les secrets de cet environnement, limité aux tags v*.
+    environment: release
+    permissions:
+      contents: write
+    defaults:
+      run:
+        working-directory: android
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Lire la version dans le tag
+        id: version
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          if [[ ! "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-beta\.[0-9]+)?$ ]]; then
+            echo "::error::Tag « $GITHUB_REF_NAME » invalide : attendu v1.2.3 ou v1.2.3-beta.4"
+            exit 1
+          fi
+          channel=stable
+          [[ "$version" == *-beta.* ]] && channel=beta
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "channel=$channel" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: "25" # même version que gradle/gradle-daemon-jvm.properties
+
+      # Pas de cache pour une version publiée : rien d'écrit par un autre workflow n'entre dans l'APK.
+      - uses: gradle/actions/setup-gradle@v6
+        with:
+          cache-disabled: true
+
+      - name: Installer la clé de signature
+        env:
+          KEYSTORE_B64: ${{ secrets.NIMBE_KEYSTORE_B64 }}
+        run: |
+          if [[ -z "$KEYSTORE_B64" ]]; then
+            echo "::error::Secret NIMBE_KEYSTORE_B64 absent de l'environnement release"
+            exit 1
+          fi
+          echo "$KEYSTORE_B64" | base64 -d > "$RUNNER_TEMP/nimbe-release.p12"
+
+      - name: Tester et compiler
+        env:
+          NIMBE_KEYSTORE: ${{ runner.temp }}/nimbe-release.p12
+          NIMBE_KEYSTORE_PASSWORD: ${{ secrets.NIMBE_KEYSTORE_PASSWORD }}
+          NIMBE_KEY_ALIAS: ${{ secrets.NIMBE_KEY_ALIAS }}
+          VERSION: ${{ steps.version.outputs.version }}
+        run: ./gradlew --console=plain -Pnimbe.version="$VERSION" testDebugUnitTest assembleRelease
+
+      - name: Retirer la clé de signature
+        if: always()
+        run: rm -f "$RUNNER_TEMP/nimbe-release.p12"
+
+      - name: Vérifier la signature et préparer les fichiers
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+          CHANNEL: ${{ steps.version.outputs.channel }}
+        run: |
+          tools="$(ls -d "$ANDROID_HOME"/build-tools/* | sort -V | tail -1)"
+          apk=app/build/outputs/apk/release/app-release.apk
+          "$tools/apksigner" verify --print-certs "$apk" | tee "$RUNNER_TEMP/certs.txt"
+          cert="$(grep -m1 'certificate SHA-256 digest' "$RUNNER_TEMP/certs.txt" | awk '{print $NF}')"
+
+          # Le versionCode est lu dans l'APK lui-même : c'est lui que le launcher comparera.
+          code="$("$tools/aapt2" dump badging "$apk" | sed -n "s/.*versionCode='\([0-9]*\)'.*/\1/p")"
+
+          # Notes de version : le message du tag annoté (git tag -a), une ligne par nouveauté.
+          git fetch --force origin "refs/tags/$GITHUB_REF_NAME:refs/tags/$GITHUB_REF_NAME"
+          git tag -l --format='%(contents)' "$GITHUB_REF_NAME" \
+            | sed -e '/-----BEGIN/,$d' -e 's/^[-*•] *//' -e '/^[[:space:]]*$/d' > "$RUNNER_TEMP/notes.txt"
+          [[ -s "$RUNNER_TEMP/notes.txt" ]] || echo "Corrections et améliorations." > "$RUNNER_TEMP/notes.txt"
+
+          mkdir -p dist
+          name="nimbe-$VERSION.apk"
+          cp "$apk" "dist/$name"
+          (cd dist && sha256sum "$name" > "$name.sha256")
+          sha="$(cut -d' ' -f1 "dist/$name.sha256")"
+
+          jq -n \
+            --argjson versionCode "$code" \
+            --arg versionName "$VERSION" \
+            --arg channel "$CHANNEL" \
+            --arg apk "$name" \
+            --arg sha256 "$sha" \
+            --argjson size "$(stat -c %s "dist/$name")" \
+            --arg publishedAt "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+            --rawfile notes "$RUNNER_TEMP/notes.txt" \
+            '{versionCode: $versionCode, versionName: $versionName, channel: $channel, apk: $apk,
+              sha256: $sha256, size: $size, publishedAt: $publishedAt,
+              notes: ($notes | split("\n") | map(select(length > 0)))}' > dist/update.json
+          cat dist/update.json
+
+          {
+            sed 's/^/- /' "$RUNNER_TEMP/notes.txt"
+            echo
+            echo "SHA-256 de l'APK : \`$sha\`"
+            echo
+            echo "Certificat de signature (SHA-256) : \`$cert\`"
+          } > "$RUNNER_TEMP/body.md"
+
+      - name: Publier la release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.version.outputs.version }}
+          CHANNEL: ${{ steps.version.outputs.channel }}
+        run: |
+          flags=()
+          [[ "$CHANNEL" == beta ]] && flags+=(--prerelease)
+          gh release create "$GITHUB_REF_NAME" dist/* \
+            --title "Nimbe $VERSION" \
+            --notes-file "$RUNNER_TEMP/body.md" \
+            --verify-tag "${flags[@]}"

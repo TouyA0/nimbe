@@ -40,6 +40,9 @@ import io.github.touya0.nimbe.ui.components.MenuHost
 import io.github.touya0.nimbe.ui.components.MenuState
 import io.github.touya0.nimbe.ui.theme.LocalDisplay
 import io.github.touya0.nimbe.ui.theme.Nuit
+import io.github.touya0.nimbe.update.UpdateController
+import io.github.touya0.nimbe.update.UpdateScreen
+import io.github.touya0.nimbe.update.UpdateState
 import kotlinx.coroutines.launch
 
 @Composable
@@ -49,6 +52,7 @@ fun NimbeApp(
     launcher: AppLauncher,
     connectivityMonitor: ConnectivityMonitor,
     launches: AppLaunchDao,
+    updates: UpdateController,
 ) {
     var settingsOpen by rememberSaveable { mutableStateOf(false) }
     var returnToSettingsButton by remember { mutableStateOf(false) }
@@ -104,7 +108,20 @@ fun NimbeApp(
     // Retour ramène à l'Accueil ; sur l'Accueil, il ne fait rien : c'est l'écran d'accueil du stick.
     BackHandler { focusTab(Tab.Home) }
 
-    LaunchedEffect(Unit) { focusTab(tab) }
+    // Une version téléchargée et vérifiée la nuit est proposée dès que quelqu'un est devant la TV.
+    val updateState by updates.state.collectAsStateWithLifecycle(initialValue = UpdateState())
+    var updateOpen by rememberSaveable { mutableStateOf(false) }
+    LaunchedEffect(updateState) {
+        val waiting = updateState.ready && updates.isNewer(updateState.available)
+        if (waiting && System.currentTimeMillis() >= updateState.snoozedUntil) updateOpen = true
+    }
+    if (updateOpen) {
+        UpdateScreen(updateState, updates, onClose = {
+            updates.snooze()
+            updateOpen = false
+        })
+        return
+    }
 
     if (settingsOpen) {
         SettingsScreen(
@@ -115,12 +132,21 @@ fun NimbeApp(
                 androidSettings = launcher::openAndroidSettings,
                 stockLauncher = { StockLauncher.open(context) },
             ),
+            updates = updates,
+            onOpenUpdate = { updateOpen = true },
             onClose = { settingsOpen = false },
         )
         return
     }
-    // Au retour des réglages, le focus revient sur la roue crantée.
-    LaunchedEffect(Unit) { if (returnToSettingsButton) runCatching { settingsRequester.requestFocus() } }
+    // À l'affichage, le focus va sur l'onglet ; au retour des réglages, sur la roue crantée.
+    LaunchedEffect(Unit) {
+        if (returnToSettingsButton) {
+            returnToSettingsButton = false
+            runCatching { settingsRequester.requestFocus() }
+        } else {
+            focusTab(tab)
+        }
+    }
 
     MenuHost(menu) {
         Column(Modifier.fillMaxSize().background(Nuit)) {

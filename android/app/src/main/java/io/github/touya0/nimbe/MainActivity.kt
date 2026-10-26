@@ -23,6 +23,8 @@ import io.github.touya0.nimbe.feature.apps.rememberInstalledApps
 import io.github.touya0.nimbe.shell.NimbeApp
 import io.github.touya0.nimbe.ui.theme.DisplaySettings
 import io.github.touya0.nimbe.ui.theme.NimbeTheme
+import io.github.touya0.nimbe.update.UpdateController
+import io.github.touya0.nimbe.update.Updater
 
 class MainActivity : ComponentActivity() {
 
@@ -31,6 +33,7 @@ class MainActivity : ComponentActivity() {
     private val launcher by lazy { AppLauncher(this, apps, database.appLaunches(), lifecycleScope) }
     private val prefs by lazy { LauncherPrefs(applicationContext) }
     private val connectivity by lazy { ConnectivityMonitor(applicationContext) }
+    private val updates by lazy { UpdateController(this, Updater(applicationContext), lifecycleScope) }
     private var mode by mutableStateOf(StartupMode.Normal)
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -64,6 +67,7 @@ class MainActivity : ComponentActivity() {
                         launcher = launcher,
                         connectivityMonitor = connectivity,
                         launches = database.appLaunches(),
+                        updates = updates,
                     )
                 }
             }

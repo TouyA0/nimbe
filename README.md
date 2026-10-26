@@ -33,6 +33,21 @@ cd android
 ./gradlew assembleDebug
 ```
 
+## Publier une version
+
+Un tag `v*` lance [`release.yml`](.github/workflows/release.yml) : tests, APK signé, empreinte SHA-256
+et `update.json` publiés dans une release GitHub. Chaque nuit, le launcher la trouve, la télécharge,
+vérifie l'empreinte et la signature, puis l'installe (avec une confirmation à l'écran avant Android 12).
+
+```bash
+git tag -a v0.3.0 -m "Première nouveauté" -m "Deuxième nouveauté"
+git push origin v0.3.0
+```
+
+- `v1.2.0` : version stable. `v1.2.0-beta.1` : bêta, reçue seulement par les appareils réglés sur le canal Bêta.
+- Le message du tag devient la liste des nouveautés affichée sur la TV, une ligne par nouveauté.
+- La clé de signature n'existe que dans l'environnement GitHub `release` et dans une sauvegarde hors ligne.
+
 ## Licence
 
 [MIT](LICENSE)

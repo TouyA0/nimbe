@@ -11,6 +11,10 @@
     <!-- Savoir si le stick a du réseau et internet, pour l'écran « Pas d'internet ». -->
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
 
+    <!-- Mises à jour : lire les releases GitHub et installer la nouvelle version de Nimbe. -->
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
+
     <!-- Ouvrir l'écran de désinstallation d'Android (qui demande lui-même confirmation). -->
     <uses-permission android:name="android.permission.REQUEST_DELETE_PACKAGES" />
 
@@ -55,6 +59,11 @@
                 <category android:name="android.intent.category.LEANBACK_LAUNCHER" />
             </intent-filter>
         </activity>
+
+        <!-- Résultat d'une installation de mise à jour, envoyé par Android à Nimbe seulement. -->
+        <receiver
+            android:name=".update.UpdateInstallReceiver"
+            android:exported="false" />
     </application>
 
 </manifest>
