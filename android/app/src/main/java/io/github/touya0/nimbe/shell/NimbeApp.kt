@@ -20,6 +20,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import io.github.touya0.nimbe.core.network.ConnectivityMonitor
 import io.github.touya0.nimbe.core.network.rememberConnectivity
+import io.github.touya0.nimbe.core.storage.AppLaunchDao
 import io.github.touya0.nimbe.core.storage.LauncherPrefs
 import io.github.touya0.nimbe.crashguard.StockLauncher
 import io.github.touya0.nimbe.feature.apps.AppActions
@@ -27,6 +28,7 @@ import io.github.touya0.nimbe.feature.apps.AppLauncher
 import io.github.touya0.nimbe.feature.apps.AppsRepository
 import io.github.touya0.nimbe.feature.apps.AppsScreen
 import io.github.touya0.nimbe.feature.apps.Dock
+import io.github.touya0.nimbe.feature.apps.Recents
 import io.github.touya0.nimbe.feature.apps.appMenu
 import io.github.touya0.nimbe.feature.apps.hiddenAppsMenu
 import io.github.touya0.nimbe.feature.apps.rememberInstalledApps
@@ -46,6 +48,7 @@ fun NimbeApp(
     prefs: LauncherPrefs,
     launcher: AppLauncher,
     connectivityMonitor: ConnectivityMonitor,
+    launches: AppLaunchDao,
 ) {
     var settingsOpen by rememberSaveable { mutableStateOf(false) }
     var returnToSettingsButton by remember { mutableStateOf(false) }
@@ -65,6 +68,8 @@ fun NimbeApp(
     val savedDock by prefs.dock.collectAsStateWithLifecycle(initialValue = null)
     val hidden by prefs.hidden.collectAsStateWithLifecycle(initialValue = emptySet())
     val visibleApps = apps?.filterNot { it.packageName in hidden }
+    val recentLaunches by remember(launches) { launches.recent(limit = 20) }.collectAsStateWithLifecycle(initialValue = emptyList())
+    val recents = apps?.let { Recents.resolve(recentLaunches.map { it.packageName }, it, hidden) }.orEmpty()
     val dock = if (apps == null || savedDock == null) null else Dock.resolve(savedDock?.packages, apps, hidden)
     // Toute modification part du dock affiché, pour que le dock par défaut devienne le point de départ.
     val dockPackages = dock.orEmpty().map { it.packageName }
@@ -142,6 +147,7 @@ fun NimbeApp(
                     )
                     Tab.Apps -> AppsScreen(
                         apps = visibleApps,
+                        recents = recents,
                         hiddenCount = apps?.count { it.packageName in hidden } ?: 0,
                         onOpen = launcher::open,
                         onMenu = { app, back -> menu.open(appMenu(app, dockPackages, actions, back)) },

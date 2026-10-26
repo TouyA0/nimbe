@@ -6,11 +6,28 @@ import android.content.Intent
 import android.net.Uri
 import android.provider.Settings
 import android.widget.Toast
+import io.github.touya0.nimbe.core.storage.AppLaunchDao
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.launch
 
-/** Ce qui sort du launcher vers Android : ouvrir une appli, ses infos, sa désinstallation, les réglages. */
-class AppLauncher(private val context: Context, private val repository: AppsRepository) {
+/**
+ * Ce qui sort du launcher vers Android : ouvrir une appli, ses infos, sa désinstallation, les réglages.
+ * Chaque ouverture réussie est notée pour « Récemment utilisées ».
+ */
+class AppLauncher(
+    private val context: Context,
+    private val repository: AppsRepository,
+    private val launches: AppLaunchDao,
+    private val scope: CoroutineScope,
+) {
 
-    fun open(app: InstalledApp) = start(repository.launchIntent(app.packageName), "Impossible d'ouvrir ${app.label}")
+    fun open(app: InstalledApp) {
+        if (tryStart(repository.launchIntent(app.packageName))) {
+            scope.launch { launches.recordLaunch(app.packageName, System.currentTimeMillis()) }
+        } else {
+            Toast.makeText(context, "Impossible d'ouvrir ${app.label}", Toast.LENGTH_SHORT).show()
+        }
+    }
 
     fun showInfo(app: InstalledApp) = start(
         Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.fromParts("package", app.packageName, null)),

@@ -9,6 +9,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.lifecycleScope
 import io.github.touya0.nimbe.core.network.ConnectivityMonitor
 import io.github.touya0.nimbe.core.storage.LauncherPrefs
 import io.github.touya0.nimbe.crashguard.CrashGuard
@@ -26,7 +27,8 @@ import io.github.touya0.nimbe.ui.theme.NimbeTheme
 class MainActivity : ComponentActivity() {
 
     private val apps by lazy { AppsRepository(applicationContext) }
-    private val launcher by lazy { AppLauncher(this, apps) }
+    private val database by lazy { (application as NimbeApplication).database }
+    private val launcher by lazy { AppLauncher(this, apps, database.appLaunches(), lifecycleScope) }
     private val prefs by lazy { LauncherPrefs(applicationContext) }
     private val connectivity by lazy { ConnectivityMonitor(applicationContext) }
     private var mode by mutableStateOf(StartupMode.Normal)
@@ -61,6 +63,7 @@ class MainActivity : ComponentActivity() {
                         prefs = prefs,
                         launcher = launcher,
                         connectivityMonitor = connectivity,
+                        launches = database.appLaunches(),
                     )
                 }
             }
