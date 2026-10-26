@@ -1,5 +1,5 @@
-// debloat allège un appareil Android TV via ADB, de façon réversible.
-// Pour l'instant : diag et backup, qui ne modifient rien sur l'appareil.
+// debloat allège un appareil Android TV via ADB, de façon réversible :
+// les paquets sont désactivés, jamais désinstallés, et restore remet l'état d'origine.
 package main
 
 import (
@@ -21,24 +21,31 @@ import (
 const usage = `Usage : debloat <commande> [options]
 
 Commandes :
-  diag     Relève modèle, Android, mémoire, stockage, réseau, accueil et paquets (ne modifie rien)
-  backup   Enregistre l'état de tous les paquets pour pouvoir le restaurer (ne modifie rien)
+  diag      Relève modèle, Android, mémoire, stockage, réseau, accueil et paquets (ne modifie rien)
+  backup    Enregistre l'état de tous les paquets pour pouvoir le restaurer (ne modifie rien)
+  debloat   Désactive les paquets des listes, après un instantané automatique
+  restore   Remet les paquets dans l'état du plus ancien instantané (l'état d'origine)
+  check     Vérifie que les paquets protégés sont actifs (ne modifie rien)
 
 Options :
   -s <série|ip:port>   Appareil à utiliser si plusieurs sont connectés
   -adb <chemin>        Binaire adb (par défaut : PATH, puis ~/Android/Sdk/platform-tools)
   -out <dossier>       Dossier des sauvegardes (par défaut : sauvegardes)
   -capture=false       (diag) Ne pas faire de capture d'écran
+  -list <fichier>      (debloat, check) Liste de paquets en plus de listes/recommandes.txt
+  -from <fichier>      (restore) Instantané à restaurer au lieu du plus ancien
+  -dry-run             (debloat, restore) Affiche ce qui serait fait sans rien modifier
+  -yes                 (debloat, restore) Répond oui à toutes les confirmations
 `
 
 func main() {
-	if err := run(os.Args[1:], os.Stdout); err != nil {
+	if err := run(os.Args[1:], os.Stdin, os.Stdout); err != nil {
 		fmt.Fprintln(os.Stderr, "erreur :", err)
 		os.Exit(1)
 	}
 }
 
-func run(args []string, w io.Writer) error {
+func run(args []string, in io.Reader, w io.Writer) error {
 	if len(args) == 0 || args[0] == "-h" || args[0] == "help" {
 		fmt.Fprint(w, usage)
 		return nil
@@ -51,6 +58,10 @@ func run(args []string, w io.Writer) error {
 	adbBin := fs.String("adb", "", "")
 	out := fs.String("out", "sauvegardes", "")
 	capture := fs.Bool("capture", true, "")
+	list := fs.String("list", "", "")
+	from := fs.String("from", "", "")
+	dryRun := fs.Bool("dry-run", false, "")
+	yes := fs.Bool("yes", false, "")
 	if err := fs.Parse(args[1:]); err != nil {
 		return err
 	}
@@ -72,6 +83,16 @@ func run(args []string, w io.Writer) error {
 		return diag(ctx, r, w, *out, *capture)
 	case "backup":
 		return backup(ctx, r, w, *out)
+	case "debloat", "restore", "check":
+		c := &modifier{r: r, w: w, in: newPrompter(in, w, *yes), root: *out, target: *serial, dryRun: *dryRun}
+		switch cmd {
+		case "debloat":
+			return c.debloat(ctx, *list)
+		case "restore":
+			return c.restore(ctx, *from)
+		default:
+			return c.check(ctx, *list)
+		}
 	default:
 		return fmt.Errorf("commande inconnue %q\n\n%s", cmd, usage)
 	}
@@ -125,6 +146,11 @@ func backup(ctx context.Context, r adb.Runner, w io.Writer, root string) error {
 	if err != nil {
 		return err
 	}
+	_, err = writeBackup(w, root, info, pkgs)
+	return err
+}
+
+func writeBackup(w io.Writer, root string, info device.Info, pkgs []device.Package) (string, error) {
 	path, err := snapshot.Write(root, snapshot.Snapshot{
 		FormatVersion: snapshot.FormatVersion,
 		CreatedAt:     time.Now(),
@@ -132,13 +158,13 @@ func backup(ctx context.Context, r adb.Runner, w io.Writer, root string) error {
 		Packages:      pkgs,
 	})
 	if err != nil {
-		return err
+		return "", err
 	}
 	s := device.Summarize(pkgs)
 	fmt.Fprintf(w, "Instantané de %s %s (%s) : %d paquets, dont %d désactivés.\n",
 		info.Manufacturer, info.Model, info.Serial, s.Total, s.Disabled)
 	fmt.Fprintf(w, "Enregistré dans %s\n", path)
-	return nil
+	return path, nil
 }
 
 func printReport(w io.Writer, info device.Info, s device.Summary) {

@@ -1,0 +1,6 @@
+# Paquets désactivés seulement après confirmation, un par un.
+# Pour ce qui peut servir à certains (ex. Chromecast intégré, applis de démo).
+# À remplir à partir de « diag » lancé sur le vrai stick.
+#
+# Exemple :
+# com.google.android.apps.mediashell   # Chromecast intégré

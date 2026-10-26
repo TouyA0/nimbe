@@ -1,0 +1,55 @@
+# Paquets JAMAIS désactivés, même s'ils apparaissent dans une autre liste.
+# En plus de cette liste, l'outil protège automatiquement, sur chaque appareil :
+#   - toutes les applis d'accueil détectées (dont l'accueil d'origine, notre secours) ;
+#   - le clavier actuellement utilisé ;
+#   - le launcher Nimbe lui-même.
+
+# Cœur du système
+android
+com.android.systemui
+com.android.shell
+com.android.providers.settings
+com.android.providers.media
+com.android.providers.downloads
+com.android.externalstorage
+com.android.packageinstaller
+com.google.android.packageinstaller
+com.android.permissioncontroller
+com.google.android.permissioncontroller
+com.android.networkstack
+com.google.android.networkstack
+
+# Play Store et services Google Play
+com.android.vending
+com.google.android.gms
+com.google.android.gsf
+
+# WebView (affichage des pages web dans les applis)
+com.android.webview
+com.google.android.webview
+com.google.android.trichromelibrary
+
+# Claviers
+com.android.inputmethod.leanback
+com.google.android.leanback.ime
+com.google.android.inputmethod.latin
+
+# Réglages
+com.android.settings
+com.android.tv.settings
+
+# Fournisseur TV : indispensable pour Watch Next (« Continuer à regarder »)
+com.android.providers.tv
+
+# Recherche et reconnaissance vocale (dictée)
+com.google.android.katniss
+com.google.android.tts
+com.google.android.speech.pumpkin
+
+# Mises à jour système
+com.google.android.configupdater
+
+# Accueils Android TV / Google TV connus (secours)
+com.google.android.tvlauncher
+com.google.android.leanbacklauncher
+com.google.android.apps.tv.launcherx

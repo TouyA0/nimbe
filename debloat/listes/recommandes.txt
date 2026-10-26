@@ -1,0 +1,6 @@
+# Paquets désactivés sans demander, un par ligne (texte après # = commentaire).
+# À remplir à partir de « diag » lancé sur le vrai stick (fichier paquets.txt),
+# en ne gardant que des paquets dont on est sûr qu'ils sont inutiles.
+#
+# Exemple :
+# com.exemple.pubs        # publicités de l'accueil d'origine
