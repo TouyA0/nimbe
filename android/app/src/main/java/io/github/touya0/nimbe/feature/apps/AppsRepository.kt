@@ -23,6 +23,8 @@ data class InstalledApp(
     val label: String,
     val category: AppCategory,
     val icon: ImageBitmap?,
+    /** Faux pour les applis du système, qu'Android ne laisse pas désinstaller. */
+    val removable: Boolean,
 )
 
 /** Liste les applis lançables du stick, en lisant le PackageManager d'Android. */
@@ -46,6 +48,7 @@ class AppsRepository(private val context: Context) {
                     label = info.loadLabel(pm).toString(),
                     category = categoryOf(info.activityInfo.applicationInfo),
                     icon = runCatching { info.loadIcon(pm).toBitmap(ICON_PX, ICON_PX).asImageBitmap() }.getOrNull(),
+                    removable = info.activityInfo.applicationInfo.flags and ApplicationInfo.FLAG_SYSTEM == 0,
                 )
             }
             .sortedWith(compareBy(collator) { it.label })
@@ -67,20 +70,4 @@ class AppsRepository(private val context: Context) {
         // Icônes réduites : le stick a peu de mémoire.
         const val ICON_PX = 96
     }
-}
-
-/** Applis du dock par défaut, dans l'ordre de la maquette, si elles sont installées. */
-private val PreferredDock = listOf(
-    "org.jellyfin.androidtv",
-    "com.google.android.youtube.tv",
-    "com.netflix.ninja",
-    "com.disney.disneyplus",
-    "com.spotify.tv.android",
-)
-
-/** Choisit les applis de « Mes applis » : les préférées installées, complétées par ordre alphabétique. */
-fun defaultDock(apps: List<InstalledApp>, size: Int = 6): List<InstalledApp> {
-    val byPackage = apps.associateBy { it.packageName }
-    val preferred = PreferredDock.mapNotNull { byPackage[it] }
-    return (preferred + apps.filterNot { it in preferred }).take(size)
 }

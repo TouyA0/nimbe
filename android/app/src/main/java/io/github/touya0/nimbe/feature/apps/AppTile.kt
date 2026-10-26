@@ -18,8 +18,15 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.onKeyEvent
+import androidx.compose.ui.input.key.type
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.tv.material3.ClickableSurfaceDefaults
@@ -35,9 +42,18 @@ import io.github.touya0.nimbe.ui.theme.TileColors
 /** Couleur stable par appli, pour que chaque tuile garde la même teinte d'un lancement à l'autre. */
 fun tileColor(packageName: String): Color = TileColors[Math.floorMod(packageName.hashCode(), TileColors.size)]
 
+/**
+ * Tuile d'une appli. [onMenu] s'ouvre avec la touche Menu ou un appui long sur OK
+ * (la télécommande Xiaomi n'a pas de touche Menu) ; il reçoit de quoi rendre le focus à la tuile.
+ */
 @Composable
-fun AppTile(app: InstalledApp, onClick: () -> Unit, modifier: Modifier = Modifier) {
-    TileSurface(color = tileColor(app.packageName), onClick = onClick, modifier = modifier) {
+fun AppTile(
+    app: InstalledApp,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    onMenu: ((FocusRequester) -> Unit)? = null,
+) {
+    TileSurface(color = tileColor(app.packageName), onClick = onClick, onMenu = onMenu, modifier = modifier) {
         val badge = Modifier.size(36.dp).clip(RoundedCornerShape(8.dp))
         if (app.icon != null) {
             Image(bitmap = app.icon, contentDescription = null, modifier = badge)
@@ -61,14 +77,23 @@ fun AppTile(app: InstalledApp, onClick: () -> Unit, modifier: Modifier = Modifie
     }
 }
 
-/** Tuile « Toutes les applis », en bout de rangée « Mes applis ». */
+/** Tuile d'action (« Toutes les applis », « Applis masquées »), avec un symbole à la place de l'icône. */
 @Composable
-fun AllAppsTile(onClick: () -> Unit, modifier: Modifier = Modifier) {
-    TileSurface(color = Color(0xFF1A1F28), onClick = onClick, modifier = modifier) {
-        Box(Modifier.size(36.dp).clip(RoundedCornerShape(8.dp)).background(Color.White.copy(alpha = 0.1f)), contentAlignment = Alignment.Center) {
-            Text("▦", style = MaterialTheme.typography.titleMedium)
+fun ActionTile(symbol: String, label: String, onClick: (FocusRequester) -> Unit, modifier: Modifier = Modifier) {
+    val requester = remember { FocusRequester() }
+    TileSurface(
+        color = Color(0xFF1A1F28),
+        onClick = { onClick(requester) },
+        onMenu = null,
+        modifier = modifier.focusRequester(requester),
+    ) {
+        Box(
+            Modifier.size(36.dp).clip(RoundedCornerShape(8.dp)).background(Color.White.copy(alpha = 0.1f)),
+            contentAlignment = Alignment.Center,
+        ) {
+            Text(symbol, style = MaterialTheme.typography.titleMedium)
         }
-        Text("Toutes les applis", style = MaterialTheme.typography.titleSmall, maxLines = 2)
+        Text(label, style = MaterialTheme.typography.titleSmall, maxLines = 2)
     }
 }
 
@@ -76,15 +101,27 @@ fun AllAppsTile(onClick: () -> Unit, modifier: Modifier = Modifier) {
 private fun TileSurface(
     color: Color,
     onClick: () -> Unit,
+    onMenu: ((FocusRequester) -> Unit)?,
     modifier: Modifier,
     content: @Composable () -> Unit,
 ) {
     var focused by remember { mutableStateOf(false) }
+    val requester = remember { FocusRequester() }
     Surface(
         onClick = onClick,
+        onLongClick = onMenu?.let { { it(requester) } },
         modifier = modifier
             .height(64.dp)
+            .focusRequester(requester)
             .onFocusChanged { focused = it.isFocused }
+            .onKeyEvent { event ->
+                if (onMenu != null && event.key == Key.Menu && event.type == KeyEventType.KeyUp) {
+                    onMenu(requester)
+                    true
+                } else {
+                    false
+                }
+            }
             .focusRing(focused, NimbeFocus.CardRadius),
         shape = ClickableSurfaceDefaults.shape(NimbeFocus.CardShape),
         colors = ClickableSurfaceDefaults.colors(

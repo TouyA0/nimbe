@@ -11,13 +11,13 @@ import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.unit.dp
 import androidx.tv.material3.MaterialTheme
 import androidx.tv.material3.Text
-import io.github.touya0.nimbe.feature.apps.AllAppsTile
+import io.github.touya0.nimbe.feature.apps.ActionTile
 import io.github.touya0.nimbe.feature.apps.AppTile
 import io.github.touya0.nimbe.feature.apps.InstalledApp
-import io.github.touya0.nimbe.feature.apps.defaultDock
 import io.github.touya0.nimbe.ui.components.KeyHints
 import io.github.touya0.nimbe.ui.components.bleed
 import io.github.touya0.nimbe.ui.theme.LuneAttenuee
@@ -25,11 +25,13 @@ import io.github.touya0.nimbe.ui.theme.LuneAttenuee
 /**
  * Accueil, version socle : seule la rangée « Mes applis » existe pour l'instant.
  * Continuer à regarder, En direct, Ajouté récemment et Souvenirs arriveront avec leurs intégrations.
+ * [dock] vaut null pendant le chargement.
  */
 @Composable
 fun HomeScreen(
-    apps: List<InstalledApp>?,
+    dock: List<InstalledApp>?,
     onOpen: (InstalledApp) -> Unit,
+    onMenu: (InstalledApp, FocusRequester) -> Unit,
     onAllApps: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -46,7 +48,7 @@ fun HomeScreen(
         Text("Mes applis", style = MaterialTheme.typography.headlineSmall)
         // La rangée n'apparaît qu'une fois la liste chargée : sinon, l'ajout des tuiles devant
         // « Toutes les applis » décale la rangée et la première appli sort de l'écran.
-        if (apps == null) {
+        if (dock == null) {
             Text(
                 "Chargement…",
                 style = MaterialTheme.typography.bodyLarge,
@@ -58,14 +60,19 @@ fun HomeScreen(
             contentPadding = PaddingValues(vertical = 16.dp, horizontal = 48.dp),
             horizontalArrangement = Arrangement.spacedBy(14.dp),
         ) {
-            items(defaultDock(apps), key = { it.packageName }) { app ->
-                AppTile(app = app, onClick = { onOpen(app) }, modifier = Modifier.width(170.dp))
+            items(dock, key = { it.packageName }) { app ->
+                AppTile(
+                    app = app,
+                    onClick = { onOpen(app) },
+                    onMenu = { requester -> onMenu(app, requester) },
+                    modifier = Modifier.width(170.dp).animateItem(),
+                )
             }
             item(key = "toutes") {
-                AllAppsTile(onClick = onAllApps, modifier = Modifier.width(170.dp))
+                ActionTile("▦", "Toutes les applis", onClick = { onAllApps() }, modifier = Modifier.width(170.dp))
             }
         }
 
-        KeyHints("OK" to "ouvrir", modifier = Modifier.padding(vertical = 20.dp))
+        KeyHints("OK" to "ouvrir", "OK maintenu" to "options", modifier = Modifier.padding(vertical = 20.dp))
     }
 }
