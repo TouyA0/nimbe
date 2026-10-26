@@ -8,6 +8,7 @@ import androidx.activity.compose.setContent
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import io.github.touya0.nimbe.core.network.ConnectivityMonitor
 import io.github.touya0.nimbe.core.storage.LauncherPrefs
 import io.github.touya0.nimbe.crashguard.CrashGuard
 import io.github.touya0.nimbe.crashguard.RescueScreen
@@ -25,6 +26,7 @@ class MainActivity : ComponentActivity() {
     private val apps by lazy { AppsRepository(applicationContext) }
     private val launcher by lazy { AppLauncher(this, apps) }
     private val prefs by lazy { LauncherPrefs(applicationContext) }
+    private val connectivity by lazy { ConnectivityMonitor(applicationContext) }
     private var mode by mutableStateOf(StartupMode.Normal)
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -50,7 +52,12 @@ class MainActivity : ComponentActivity() {
                         onRestartNormally = ::restartNormally,
                         onOpenStock = { StockLauncher.open(this) },
                     )
-                    StartupMode.Normal -> NimbeApp(repository = apps, prefs = prefs, launcher = launcher)
+                    StartupMode.Normal -> NimbeApp(
+                        repository = apps,
+                        prefs = prefs,
+                        launcher = launcher,
+                        connectivityMonitor = connectivity,
+                    )
                 }
             }
         }

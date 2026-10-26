@@ -1,10 +1,15 @@
 package io.github.touya0.nimbe.shell
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -18,28 +23,34 @@ import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.focusRestorer
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.dp
 import androidx.tv.material3.ClickableSurfaceDefaults
 import androidx.tv.material3.MaterialTheme
 import androidx.tv.material3.Surface
 import androidx.tv.material3.Text
+import io.github.touya0.nimbe.core.network.ConnectivityStatus
+import io.github.touya0.nimbe.core.network.NetworkState
 import io.github.touya0.nimbe.ui.components.focusRing
+import io.github.touya0.nimbe.ui.theme.Alerte
 import io.github.touya0.nimbe.ui.theme.ClockStyle
+import io.github.touya0.nimbe.ui.theme.Focus
 import io.github.touya0.nimbe.ui.theme.Lune
 import io.github.touya0.nimbe.ui.theme.LuneAttenuee
 import io.github.touya0.nimbe.ui.theme.NimbeFocus
 import io.github.touya0.nimbe.ui.theme.Nuit
 import io.github.touya0.nimbe.ui.theme.PanneauClair
-import kotlinx.coroutines.delay
 import java.time.LocalTime
 import java.time.format.DateTimeFormatter
+import kotlinx.coroutines.delay
 
-enum class Tab(val label: String) {
+/** [needsInternet] : onglet barré pendant une coupure d'internet (Films et Galerie viennent du Pi). */
+enum class Tab(val label: String, val needsInternet: Boolean = false) {
     Home("Accueil"),
-    Tv("TV"),
+    Tv("TV", needsInternet = true),
     Movies("Films"),
     Series("Séries"),
-    Music("Musique"),
+    Music("Musique", needsInternet = true),
     Gallery("Galerie"),
     Apps("Applis"),
 }
@@ -53,6 +64,7 @@ fun Header(
     selected: Tab,
     onSelect: (Tab) -> Unit,
     requesters: Map<Tab, FocusRequester>,
+    connectivity: ConnectivityStatus,
     modifier: Modifier = Modifier,
 ) {
     Row(
@@ -66,17 +78,20 @@ fun Header(
                     tab = tab,
                     selected = tab == selected,
                     onSelect = { onSelect(tab) },
+                    struck = tab.needsInternet && connectivity.offline,
                     modifier = Modifier.focusRequester(requesters.getValue(tab)),
                 )
             }
         }
         Spacer(Modifier.weight(1f))
+        ConnectivityPill(connectivity.state)
+        Spacer(Modifier.width(16.dp))
         Clock()
     }
 }
 
 @Composable
-private fun TabPill(tab: Tab, selected: Boolean, onSelect: () -> Unit, modifier: Modifier) {
+private fun TabPill(tab: Tab, selected: Boolean, onSelect: () -> Unit, struck: Boolean, modifier: Modifier) {
     val container = if (selected) Lune else Color.Transparent
     val content = if (selected) Nuit else LuneAttenuee
     var focused by remember { mutableStateOf(false) }
@@ -102,8 +117,27 @@ private fun TabPill(tab: Tab, selected: Boolean, onSelect: () -> Unit, modifier:
         Text(
             text = tab.label,
             style = MaterialTheme.typography.titleMedium,
+            textDecoration = if (struck) TextDecoration.LineThrough else null,
             modifier = Modifier.padding(horizontal = 14.dp, vertical = 6.dp),
         )
+    }
+}
+
+/** Voyant d'état, affiché seulement quand quelque chose ne va pas (pas encore d'état du Pi). */
+@Composable
+private fun ConnectivityPill(state: NetworkState) {
+    val (label, dot) = when (state) {
+        NetworkState.NoInternet -> "Pas d'internet" to Focus
+        NetworkState.NoNetwork -> "Pas de réseau" to Alerte
+        NetworkState.Online, NetworkState.Unknown -> return
+    }
+    Row(
+        modifier = Modifier.background(dot.copy(alpha = 0.22f), NimbeFocus.PillShape).padding(horizontal = 14.dp, vertical = 7.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Box(Modifier.size(8.dp).background(dot, CircleShape))
+        Text(label, style = MaterialTheme.typography.titleSmall, color = Lune)
     }
 }
 

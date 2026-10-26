@@ -18,6 +18,7 @@ import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.unit.dp
 import androidx.tv.material3.MaterialTheme
 import androidx.tv.material3.Text
+import io.github.touya0.nimbe.core.network.InternetApps
 import io.github.touya0.nimbe.ui.components.KeyHints
 import io.github.touya0.nimbe.ui.components.bleed
 import io.github.touya0.nimbe.ui.theme.LuneAttenuee
@@ -30,6 +31,7 @@ fun AppsScreen(
     onOpen: (InstalledApp) -> Unit,
     onMenu: (InstalledApp, FocusRequester) -> Unit,
     onShowHidden: (FocusRequester) -> Unit,
+    offline: Boolean,
     modifier: Modifier = Modifier,
 ) {
     Column(modifier.fillMaxSize().padding(horizontal = 48.dp)) {
@@ -66,6 +68,7 @@ fun AppsScreen(
                             app = app,
                             onClick = { onOpen(app) },
                             onMenu = { requester -> onMenu(app, requester) },
+                            offline = offline && InternetApps.needsInternet(app.packageName),
                             modifier = Modifier.animateItem(),
                         )
                     }

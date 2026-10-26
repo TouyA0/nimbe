@@ -8,6 +8,9 @@
         android:name="android.software.leanback"
         android:required="false" />
 
+    <!-- Savoir si le stick a du réseau et internet, pour l'écran « Pas d'internet ». -->
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+
     <!-- Ouvrir l'écran de désinstallation d'Android (qui demande lui-même confirmation). -->
     <uses-permission android:name="android.permission.REQUEST_DELETE_PACKAGES" />
 

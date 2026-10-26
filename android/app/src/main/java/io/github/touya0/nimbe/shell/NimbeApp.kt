@@ -17,6 +17,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import io.github.touya0.nimbe.core.network.ConnectivityMonitor
+import io.github.touya0.nimbe.core.network.rememberConnectivity
 import io.github.touya0.nimbe.core.storage.LauncherPrefs
 import io.github.touya0.nimbe.feature.apps.AppActions
 import io.github.touya0.nimbe.feature.apps.AppLauncher
@@ -34,7 +36,12 @@ import io.github.touya0.nimbe.ui.theme.Nuit
 import kotlinx.coroutines.launch
 
 @Composable
-fun NimbeApp(repository: AppsRepository, prefs: LauncherPrefs, launcher: AppLauncher) {
+fun NimbeApp(
+    repository: AppsRepository,
+    prefs: LauncherPrefs,
+    launcher: AppLauncher,
+    connectivityMonitor: ConnectivityMonitor,
+) {
     var tab by rememberSaveable { mutableStateOf(Tab.Home) }
     val requesters = remember { Tab.entries.associateWith { FocusRequester() } }
     fun focusTab(target: Tab) {
@@ -43,6 +50,7 @@ fun NimbeApp(repository: AppsRepository, prefs: LauncherPrefs, launcher: AppLaun
     }
 
     val apps = rememberInstalledApps(repository)
+    val connectivity by rememberConnectivity(connectivityMonitor)
     // null tant que les réglages ne sont pas lus : on n'affiche pas un dock par défaut qui changerait aussitôt.
     val savedDock by prefs.dock.collectAsStateWithLifecycle(initialValue = null)
     val hidden by prefs.hidden.collectAsStateWithLifecycle(initialValue = emptySet())
@@ -85,7 +93,7 @@ fun NimbeApp(repository: AppsRepository, prefs: LauncherPrefs, launcher: AppLaun
 
     MenuHost(menu) {
         Column(Modifier.fillMaxSize().background(Nuit)) {
-            Header(selected = tab, onSelect = { tab = it }, requesters = requesters)
+            Header(selected = tab, onSelect = { tab = it }, requesters = requesters, connectivity = connectivity)
             Box(Modifier.weight(1f).fillMaxWidth()) {
                 when (tab) {
                     Tab.Home -> HomeScreen(
@@ -93,12 +101,15 @@ fun NimbeApp(repository: AppsRepository, prefs: LauncherPrefs, launcher: AppLaun
                         onOpen = launcher::open,
                         onMenu = { app, back -> menu.open(appMenu(app, dockPackages, actions, back)) },
                         onAllApps = { focusTab(Tab.Apps) },
+                        connectivity = connectivity,
+                        onNetworkSettings = launcher::openNetworkSettings,
                     )
                     Tab.Apps -> AppsScreen(
                         apps = visibleApps,
                         hiddenCount = apps?.count { it.packageName in hidden } ?: 0,
                         onOpen = launcher::open,
                         onMenu = { app, back -> menu.open(appMenu(app, dockPackages, actions, back)) },
+                        offline = connectivity.offline,
                         onShowHidden = { back ->
                             val hiddenApps = apps.orEmpty().filter { it.packageName in hidden }
                             menu.open(

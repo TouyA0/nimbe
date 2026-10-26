@@ -17,6 +17,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
@@ -45,6 +46,7 @@ fun tileColor(packageName: String): Color = TileColors[Math.floorMod(packageName
 /**
  * Tuile d'une appli. [onMenu] s'ouvre avec la touche Menu ou un appui long sur OK
  * (la télécommande Xiaomi n'a pas de touche Menu) ; il reçoit de quoi rendre le focus à la tuile.
+ * [offline] : l'appli a besoin d'internet et il n'y en a plus ; elle reste ouvrable mais grisée.
  */
 @Composable
 fun AppTile(
@@ -52,8 +54,15 @@ fun AppTile(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
     onMenu: ((FocusRequester) -> Unit)? = null,
+    offline: Boolean = false,
 ) {
-    TileSurface(color = tileColor(app.packageName), onClick = onClick, onMenu = onMenu, modifier = modifier) {
+    TileSurface(
+        color = tileColor(app.packageName),
+        onClick = onClick,
+        onMenu = onMenu,
+        modifier = modifier,
+        dimmed = offline,
+    ) {
         val badge = Modifier.size(36.dp).clip(RoundedCornerShape(8.dp))
         if (app.icon != null) {
             Image(bitmap = app.icon, contentDescription = null, modifier = badge)
@@ -70,7 +79,9 @@ fun AppTile(
                 overflow = TextOverflow.Ellipsis,
             )
             // Android ne connaît la catégorie que si l'appli la déclare : on n'affiche pas « Autres ».
-            if (app.category != AppCategory.Other) {
+            if (offline) {
+                Text(text = "Hors ligne", style = MaterialTheme.typography.labelMedium, color = LuneAttenuee)
+            } else if (app.category != AppCategory.Other) {
                 Text(text = app.category.label, style = MaterialTheme.typography.labelMedium, color = LuneAttenuee)
             }
         }
@@ -103,10 +114,12 @@ private fun TileSurface(
     onClick: () -> Unit,
     onMenu: ((FocusRequester) -> Unit)?,
     modifier: Modifier,
+    dimmed: Boolean = false,
     content: @Composable () -> Unit,
 ) {
     var focused by remember { mutableStateOf(false) }
     val requester = remember { FocusRequester() }
+    val background = if (dimmed) color.copy(alpha = 0.4f) else color
     Surface(
         onClick = onClick,
         onLongClick = onMenu?.let { { it(requester) } },
@@ -125,16 +138,16 @@ private fun TileSurface(
             .focusRing(focused, NimbeFocus.CardRadius),
         shape = ClickableSurfaceDefaults.shape(NimbeFocus.CardShape),
         colors = ClickableSurfaceDefaults.colors(
-            containerColor = color,
+            containerColor = background,
             contentColor = Lune,
-            focusedContainerColor = color,
+            focusedContainerColor = background,
             focusedContentColor = Lune,
-            pressedContainerColor = color,
+            pressedContainerColor = background,
         ),
         scale = ClickableSurfaceDefaults.scale(focusedScale = 1f),
     ) {
         Row(
-            modifier = Modifier.padding(horizontal = 12.dp).height(64.dp),
+            modifier = Modifier.padding(horizontal = 12.dp).height(64.dp).alpha(if (dimmed) 0.45f else 1f),
             horizontalArrangement = Arrangement.spacedBy(10.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) { content() }
