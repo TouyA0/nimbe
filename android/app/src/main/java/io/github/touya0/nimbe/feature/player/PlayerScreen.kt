@@ -27,6 +27,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
@@ -65,6 +66,10 @@ import androidx.tv.material3.Surface
 import androidx.tv.material3.Text
 import io.github.touya0.nimbe.data.jellyfin.ItemKind
 import io.github.touya0.nimbe.data.jellyfin.JellyfinAccount
+import io.github.touya0.nimbe.data.jellyfin.JellyfinException
+import io.github.touya0.nimbe.data.jellyfin.MediaItem
+import io.github.touya0.nimbe.feature.media.JellyfinImage
+import io.github.touya0.nimbe.feature.media.LocalJellyfin
 import io.github.touya0.nimbe.feature.media.MediaText
 import io.github.touya0.nimbe.ui.components.PillButton
 import io.github.touya0.nimbe.ui.components.Spinner
@@ -85,7 +90,7 @@ import kotlinx.coroutines.withTimeoutOrNull
 import java.time.LocalTime
 import java.time.format.DateTimeFormatter
 
-private enum class Panel { Tracks }
+private enum class Panel { Tracks, Sleep }
 
 /** Où poser le focus quand les commandes apparaissent. */
 private enum class Target { Play, Seek }
@@ -94,13 +99,29 @@ private enum class Target { Play, Seek }
  * Lecteur plein écran. Commandes cachées : OK met en pause, gauche et droite reculent de 10 s
  * ou avancent de 30 s, haut et bas font apparaître les commandes. Retour referme le panneau,
  * puis les commandes, puis quitte la lecture (la position est envoyée au serveur).
+ *
+ * Pour un épisode, la suite est proposée pendant le générique et se lance après 10 s ([onNext]
+ * reçoit aussi le nombre d'épisodes vus sans toucher la télécommande). [sleepTimer] arrête la lecture
+ * à l'heure dite ; il est gardé par l'appelant pour survivre au passage à l'épisode suivant.
  */
 @Composable
-fun PlayerScreen(request: PlayRequest, account: JellyfinAccount, reportScope: CoroutineScope, onClose: () -> Unit) {
+fun PlayerScreen(
+    request: PlayRequest,
+    account: JellyfinAccount,
+    reportScope: CoroutineScope,
+    untouchedBefore: Int,
+    sleepTimer: SleepTimer?,
+    onSleepTimerChange: (SleepTimer?) -> Unit,
+    onNext: (PlayRequest, Int) -> Unit,
+    onClose: () -> Unit,
+) {
     val context = LocalContext.current
     val controller = remember { PlayerController(context.applicationContext, account, request, reportScope) }
+    val library = LocalJellyfin.current?.library
     val scope = rememberCoroutineScope()
     var closing by remember { mutableStateOf(false) }
+    var touched by remember { mutableStateOf(false) }
+    val untouched = NextUpRule.untouched(untouchedBefore, touched)
 
     // Le rapport d'arrêt est attendu (2 s au plus) : l'écran d'où l'on vient affichera la bonne position.
     fun exit() {
@@ -113,15 +134,97 @@ fun PlayerScreen(request: PlayRequest, account: JellyfinAccount, reportScope: Co
         }
     }
 
+    fun advance(next: MediaItem) {
+        if (closing) return
+        closing = true
+        val report = controller.stop()
+        // Un épisode entamé reprend où il en était ; sinon, depuis le début.
+        val start = if (ResumeRule.shouldAsk(next)) next.positionTicks else 0
+        scope.launch {
+            withTimeoutOrNull(2_000) { report?.join() }
+            onNext(PlayRequest(next, start), untouched)
+        }
+    }
+
+    // Arrêt du minuteur : on quitte la lecture et l'écran peut de nouveau se mettre en veille.
+    fun sleepNow() {
+        onSleepTimerChange(null)
+        exit()
+    }
+
     LaunchedEffect(Unit) { controller.open() }
     LaunchedEffect(Unit) { controller.reportProgressPeriodically() }
     DisposableEffect(Unit) { onDispose { controller.stop() } }
     LifecycleEventEffect(Lifecycle.Event.ON_STOP) { exit() }
-    LaunchedEffect(controller.status) { if (controller.status == PlayerStatus.Ended) exit() }
+
+    // Épisode suivant et début du générique, demandés une fois au serveur.
+    val next by produceState<MediaItem?>(null) {
+        if (request.item.kind != ItemKind.Episode || library == null) return@produceState
+        val auth = library.auth() ?: return@produceState
+        value = try {
+            library.nextEpisode(auth, request.item)
+        } catch (_: JellyfinException) {
+            null
+        }
+    }
+    val outroMs by produceState<Long?>(null) {
+        if (request.item.kind != ItemKind.Episode || library == null) return@produceState
+        val auth = library.auth() ?: return@produceState
+        value = library.outroStartTicks(auth, request.item.id)?.let { it / PlayerController.TICKS_PER_MS }
+    }
+    val now by produceState(System.currentTimeMillis()) {
+        while (true) {
+            delay(1_000)
+            value = System.currentTimeMillis()
+        }
+    }
     val view = LocalView.current
     DisposableEffect(view) {
         view.keepScreenOn = true
         onDispose { view.keepScreenOn = false }
+    }
+
+    val position by produceState(request.startTicks / PlayerController.TICKS_PER_MS, controller.player) {
+        while (true) {
+            value = controller.positionMs
+            delay(500)
+        }
+    }
+
+    // Carte « épisode suivant » : pendant le générique, sauf si l'on a annulé ou demandé l'arrêt à la fin.
+    var nextCancelled by remember { mutableStateOf(false) }
+    val showNextAt = NextUpRule.showAtMs(controller.durationMs, outroMs)
+    val nextItem = next
+    val nextCard = nextItem != null && !nextCancelled && sleepTimer != SleepTimer.EndOfItem &&
+        showNextAt != null && position >= showNextAt && controller.status == PlayerStatus.Playing
+    val askStillWatching = NextUpRule.askStillWatching(untouched)
+    var countdown by remember { mutableIntStateOf(NextUpRule.COUNTDOWN_SECONDS) }
+    LaunchedEffect(nextCard, askStillWatching) {
+        if (!nextCard || askStillWatching || nextItem == null) return@LaunchedEffect
+        countdown = NextUpRule.COUNTDOWN_SECONDS
+        while (countdown > 0) {
+            delay(1_000)
+            countdown--
+        }
+        advance(nextItem)
+    }
+    LaunchedEffect(controller.status) {
+        if (controller.status != PlayerStatus.Ended) return@LaunchedEffect
+        when {
+            sleepTimer == SleepTimer.EndOfItem -> sleepNow()
+            nextItem != null && !nextCancelled && !askStillWatching -> advance(nextItem)
+            else -> exit()
+        }
+    }
+
+    // Minuteur de veille : avertissement 60 s avant, puis arrêt.
+    val sleepRemaining = sleepTimer?.let { SleepTimer.remainingMs(it, now) }
+    var warningDismissed by remember(sleepTimer) { mutableStateOf(false) }
+    val sleepWarning = sleepRemaining != null && sleepRemaining <= SleepTimer.WARNING_MS && !warningDismissed
+    LaunchedEffect(sleepTimer) {
+        val timer = sleepTimer as? SleepTimer.At ?: return@LaunchedEffect
+        delay(SleepTimer.remainingMs(timer) ?: 0)
+        sleepNow()
     }
 
     var overlay by remember { mutableStateOf(true) }
@@ -139,10 +242,14 @@ fun PlayerScreen(request: PlayRequest, account: JellyfinAccount, reportScope: Co
         overlay = true
     }
 
-    LaunchedEffect(overlay, target, panel) {
+    val cardFocus = remember { FocusRequester() }
+    val warningFocus = remember { FocusRequester() }
+    LaunchedEffect(overlay, target, panel, nextCard, sleepWarning) {
         if (panel != null) return@LaunchedEffect
         runCatching {
             when {
+                nextCard -> cardFocus.requestFocus()
+                sleepWarning -> warningFocus.requestFocus()
                 !overlay -> rootFocus.requestFocus()
                 target == Target.Seek -> seekFocus.requestFocus()
                 else -> playFocus.requestFocus()
@@ -159,6 +266,8 @@ fun PlayerScreen(request: PlayRequest, account: JellyfinAccount, reportScope: Co
     BackHandler {
         when {
             panel != null -> panel = null
+            nextCard -> nextCancelled = true
+            sleepWarning -> warningDismissed = true
             overlay && controller.status !is PlayerStatus.Failed -> overlay = false
             else -> exit()
         }
@@ -174,6 +283,7 @@ fun PlayerScreen(request: PlayRequest, account: JellyfinAccount, reportScope: Co
         }
         if (event.type != KeyEventType.KeyDown) return false
         lastInteraction = System.currentTimeMillis()
+        touched = true
         when (event.key) {
             Key.MediaPlayPause -> controller.togglePause()
             Key.MediaPlay -> controller.player?.play()
@@ -182,7 +292,7 @@ fun PlayerScreen(request: PlayRequest, account: JellyfinAccount, reportScope: Co
             Key.MediaRewind -> controller.seekBy(-PlayerController.SEEK_BACK_MS)
             Key.MediaStop -> exit()
             else -> {
-                if (overlay || panel != null || controller.status is PlayerStatus.Failed) return false
+                if (overlay || panel != null || nextCard || sleepWarning || controller.status is PlayerStatus.Failed) return false
                 when (event.key) {
                     Key.DirectionCenter, Key.Enter, Key.NumPadEnter -> {
                         controller.togglePause()
@@ -204,13 +314,6 @@ fun PlayerScreen(request: PlayRequest, account: JellyfinAccount, reportScope: Co
             }
         }
         return true
-    }
-
-    val position by produceState(request.startTicks / PlayerController.TICKS_PER_MS, controller.player) {
-        while (true) {
-            value = controller.positionMs
-            delay(500)
-        }
     }
 
     Box(
@@ -236,11 +339,39 @@ fun PlayerScreen(request: PlayRequest, account: JellyfinAccount, reportScope: Co
                 playFocus = playFocus,
                 seekFocus = seekFocus,
                 onTracks = { panel = Panel.Tracks },
+                sleepLabel = sleepLabel(sleepTimer, sleepRemaining, request.item),
+                onSleep = { panel = Panel.Sleep },
                 onQuit = ::exit,
                 onInteraction = { lastInteraction = System.currentTimeMillis() },
             )
         }
         if (panel == Panel.Tracks) TracksPanel(controller, onDone = { panel = null })
+        if (panel == Panel.Sleep) {
+            SleepPanel(sleepTimer, request.item, onChoose = {
+                onSleepTimerChange(it)
+                panel = null
+            })
+        }
+        if (nextCard && nextItem != null) {
+            NextUpCard(
+                next = nextItem,
+                countdown = countdown,
+                askStillWatching = askStillWatching,
+                untouched = untouched,
+                focus = cardFocus,
+                onPlay = { advance(nextItem) },
+                onCancel = { nextCancelled = true },
+                onStop = ::exit,
+            )
+        }
+        if (sleepWarning && sleepRemaining != null) {
+            SleepWarning(
+                remainingMs = sleepRemaining,
+                focus = warningFocus,
+                onExtend = { onSleepTimerChange(SleepTimer.inMinutes(15)) },
+                onDismiss = { warningDismissed = true },
+            )
+        }
         if (status is PlayerStatus.Failed) {
             Failure(
                 message = status.message,
@@ -283,6 +414,8 @@ private fun BoxScope.Controls(
     playFocus: FocusRequester,
     seekFocus: FocusRequester,
     onTracks: () -> Unit,
+    sleepLabel: String,
+    onSleep: () -> Unit,
     onQuit: () -> Unit,
     onInteraction: () -> Unit,
 ) {
@@ -339,7 +472,8 @@ private fun BoxScope.Controls(
                 val audio = controller.audioTracks.firstOrNull { it.selected }?.let { listOfNotNull(it.label, it.detail).joinToString(" ") } ?: "—"
                 PillButton("Sous-titres : $subtitle", onClick = onTracks)
                 PillButton("Audio : $audio", onClick = onTracks)
-                controller.source?.let { PillButton("Qualité : ${it.method.label}", onClick = {}) }
+                controller.source?.let { PillButton("Lecture ${it.method.label}", onClick = {}) }
+                PillButton(sleepLabel, onClick = onSleep)
                 PillButton("Quitter la lecture", onClick = onQuit)
             }
         }
@@ -481,6 +615,129 @@ private fun BoxScope.Failure(message: String, onRetry: () -> Unit, onQuit: () ->
         Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             PillButton("Réessayer", onClick = onRetry, modifier = Modifier.focusRequester(retry))
             PillButton("Quitter la lecture", onClick = onQuit)
+        }
+    }
+}
+
+/** « Minuteur de veille », « Minuteur : 23 min » ou « Minuteur : fin de l'épisode ». */
+private fun sleepLabel(timer: SleepTimer?, remainingMs: Long?, item: MediaItem): String = when (timer) {
+    null -> "Minuteur de veille"
+    SleepTimer.EndOfItem -> "Minuteur : ${endOfItem(item)}"
+    is SleepTimer.At -> "Minuteur : ${((remainingMs ?: 0) + 59_999) / 60_000} min"
+}
+
+private fun endOfItem(item: MediaItem) = if (item.kind == ItemKind.Episode) "fin de l'épisode" else "fin du film"
+
+/** Choix du minuteur : désactivé, 15 à 60 min, ou fin du contenu. */
+@Composable
+private fun BoxScope.SleepPanel(current: SleepTimer?, item: MediaItem, onChoose: (SleepTimer?) -> Unit) {
+    val first = remember { FocusRequester() }
+    LaunchedEffect(Unit) { runCatching { first.requestFocus() } }
+    Column(
+        Modifier
+            .align(Alignment.CenterEnd)
+            .padding(32.dp)
+            .width(340.dp)
+            .background(Panneau.copy(alpha = 0.96f), RoundedCornerShape(16.dp))
+            .border(1.dp, PanneauClair, RoundedCornerShape(16.dp))
+            .padding(18.dp),
+        verticalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
+        Text("Minuteur de veille", style = MaterialTheme.typography.headlineSmall)
+        Text("La lecture s'arrête et la TV peut se mettre en veille.", style = MaterialTheme.typography.bodyMedium, color = LuneAttenuee)
+        TrackRow(
+            TrackChoice("Désactivé", null, null, 0, selected = current == null),
+            onClick = { onChoose(null) },
+            modifier = Modifier.focusRequester(first),
+        )
+        SleepTimer.MINUTES.forEach { minutes ->
+            TrackRow(
+                TrackChoice("$minutes min", null, null, 0, selected = (current as? SleepTimer.At)?.minutes == minutes),
+                onClick = { onChoose(SleepTimer.inMinutes(minutes)) },
+            )
+        }
+        TrackRow(
+            TrackChoice(endOfItem(item).replaceFirstChar { it.uppercase() }, null, null, 0, selected = current == SleepTimer.EndOfItem),
+            onClick = { onChoose(SleepTimer.EndOfItem) },
+        )
+    }
+}
+
+/**
+ * Carte en bas à droite pendant le générique : l'épisode suivant se lance seul après le compte à rebours.
+ * Après plusieurs épisodes sans toucher la télécommande, elle demande « Tu regardes toujours ? » et n'avance plus seule.
+ */
+@Composable
+private fun BoxScope.NextUpCard(
+    next: MediaItem,
+    countdown: Int,
+    askStillWatching: Boolean,
+    untouched: Int,
+    focus: FocusRequester,
+    onPlay: () -> Unit,
+    onCancel: () -> Unit,
+    onStop: () -> Unit,
+) {
+    Column(
+        Modifier
+            .align(Alignment.BottomEnd)
+            .padding(40.dp)
+            .width(440.dp)
+            .background(Panneau.copy(alpha = 0.96f), RoundedCornerShape(16.dp))
+            .border(1.dp, PanneauClair, RoundedCornerShape(16.dp))
+            .padding(18.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        if (askStillWatching) {
+            Text("Tu regardes toujours ?", style = MaterialTheme.typography.headlineSmall)
+            Text(
+                "$untouched épisodes d'affilée sans toucher la télécommande. À suivre : ${next.episodeCode ?: next.name}.",
+                style = MaterialTheme.typography.bodyMedium,
+                color = LuneAttenuee,
+            )
+            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                PillButton("Continuer", onClick = onPlay, modifier = Modifier.focusRequester(focus))
+                PillButton("Arrêter", onClick = onStop)
+            }
+        } else {
+            Row(horizontalArrangement = Arrangement.spacedBy(14.dp), verticalAlignment = Alignment.CenterVertically) {
+                Box(Modifier.width(150.dp).height(84.dp).background(PanneauClair, RoundedCornerShape(8.dp))) {
+                    JellyfinImage(next.primary ?: next.thumb ?: next.backdrop, width = 150.dp, height = null, modifier = Modifier.fillMaxSize())
+                }
+                Column(Modifier.weight(1f)) {
+                    Text("ÉPISODE SUIVANT", style = MaterialTheme.typography.labelMedium, color = Focus)
+                    Text(next.episodeCode ?: "", style = MaterialTheme.typography.titleSmall)
+                    Text(next.name, style = MaterialTheme.typography.titleMedium, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                }
+            }
+            Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
+                PillButton("▶  Lire maintenant", onClick = onPlay, modifier = Modifier.focusRequester(focus))
+                PillButton("Annuler", onClick = onCancel)
+                Spacer(Modifier.weight(1f))
+                Text("Dans $countdown s", style = MaterialTheme.typography.titleSmall, color = LuneAttenuee)
+            }
+        }
+    }
+}
+
+/** Avertissement 60 s avant l'arrêt du minuteur, avec de quoi prolonger. */
+@Composable
+private fun BoxScope.SleepWarning(remainingMs: Long, focus: FocusRequester, onExtend: () -> Unit, onDismiss: () -> Unit) {
+    Column(
+        Modifier
+            .align(Alignment.TopEnd)
+            .padding(40.dp)
+            .width(380.dp)
+            .background(Panneau.copy(alpha = 0.96f), RoundedCornerShape(16.dp))
+            .border(1.dp, Focus.copy(alpha = 0.4f), RoundedCornerShape(16.dp))
+            .padding(18.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+        Text("Arrêt dans ${PlayerText.time(remainingMs)}", style = MaterialTheme.typography.headlineSmall)
+        Text("Le minuteur de veille va arrêter la lecture.", style = MaterialTheme.typography.bodyMedium, color = LuneAttenuee)
+        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            PillButton("Encore 15 min", onClick = onExtend, modifier = Modifier.focusRequester(focus))
+            PillButton("OK", onClick = onDismiss)
         }
     }
 }

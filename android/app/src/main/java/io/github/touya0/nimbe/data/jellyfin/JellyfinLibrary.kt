@@ -95,6 +95,24 @@ class JellyfinLibrary(private val account: JellyfinAccount) {
         page(auth, "/Shows/NextUp", mapOf("seriesId" to seriesId, "limit" to 1, "enableResumable" to true)).items
     }
 
+    /** L'épisode qui suit [episode] dans sa série, saisons suivantes comprises ; null en fin de série. */
+    suspend fun nextEpisode(auth: JellyfinAuth, episode: MediaItem): MediaItem? {
+        val seriesId = episode.seriesId ?: return null
+        val items = page(auth, "/Shows/$seriesId/Episodes", mapOf("startItemId" to episode.id, "limit" to 2)).items
+        return items.firstOrNull { it.id != episode.id }
+    }
+
+    /** Début du générique de fin (ticks), si le serveur le connaît ; null sinon, ou en cas d'échec. */
+    suspend fun outroStartTicks(auth: JellyfinAuth, itemId: String): Long? = try {
+        val response = account.api.get(auth, "/MediaSegments/$itemId", mapOf("includeSegmentTypes" to "Outro")) as? JSONObject
+        val segments = response?.optJSONArray("Items")
+        (0 until (segments?.length() ?: 0)).mapNotNull { segments?.optJSONObject(it) }
+            .filter { it.optString("Type") == "Outro" }
+            .minOfOrNull { it.optLong("StartTicks") }
+    } catch (_: JellyfinException) {
+        null
+    }
+
     suspend fun item(auth: JellyfinAuth, id: String): MediaItem = remember(auth, "item:$id") {
         JellyfinJson.item(account.api.get(auth, "/Items/$id", mapOf("userId" to auth.userId, "fields" to FIELDS)) as JSONObject)
     }

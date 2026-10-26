@@ -7,9 +7,9 @@ import org.json.JSONObject
 data class DeviceCapabilities(val videoCodecs: Set<String>, val audioCodecs: Set<String>)
 
 enum class PlayMethod(val jellyfin: String, val label: String) {
-    DirectPlay("DirectPlay", "Lecture directe"),
-    DirectStream("DirectStream", "Flux direct"),
-    Transcode("Transcode", "Transcodé par le serveur"),
+    DirectPlay("DirectPlay", "directe"),
+    DirectStream("DirectStream", "flux direct"),
+    Transcode("Transcode", "transcodée"),
 }
 
 /** Sous-titre texte servi à part par Jellyfin (fichier .srt à côté du film, par exemple). */

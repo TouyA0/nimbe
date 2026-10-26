@@ -5,6 +5,9 @@ import io.github.touya0.nimbe.feature.player.PlayRequest
 import io.github.touya0.nimbe.feature.player.PlayerScreen
 import io.github.touya0.nimbe.feature.player.ResumeDialog
 import io.github.touya0.nimbe.feature.player.ResumeRule
+import io.github.touya0.nimbe.feature.player.SleepTimer
+import androidx.compose.runtime.key
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.CompositionLocalProvider
 import io.github.touya0.nimbe.data.jellyfin.JellyfinLibrary
 import io.github.touya0.nimbe.data.jellyfin.JellyfinLink
@@ -204,6 +207,9 @@ private fun NimbeShell(
     // Lecture : par-dessus tout le reste. Une carte entamée demande d'abord « Reprendre ou recommencer ».
     var playing by remember { mutableStateOf<PlayRequest?>(null) }
     var askResume by remember { mutableStateOf<MediaItem?>(null) }
+    // Gardés d'un épisode à l'autre : épisodes vus sans toucher la télécommande, minuteur de veille.
+    var untouchedEpisodes by remember { mutableIntStateOf(0) }
+    var sleepTimer by remember { mutableStateOf<SleepTimer?>(null) }
     fun requestPlay(item: MediaItem) {
         restoreFocusId = item.id
         if (ResumeRule.shouldAsk(item)) askResume = item else playing = ResumeRule.direct(item)
@@ -213,7 +219,27 @@ private fun NimbeShell(
         playing = if (fromStart || !item.resumable) PlayRequest(item, 0) else ResumeRule.resume(item)
     }
     playing?.let { request ->
-        PlayerScreen(request, jellyfin, (context.applicationContext as NimbeApplication).scope, onClose = { playing = null })
+        // Une clé par contenu : passer à l'épisode suivant crée un nouveau lecteur.
+        key(request) {
+            PlayerScreen(
+                request = request,
+                account = jellyfin,
+                reportScope = (context.applicationContext as NimbeApplication).scope,
+                untouchedBefore = untouchedEpisodes,
+                sleepTimer = sleepTimer,
+                onSleepTimerChange = { sleepTimer = it },
+                onNext = { next, untouched ->
+                    untouchedEpisodes = untouched
+                    restoreFocusId = next.item.id
+                    playing = next
+                },
+                onClose = {
+                    playing = null
+                    untouchedEpisodes = 0
+                    sleepTimer = null
+                },
+            )
+        }
         return
     }
     askResume?.let { item ->
