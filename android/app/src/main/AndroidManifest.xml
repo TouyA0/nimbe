@@ -18,9 +18,15 @@
             <action android:name="android.intent.action.MAIN" />
             <category android:name="android.intent.category.LAUNCHER" />
         </intent>
+        <!-- Trouver l'accueil d'origine, pour l'écran Secours. -->
+        <intent>
+            <action android:name="android.intent.action.MAIN" />
+            <category android:name="android.intent.category.HOME" />
+        </intent>
     </queries>
 
     <application
+        android:name=".NimbeApplication"
         android:allowBackup="false"
         android:banner="@mipmap/ic_launcher"
         android:icon="@mipmap/ic_launcher"

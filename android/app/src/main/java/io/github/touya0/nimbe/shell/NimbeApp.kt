@@ -11,19 +11,17 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
-import androidx.lifecycle.compose.LifecycleResumeEffect
 import io.github.touya0.nimbe.feature.apps.AppsRepository
 import io.github.touya0.nimbe.feature.apps.AppsScreen
 import io.github.touya0.nimbe.feature.apps.InstalledApp
+import io.github.touya0.nimbe.feature.apps.rememberInstalledApps
 import io.github.touya0.nimbe.feature.home.ComingSoonScreen
 import io.github.touya0.nimbe.feature.home.HomeScreen
 import io.github.touya0.nimbe.ui.theme.Nuit
-import kotlinx.coroutines.launch
 
 @Composable
 fun NimbeApp(repository: AppsRepository, onOpen: (InstalledApp) -> Unit) {
@@ -34,13 +32,7 @@ fun NimbeApp(repository: AppsRepository, onOpen: (InstalledApp) -> Unit) {
         runCatching { requesters.getValue(target).requestFocus() }
     }
 
-    // Recharge la liste à chaque retour sur le launcher : une appli a pu être installée ou retirée.
-    var apps by remember { mutableStateOf<List<InstalledApp>?>(null) }
-    val scope = rememberCoroutineScope()
-    LifecycleResumeEffect(repository) {
-        val job = scope.launch { apps = repository.load() }
-        onPauseOrDispose { job.cancel() }
-    }
+    val apps = rememberInstalledApps(repository)
 
     // Retour ramène à l'Accueil ; sur l'Accueil, il ne fait rien : c'est l'écran d'accueil du stick.
     BackHandler { focusTab(Tab.Home) }
