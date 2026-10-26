@@ -1,4 +1,9 @@
 <resources>
 
-    <style name="Theme.Nimbe" parent="Theme.AppCompat.DayNight.NoActionBar" />
+    <!-- Fond Nuit dès le démarrage, pour éviter un éclair blanc avant l'affichage de Compose. -->
+    <style name="Theme.Nimbe" parent="android:Theme.DeviceDefault.NoActionBar">
+        <item name="android:windowBackground">@color/nuit</item>
+        <item name="android:statusBarColor">@color/nuit</item>
+        <item name="android:navigationBarColor">@color/nuit</item>
+    </style>
 </resources>

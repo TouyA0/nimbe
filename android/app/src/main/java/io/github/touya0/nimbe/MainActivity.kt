@@ -1,47 +1,35 @@
 package io.github.touya0.nimbe
 
+import android.content.ActivityNotFoundException
 import android.os.Bundle
+import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.tv.material3.Text
-import androidx.compose.runtime.Composable
-import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.RectangleShape
-import androidx.compose.ui.tooling.preview.Preview
-import androidx.tv.material3.ExperimentalTvMaterial3Api
-import androidx.tv.material3.Surface
+import io.github.touya0.nimbe.feature.apps.AppsRepository
+import io.github.touya0.nimbe.feature.apps.InstalledApp
+import io.github.touya0.nimbe.shell.NimbeApp
 import io.github.touya0.nimbe.ui.theme.NimbeTheme
 
 class MainActivity : ComponentActivity() {
-    @OptIn(ExperimentalTvMaterial3Api::class)
+
+    private val apps by lazy { AppsRepository(applicationContext) }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContent {
             NimbeTheme {
-                Surface(
-                    modifier = Modifier.fillMaxSize(),
-                    shape = RectangleShape
-                ) {
-                    Greeting("Android")
-                }
+                NimbeApp(repository = apps, onOpen = ::open)
             }
         }
     }
-}
 
-@Composable
-fun Greeting(name: String, modifier: Modifier = Modifier) {
-    Text(
-        text = "Hello $name!",
-        modifier = modifier
-    )
-}
-
-@Preview(showBackground = true)
-@Composable
-fun GreetingPreview() {
-    NimbeTheme {
-        Greeting("Android")
+    private fun open(app: InstalledApp) {
+        val intent = apps.launchIntent(app.packageName)
+        try {
+            if (intent == null) throw ActivityNotFoundException()
+            startActivity(intent)
+        } catch (_: ActivityNotFoundException) {
+            Toast.makeText(this, "Impossible d'ouvrir ${app.label}", Toast.LENGTH_SHORT).show()
+        }
     }
 }

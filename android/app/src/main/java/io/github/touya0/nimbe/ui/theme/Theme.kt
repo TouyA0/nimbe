@@ -1,34 +1,42 @@
 package io.github.touya0.nimbe.ui.theme
 
-import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
-import androidx.tv.material3.ExperimentalTvMaterial3Api
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.ui.unit.dp
+import androidx.tv.material3.LocalContentColor
 import androidx.tv.material3.MaterialTheme
 import androidx.tv.material3.darkColorScheme
-import androidx.tv.material3.lightColorScheme
 
-@OptIn(ExperimentalTvMaterial3Api::class)
+// Nimbe n'a qu'un thème sombre : la TV est regardée le soir, dans le noir.
+private val NimbeColors = darkColorScheme(
+    primary = Focus,
+    onPrimary = Nuit,
+    background = Nuit,
+    onBackground = Lune,
+    surface = Panneau,
+    onSurface = Lune,
+    surfaceVariant = PanneauClair,
+    onSurfaceVariant = LuneAttenuee,
+    error = Alerte,
+    onError = Nuit,
+    border = Focus,
+)
+
 @Composable
-fun NimbeTheme(
-    isInDarkTheme: Boolean = isSystemInDarkTheme(),
-    content: @Composable () -> Unit,
-) {
-    val colorScheme = if (isInDarkTheme) {
-        darkColorScheme(
-            primary = Purple80,
-            secondary = PurpleGrey80,
-            tertiary = Pink80
-        )
-    } else {
-        lightColorScheme(
-            primary = Purple40,
-            secondary = PurpleGrey40,
-            tertiary = Pink40
-        )
+fun NimbeTheme(content: @Composable () -> Unit) {
+    MaterialTheme(colorScheme = NimbeColors, typography = Typography) {
+        // Texte en Lune par défaut, y compris hors d'une Surface.
+        CompositionLocalProvider(LocalContentColor provides Lune, content = content)
     }
-    MaterialTheme(
-        colorScheme = colorScheme,
-        typography = Typography,
-        content = content
-    )
+}
+
+// Système de focus de la maquette : un seul élément focalisé, agrandi de 8 %,
+// entouré d'un anneau ambre décalé de l'élément (voir ui/components/FocusRing.kt).
+object NimbeFocus {
+    const val SCALE = 1.08f
+    val CardRadius = 12.dp
+    val CardShape = RoundedCornerShape(CardRadius)
+    val PillRadius = 24.dp
+    val PillShape = RoundedCornerShape(PillRadius)
 }
