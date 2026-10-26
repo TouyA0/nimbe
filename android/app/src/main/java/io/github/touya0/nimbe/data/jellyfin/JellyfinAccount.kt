@@ -49,6 +49,11 @@ class JellyfinAccount(context: Context, private val vault: SecretVault) {
     /** null si la TV n'est pas connectée, ou si le jeton est devenu illisible. */
     suspend fun token(): String? = vault.get(TOKEN)
 
+    suspend fun auth(): JellyfinAuth? {
+        val current = link.first() ?: return null
+        return JellyfinAuth(current.serverUrl, current.userId, token() ?: return null)
+    }
+
     suspend fun save(serverUrl: String, server: ServerInfo, session: JellyfinSession) {
         // Le jeton d'abord : un compte enregistré sans jeton ferait croire à une connexion.
         vault.put(TOKEN, session.token)

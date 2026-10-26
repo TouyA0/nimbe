@@ -4,6 +4,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.json.JSONException
 import org.json.JSONObject
+import org.json.JSONTokener
 import java.io.IOException
 import java.net.HttpURLConnection
 import java.net.URL
@@ -16,6 +17,9 @@ data class ServerInfo(val id: String, val name: String, val version: String)
 
 /** Code à saisir sur le téléphone ; le secret reste sur la TV pour suivre la demande. */
 data class QuickConnectRequest(val code: String, val secret: String)
+
+/** De quoi faire une requête au nom de l'utilisateur connecté. */
+data class JellyfinAuth(val server: String, val userId: String, val token: String)
 
 /** Ce que renvoie une connexion réussie. Le jeton se révoque depuis Jellyfin (Tableau de bord → Appareils). */
 data class JellyfinSession(val token: String, val userId: String, val userName: String)
@@ -67,14 +71,39 @@ class JellyfinApi(private val client: suspend () -> ClientInfo) {
         call("POST", "$server/Sessions/Logout", token = token)
     }
 
+    /**
+     * Requête de lecture authentifiée ; renvoie un JSONObject ou un JSONArray selon la route.
+     * Les paramètres null sont omis. Un jeton révoqué lève [JellyfinException.Kind.Unauthorized].
+     */
+    suspend fun get(auth: JellyfinAuth, path: String, params: Map<String, Any?> = emptyMap()): Any {
+        val query = params.filterValues { it != null }.entries.joinToString("&") { (key, value) ->
+            "$key=${URLEncoder.encode(value.toString(), "UTF-8")}"
+        }
+        val text = request("GET", "${auth.server}$path" + if (query.isEmpty()) "" else "?$query", auth.token)
+        return try {
+            JSONTokener(text).nextValue()
+        } catch (_: JSONException) {
+            throw notJellyfin()
+        }
+    }
+
     private suspend fun call(method: String, url: String, token: String?, body: String? = null): JSONObject {
+        val text = request(method, url, token, body)
+        return try {
+            if (text.isBlank()) JSONObject() else JSONObject(text)
+        } catch (_: JSONException) {
+            throw notJellyfin()
+        }
+    }
+
+    private suspend fun request(method: String, url: String, token: String?, body: String? = null): String {
         val header = authorization(client(), token)
         return withContext(Dispatchers.IO) {
             val connection = try {
                 (URL(url).openConnection() as HttpURLConnection).apply {
                     requestMethod = method
                     connectTimeout = 5_000
-                    readTimeout = 10_000
+                    readTimeout = 15_000
                     instanceFollowRedirects = false
                     setRequestProperty("Authorization", header)
                     setRequestProperty("Accept", "application/json")
@@ -96,12 +125,9 @@ class JellyfinApi(private val client: suspend () -> ClientInfo) {
                         throw JellyfinException(JellyfinException.Kind.Unauthorized, "Accès refusé par Jellyfin")
                     code !in 200..299 -> throw JellyfinException(JellyfinException.Kind.Server, "Jellyfin a répondu $code")
                 }
-                val text = connection.inputStream.bufferedReader().use { it.readText() }
-                if (text.isBlank()) JSONObject() else JSONObject(text)
+                connection.inputStream.bufferedReader().use { it.readText() }
             } catch (e: JellyfinException) {
                 throw e
-            } catch (_: JSONException) {
-                throw notJellyfin()
             } catch (_: IOException) {
                 throw unreachable()
             } finally {

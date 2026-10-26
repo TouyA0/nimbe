@@ -1,5 +1,21 @@
 package io.github.touya0.nimbe.shell
 
+import android.widget.Toast
+import androidx.compose.runtime.CompositionLocalProvider
+import io.github.touya0.nimbe.data.jellyfin.JellyfinLibrary
+import io.github.touya0.nimbe.data.jellyfin.JellyfinLink
+import io.github.touya0.nimbe.data.jellyfin.MediaItem
+import io.github.touya0.nimbe.data.jellyfin.MovieSort
+import io.github.touya0.nimbe.feature.films.FilmDetailScreen
+import io.github.touya0.nimbe.feature.films.FilmsScreen
+import io.github.touya0.nimbe.feature.media.JellyfinUi
+import io.github.touya0.nimbe.feature.media.LocalJellyfin
+import io.github.touya0.nimbe.feature.media.MediaDestination
+import io.github.touya0.nimbe.feature.onboarding.JellyfinConnectScreen
+import io.github.touya0.nimbe.feature.series.SeriesDetailScreen
+import io.github.touya0.nimbe.feature.series.SeriesScreen
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.map
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
@@ -15,7 +31,10 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.foundation.focusGroup
+import androidx.compose.ui.focus.FocusDirection
 import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import io.github.touya0.nimbe.core.network.ConnectivityMonitor
@@ -46,8 +65,36 @@ import io.github.touya0.nimbe.update.UpdateScreen
 import io.github.touya0.nimbe.update.UpdateState
 import kotlinx.coroutines.launch
 
+/** Enveloppe pour distinguer « compte pas encore lu » (null) de « pas connecté ». */
+private data class Linked(val link: JellyfinLink?)
+
 @Composable
 fun NimbeApp(
+    repository: AppsRepository,
+    prefs: LauncherPrefs,
+    launcher: AppLauncher,
+    connectivityMonitor: ConnectivityMonitor,
+    launches: AppLaunchDao,
+    updates: UpdateController,
+    jellyfin: JellyfinAccount,
+    library: JellyfinLibrary,
+) {
+    val linked by remember(jellyfin) { jellyfin.link.map { Linked(it) } }.collectAsStateWithLifecycle(initialValue = null)
+    var jellyfinConnectOpen by rememberSaveable { mutableStateOf(false) }
+    val ui = remember(linked) {
+        JellyfinUi(library, linked?.link, linkKnown = linked != null, onConnect = { jellyfinConnectOpen = true })
+    }
+    CompositionLocalProvider(LocalJellyfin provides ui) {
+        if (jellyfinConnectOpen) {
+            JellyfinConnectScreen(jellyfin, linked?.link?.serverUrl, onClose = { jellyfinConnectOpen = false })
+        } else {
+            NimbeShell(repository, prefs, launcher, connectivityMonitor, launches, updates, jellyfin)
+        }
+    }
+}
+
+@Composable
+private fun NimbeShell(
     repository: AppsRepository,
     prefs: LauncherPrefs,
     launcher: AppLauncher,
@@ -141,9 +188,41 @@ fun NimbeApp(
         )
         return
     }
-    // À l'affichage, le focus va sur l'onglet ; au retour des réglages, sur la roue crantée.
+    // Fiche film ou série ouverte par-dessus les onglets ; au retour, sa carte reprend le focus.
+    var destination by remember { mutableStateOf<MediaDestination?>(null) }
+    var restoreFocusId by remember { mutableStateOf<String?>(null) }
+    var filmSort by rememberSaveable { mutableStateOf(MovieSort.Recent) }
+    fun openItem(item: MediaItem) {
+        val target = MediaDestination.of(item) ?: return
+        restoreFocusId = item.id
+        destination = target
+    }
+    // La lecture dans Nimbe arrive avec le lecteur intégré.
+    val onPlay: (MediaItem, Boolean) -> Unit = { _, _ ->
+        Toast.makeText(context, "La lecture arrive dans la prochaine version de Nimbe", Toast.LENGTH_SHORT).show()
+    }
+    when (val target = destination) {
+        is MediaDestination.Movie -> {
+            FilmDetailScreen(target.item, onPlay = onPlay, onClose = { destination = null })
+            return
+        }
+        is MediaDestination.Series -> {
+            SeriesDetailScreen(target, onPlay = onPlay, onClose = { destination = null })
+            return
+        }
+        null -> Unit
+    }
+
+    // À l'affichage, le focus va sur l'onglet ; au retour des réglages, sur la roue crantée ;
+    // au retour d'une fiche, sur la carte d'origine (et sur l'onglet si elle n'est plus là).
     LaunchedEffect(Unit) {
-        if (returnToSettingsButton) {
+        if (restoreFocusId != null) {
+            delay(RESTORE_FOCUS_TIMEOUT_MS)
+            if (restoreFocusId != null) {
+                restoreFocusId = null
+                focusTab(tab)
+            }
+        } else if (returnToSettingsButton) {
             returnToSettingsButton = false
             runCatching { settingsRequester.requestFocus() }
         } else {
@@ -164,7 +243,19 @@ fun NimbeApp(
                 },
                 settingsRequester = settingsRequester,
             )
-            Box(Modifier.weight(1f).fillMaxWidth()) {
+            // En remontant depuis le contenu, le focus va sur l'onglet affiché, même depuis une carte
+            // placée sous la roue crantée : sinon la recherche géométrique choisit l'élément le plus proche.
+            Box(
+                Modifier
+                    .weight(1f)
+                    .fillMaxWidth()
+                    .focusProperties {
+                        onExit = {
+                            if (requestedFocusDirection == FocusDirection.Up) runCatching { requesters.getValue(tab).requestFocus() }
+                        }
+                    }
+                    .focusGroup(),
+            ) {
                 when (tab) {
                     Tab.Home -> HomeScreen(
                         dock = dock,
@@ -173,6 +264,9 @@ fun NimbeApp(
                         onAllApps = { focusTab(Tab.Apps) },
                         connectivity = connectivity,
                         onNetworkSettings = launcher::openNetworkSettings,
+                        onOpenItem = ::openItem,
+                        restoreFocusId = restoreFocusId,
+                        onRestored = { restoreFocusId = null },
                     )
                     Tab.Apps -> AppsScreen(
                         apps = visibleApps,
@@ -197,8 +291,18 @@ fun NimbeApp(
                         },
                     )
                     Tab.Tv -> ComingSoonScreen("TV en direct", "Les chaînes et le guide des programmes arrivent avec la gateway du Pi.")
-                    Tab.Movies -> ComingSoonScreen("Films", "Ta bibliothèque Jellyfin arrive bientôt.")
-                    Tab.Series -> ComingSoonScreen("Séries", "Tes séries Jellyfin arrivent bientôt.")
+                    Tab.Movies -> FilmsScreen(
+                        sort = filmSort,
+                        onSortChange = { filmSort = it },
+                        onOpenItem = ::openItem,
+                        restoreFocusId = restoreFocusId,
+                        onRestored = { restoreFocusId = null },
+                    )
+                    Tab.Series -> SeriesScreen(
+                        onOpenItem = ::openItem,
+                        restoreFocusId = restoreFocusId,
+                        onRestored = { restoreFocusId = null },
+                    )
                     Tab.Music -> ComingSoonScreen("Musique", "Spotify arrive bientôt.")
                     Tab.Gallery -> ComingSoonScreen("Galerie", "Tes photos Nextcloud arrivent bientôt.")
                 }
@@ -206,3 +310,6 @@ fun NimbeApp(
         }
     }
 }
+
+/** Au-delà, la carte d'origine n'est plus affichée (liste rechargée) : le focus retourne sur l'onglet. */
+private const val RESTORE_FOCUS_TIMEOUT_MS = 800L

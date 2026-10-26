@@ -69,6 +69,7 @@ class MainActivity : ComponentActivity() {
                         launches = database.appLaunches(),
                         updates = updates,
                         jellyfin = (application as NimbeApplication).jellyfin,
+                        library = (application as NimbeApplication).library,
                     )
                 }
             }

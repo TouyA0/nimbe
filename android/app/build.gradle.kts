@@ -94,6 +94,9 @@ dependencies {
     ksp(libs.androidx.room.compiler)
     implementation(libs.androidx.tv.material)
     implementation(libs.androidx.work.runtime)
+    // Affiches et fonds Jellyfin : cache mémoire et disque, images à la taille demandée.
+    implementation(libs.coil.compose)
+    implementation(libs.coil.network.okhttp)
     testImplementation(libs.junit)
     // org.json est fourni par Android ; pour les tests sur le PC, on prend la vraie bibliothèque.
     testImplementation(libs.json)
