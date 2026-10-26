@@ -51,9 +51,15 @@ import io.github.touya0.nimbe.ui.theme.Nuit
 /**
  * Page d'une série : résumé, « Reprendre » sur le prochain épisode, saisons et épisodes.
  * La saison affichée est celle demandée, sinon celle du prochain épisode, sinon la première.
+ * « Reprendre » lance directement ([onPlay]) ; un épisode choisi passe par « Reprendre ou recommencer » ([onRequestPlay]).
  */
 @Composable
-fun SeriesDetailScreen(destination: MediaDestination.Series, onPlay: (MediaItem, Boolean) -> Unit, onClose: () -> Unit) {
+fun SeriesDetailScreen(
+    destination: MediaDestination.Series,
+    onPlay: (MediaItem, Boolean) -> Unit,
+    onRequestPlay: (MediaItem) -> Unit,
+    onClose: () -> Unit,
+) {
     BackHandler(onBack = onClose)
     val id = destination.seriesId
     val seriesLoad = rememberJellyfin("item:$id", id) { item(it, id) }
@@ -150,7 +156,7 @@ fun SeriesDetailScreen(destination: MediaDestination.Series, onPlay: (MediaItem,
                                     label = episode.name,
                                     detail = MediaText.progressLine(episode),
                                     badge = episode.episodeNumber?.let { "É$it" },
-                                    onClick = { onPlay(episode, false) },
+                                    onClick = { onRequestPlay(episode) },
                                     width = 200.dp,
                                     restoreFocus = episode.id == focusEpisode,
                                     onRestored = { focusEpisode = null },

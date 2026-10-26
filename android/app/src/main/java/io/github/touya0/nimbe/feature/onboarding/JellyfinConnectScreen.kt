@@ -1,13 +1,6 @@
 package io.github.touya0.nimbe.feature.onboarding
 
 import androidx.activity.compose.BackHandler
-import androidx.compose.animation.core.LinearEasing
-import androidx.compose.animation.core.RepeatMode
-import androidx.compose.animation.core.animateFloat
-import androidx.compose.animation.core.infiniteRepeatable
-import androidx.compose.animation.core.rememberInfiniteTransition
-import androidx.compose.animation.core.tween
-import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
@@ -39,12 +32,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
-import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
-import androidx.compose.ui.graphics.StrokeCap
-import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
@@ -56,11 +45,11 @@ import androidx.tv.material3.Text
 import io.github.touya0.nimbe.data.jellyfin.JellyfinAccount
 import io.github.touya0.nimbe.data.jellyfin.JellyfinDiscovery
 import io.github.touya0.nimbe.ui.components.PillButton
+import io.github.touya0.nimbe.ui.components.Spinner
 import io.github.touya0.nimbe.ui.components.focusRing
 import io.github.touya0.nimbe.ui.theme.Alerte
 import io.github.touya0.nimbe.ui.theme.EnLigne
 import io.github.touya0.nimbe.ui.theme.Focus
-import io.github.touya0.nimbe.ui.theme.LocalDisplay
 import io.github.touya0.nimbe.ui.theme.Lune
 import io.github.touya0.nimbe.ui.theme.LuneAttenuee
 import io.github.touya0.nimbe.ui.theme.NimbeFocus
@@ -290,30 +279,6 @@ private fun StatusLine(text: String, spinning: Boolean, alert: Boolean = false) 
     ) {
         if (spinning) Spinner(if (alert) Alerte else Focus)
         Text(text, style = MaterialTheme.typography.titleSmall, color = if (alert) Alerte else Lune)
-    }
-}
-
-/** Petit cercle qui tourne ; immobile si « Réduire les animations » est activé. */
-@Composable
-private fun Spinner(color: Color) {
-    val still = LocalDisplay.current.reduceMotion
-    val angle by rememberInfiniteTransition(label = "spinner").animateFloat(
-        initialValue = 0f,
-        targetValue = 360f,
-        animationSpec = infiniteRepeatable(tween(1_000, easing = LinearEasing), RepeatMode.Restart),
-        label = "angle",
-    )
-    Canvas(Modifier.size(18.dp)) {
-        val stroke = 2.5.dp.toPx()
-        drawArc(
-            color = color,
-            startAngle = if (still) -90f else angle,
-            sweepAngle = 270f,
-            useCenter = false,
-            topLeft = Offset(stroke / 2, stroke / 2),
-            size = Size(size.width - stroke, size.height - stroke),
-            style = Stroke(width = stroke, cap = StrokeCap.Round),
-        )
     }
 }
 

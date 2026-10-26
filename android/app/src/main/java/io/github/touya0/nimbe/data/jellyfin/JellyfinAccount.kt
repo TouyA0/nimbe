@@ -35,6 +35,8 @@ class JellyfinAccount(context: Context, private val vault: SecretVault) {
 
     val api = JellyfinApi(::clientInfo)
 
+    val playback = JellyfinPlayback(api)
+
     val link: Flow<JellyfinLink?> = store.data.map { prefs ->
         val url = prefs[SERVER_URL] ?: return@map null
         JellyfinLink(

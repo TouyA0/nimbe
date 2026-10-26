@@ -97,6 +97,12 @@ dependencies {
     // Affiches et fonds Jellyfin : cache mémoire et disque, images à la taille demandée.
     implementation(libs.coil.compose)
     implementation(libs.coil.network.okhttp)
+    // Lecteur intégré : fichiers Jellyfin en direct, ou flux HLS transcodé par le serveur.
+    implementation(libs.media3.exoplayer)
+    implementation(libs.media3.exoplayer.hls)
+    implementation(libs.media3.ui.compose)
+    // Seulement pour l'affichage des sous-titres (SubtitleView).
+    implementation(libs.media3.ui)
     testImplementation(libs.junit)
     // org.json est fourni par Android ; pour les tests sur le PC, on prend la vraie bibliothèque.
     testImplementation(libs.json)

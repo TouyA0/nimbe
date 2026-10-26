@@ -55,6 +55,7 @@ private data class HeroPick(val item: MediaItem, val kicker: String?)
  * Accueil : en haut le contenu focalisé, puis Continuer à regarder (Jellyfin), Mes applis,
  * et Ajouté récemment sur Jellyfin. Sans Jellyfin, il reste les applis, comme avant.
  * [dock] vaut null pendant le chargement. [restoreFocusId] : la carte à refocaliser au retour d'une fiche.
+ * Une carte de « Continuer à regarder » lance la lecture ; une affiche ouvre la fiche.
  */
 @Composable
 fun HomeScreen(
@@ -65,6 +66,7 @@ fun HomeScreen(
     connectivity: ConnectivityStatus,
     onNetworkSettings: () -> Unit,
     onOpenItem: (MediaItem) -> Unit,
+    onPlayItem: (MediaItem) -> Unit,
     restoreFocusId: String?,
     onRestored: () -> Unit,
     modifier: Modifier = Modifier,
@@ -76,7 +78,8 @@ fun HomeScreen(
 
     var focusedPick by remember { mutableStateOf<HeroPick?>(null) }
     // Avant tout focus sur une carte : la reprise la plus récente, sinon le dernier ajout.
-    val hero = focusedPick
+    // Un contenu qui a quitté les rangées (fini pendant la lecture, par exemple) ne reste pas en haut.
+    val hero = focusedPick?.takeIf { pick -> (resume + latest).any { it.id == pick.item.id } }
         ?: resume.firstOrNull()?.let { HeroPick(it, "REPRENDRE LÀ OÙ TU T'ES ARRÊTÉ") }
         ?: latest.firstOrNull()?.let { HeroPick(it, MediaText.added(it.dateCreated)) }
 
@@ -113,7 +116,7 @@ fun HomeScreen(
                             WideCard(
                                 item = item,
                                 label = MediaText.cardLabel(item),
-                                onClick = { onOpenItem(item) },
+                                onClick = { onPlayItem(item) },
                                 width = 196.dp,
                                 onFocus = { focusedPick = HeroPick(item, "REPRENDRE LÀ OÙ TU T'ES ARRÊTÉ") },
                                 restoreFocus = item.id == restoreFocusId,

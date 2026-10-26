@@ -87,6 +87,17 @@ class JellyfinApi(private val client: suspend () -> ClientInfo) {
         }
     }
 
+    /** Requête d'écriture authentifiée (rapports de lecture, infos de lecture) ; corps et réponse en JSON. */
+    suspend fun post(auth: JellyfinAuth, path: String, body: JSONObject, params: Map<String, Any?> = emptyMap()): JSONObject {
+        val query = params.filterValues { it != null }.entries.joinToString("&") { (key, value) ->
+            "$key=${URLEncoder.encode(value.toString(), "UTF-8")}"
+        }
+        return call("POST", "${auth.server}$path" + if (query.isEmpty()) "" else "?$query", auth.token, body.toString())
+    }
+
+    /** En-tête Authorization complet, pour le lecteur vidéo qui fait ses propres requêtes. */
+    suspend fun authorizationFor(token: String): String = authorization(client(), token)
+
     private suspend fun call(method: String, url: String, token: String?, body: String? = null): JSONObject {
         val text = request(method, url, token, body)
         return try {

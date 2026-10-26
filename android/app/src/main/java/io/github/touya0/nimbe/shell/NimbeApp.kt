@@ -1,6 +1,10 @@
 package io.github.touya0.nimbe.shell
 
-import android.widget.Toast
+import io.github.touya0.nimbe.NimbeApplication
+import io.github.touya0.nimbe.feature.player.PlayRequest
+import io.github.touya0.nimbe.feature.player.PlayerScreen
+import io.github.touya0.nimbe.feature.player.ResumeDialog
+import io.github.touya0.nimbe.feature.player.ResumeRule
 import androidx.compose.runtime.CompositionLocalProvider
 import io.github.touya0.nimbe.data.jellyfin.JellyfinLibrary
 import io.github.touya0.nimbe.data.jellyfin.JellyfinLink
@@ -197,9 +201,31 @@ private fun NimbeShell(
         restoreFocusId = item.id
         destination = target
     }
-    // La lecture dans Nimbe arrive avec le lecteur intégré.
-    val onPlay: (MediaItem, Boolean) -> Unit = { _, _ ->
-        Toast.makeText(context, "La lecture arrive dans la prochaine version de Nimbe", Toast.LENGTH_SHORT).show()
+    // Lecture : par-dessus tout le reste. Une carte entamée demande d'abord « Reprendre ou recommencer ».
+    var playing by remember { mutableStateOf<PlayRequest?>(null) }
+    var askResume by remember { mutableStateOf<MediaItem?>(null) }
+    fun requestPlay(item: MediaItem) {
+        restoreFocusId = item.id
+        if (ResumeRule.shouldAsk(item)) askResume = item else playing = ResumeRule.direct(item)
+    }
+    // Depuis une fiche, le bouton dit déjà s'il reprend ou repart du début.
+    val onPlay: (MediaItem, Boolean) -> Unit = { item, fromStart ->
+        playing = if (fromStart || !item.resumable) PlayRequest(item, 0) else ResumeRule.resume(item)
+    }
+    playing?.let { request ->
+        PlayerScreen(request, jellyfin, (context.applicationContext as NimbeApplication).scope, onClose = { playing = null })
+        return
+    }
+    askResume?.let { item ->
+        ResumeDialog(
+            item = item,
+            onPlay = {
+                askResume = null
+                playing = it
+            },
+            onDismiss = { askResume = null },
+        )
+        return
     }
     when (val target = destination) {
         is MediaDestination.Movie -> {
@@ -207,7 +233,7 @@ private fun NimbeShell(
             return
         }
         is MediaDestination.Series -> {
-            SeriesDetailScreen(target, onPlay = onPlay, onClose = { destination = null })
+            SeriesDetailScreen(target, onPlay = onPlay, onRequestPlay = ::requestPlay, onClose = { destination = null })
             return
         }
         null -> Unit
@@ -265,6 +291,7 @@ private fun NimbeShell(
                         connectivity = connectivity,
                         onNetworkSettings = launcher::openNetworkSettings,
                         onOpenItem = ::openItem,
+                        onPlayItem = ::requestPlay,
                         restoreFocusId = restoreFocusId,
                         onRestored = { restoreFocusId = null },
                     )
