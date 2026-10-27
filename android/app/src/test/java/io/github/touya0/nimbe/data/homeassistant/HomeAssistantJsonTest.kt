@@ -73,6 +73,43 @@ class HomeAssistantJsonTest {
     }
 
     @Test
+    fun `Home Assistant en français, reconnu par le registre et pas par le nom`() {
+        val registry = HomeAssistantApi.parseRegistry(
+            JSONObject(
+                """{"entity_categories":{},"entities":[
+                   {"ei":"sensor.system_monitor_utilisation_du_processeur","pl":"systemmonitor","tk":"processor_use"},
+                   {"ei":"sensor.system_monitor_temperature_du_processeur","pl":"systemmonitor","tk":"processor_temperature"},
+                   {"ei":"sensor.system_monitor_utilisation_de_la_memoire","pl":"systemmonitor","tk":"memory_use_percent"},
+                   {"ei":"sensor.system_monitor_memoire_utilisee","pl":"systemmonitor","tk":"memory_use"},
+                   {"ei":"sensor.system_monitor_utilisation_du_disque","pl":"systemmonitor","tk":"disk_use_percent"},
+                   {"ei":"sensor.docker_cpu","pl":"monitor_docker"},
+                   {"pl":"sans_identifiant"}]}""",
+            ),
+        )
+        assertEquals(6, registry.size)
+        assertEquals("Utilisation du processeur", entity("sensor.x", "1", name = "System Monitor Utilisation du processeur").label)
+        fun known(id: String, state: String, unit: String) =
+            entity(id, state, unit).let { e -> registry[id]?.let { e.copy(platform = it.platform, translationKey = it.translationKey) } ?: e }
+        val all = listOf(
+            known("sensor.system_monitor_utilisation_du_disque", "81", "%"),
+            known("sensor.system_monitor_utilisation_du_processeur", "23", "%"),
+            known("sensor.system_monitor_memoire_utilisee", "1500", "MiB"),
+            known("sensor.system_monitor_utilisation_de_la_memoire", "39", "%"),
+            known("sensor.system_monitor_temperature_du_processeur", "52", "°C"),
+            known("sensor.docker_cpu", "4", "%"),
+        )
+        assertEquals(
+            listOf(
+                "sensor.system_monitor_utilisation_du_processeur",
+                "sensor.system_monitor_temperature_du_processeur",
+                "sensor.system_monitor_utilisation_de_la_memoire",
+                "sensor.system_monitor_utilisation_du_disque",
+            ),
+            SensorCatalog.candidates(all).map { it.id },
+        )
+    }
+
+    @Test
     fun `adresse du WebSocket`() {
         assertEquals("ws://192.168.1.182:8123/api/websocket", HomeAssistantApi.websocketUrl("http://192.168.1.182:8123"))
         assertEquals("wss://ha.example.org/api/websocket", HomeAssistantApi.websocketUrl("https://ha.example.org/"))

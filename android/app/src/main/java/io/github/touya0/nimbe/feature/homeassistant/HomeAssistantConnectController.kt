@@ -115,7 +115,7 @@ class HomeAssistantConnectController(
         if (form.token.isEmpty()) return@withContext reject("Colle le token d'accès", form)
 
         val (user, entities) = try {
-            account.api.session(url, form.token) { currentUser() to states() }
+            account.api.session(url, form.token) { currentUser() to entities() }
         } catch (e: HomeAssistantException) {
             val message = if (e.kind == HomeAssistantException.Kind.Unreachable) "Home Assistant injoignable à cette adresse" else e.message.orEmpty()
             return@withContext reject(message, form)
@@ -141,7 +141,7 @@ class HomeAssistantConnectController(
         loadJob = scope.launch {
             sensors = SensorsState.Loading
             sensors = try {
-                loaded(account.api.session(token.auth.server, token.auth.token) { states() })
+                loaded(account.api.session(token.auth.server, token.auth.token) { entities() })
             } catch (e: HomeAssistantException) {
                 SensorsState.Failed(e.message.orEmpty())
             }

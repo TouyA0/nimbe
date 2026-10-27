@@ -14,8 +14,16 @@ data class HaEntity(
     val deviceClass: String?,
     /** Dernière mesure (last_updated), en ms ; null si Home Assistant ne l'a pas donnée. */
     val updatedAt: Long?,
+    /** Intégration qui fournit l'entité (« systemmonitor »), lue dans le registre des entités. */
+    val platform: String? = null,
+    /** Clé de traduction de l'intégration (« processor_use ») : la même quelle que soit la langue. */
+    val translationKey: String? = null,
 ) {
     val domain: String get() = id.substringBefore('.')
+
+    /** Nom à afficher, sans le nom de l'appareil répété devant (« System Monitor Utilisation du processeur »). */
+    val label: String
+        get() = name.removePrefix("System Monitor ").replaceFirstChar { it.uppercase() }
 
     /** Valeur lisible : « 23 % », « 52 °C », « En ligne ». Une valeur absente n'est jamais présentée comme bonne. */
     val displayValue: String
@@ -54,12 +62,18 @@ data class HaEntity(
 /** Ce que mesure un capteur suivi par la TV. L'ordre est celui de l'affichage. */
 enum class SensorKind { Processor, Temperature, Memory, Disk, Service }
 
+/** Ce que le registre des entités dit d'une entité : son intégration et sa clé de traduction. */
+data class RegistryInfo(val platform: String, val translationKey: String?)
+
 /**
  * Repère, parmi toutes les entités de Home Assistant, celles qui disent si le Pi va bien :
  * celles de System Monitor (processeur, température, mémoire, disque) et les capteurs de connectivité
- * (un par service). Les noms de System Monitor ont changé selon les versions (« processor_use »,
- * « system_monitor_processor_use »…) : on reconnaît la fin du nom, avec l'unité. Les noms sont stricts :
- * d'autres intégrations (Docker, par exemple) ont des dizaines de capteurs « cpu » ou « memory_percent ».
+ * (un par service).
+ *
+ * D'abord par le registre : intégration « systemmonitor » et clé de traduction, qui ne dépendent pas
+ * de la langue (un Home Assistant en français nomme ses entités « …_utilisation_du_processeur »).
+ * Sinon, par la fin du nom anglais. Les noms sont stricts : d'autres intégrations (Docker, par exemple)
+ * ont des dizaines de capteurs « cpu » ou « memory_percent ».
  */
 object SensorCatalog {
 
@@ -68,7 +82,15 @@ object SensorCatalog {
     private val MEMORY = Regex("""(^|_)memory_(use_percent|usage)$""")
     private val DISK = Regex("""(^|_)disk_(use_percent|usage)(_.+)?$""")
 
+    private val SYSTEM_MONITOR_KEYS = mapOf(
+        "processor_use" to SensorKind.Processor,
+        "processor_temperature" to SensorKind.Temperature,
+        "memory_use_percent" to SensorKind.Memory,
+        "disk_use_percent" to SensorKind.Disk,
+    )
+
     fun kindOf(entity: HaEntity): SensorKind? {
+        if (entity.platform == "systemmonitor") return SYSTEM_MONITOR_KEYS[entity.translationKey]
         val name = entity.id.substringAfter('.').lowercase()
         return when (entity.domain) {
             "binary_sensor" -> SensorKind.Service.takeIf { entity.deviceClass == "connectivity" }

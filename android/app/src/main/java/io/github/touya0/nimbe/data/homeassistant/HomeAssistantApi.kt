@@ -105,6 +105,16 @@ class HomeAssistantApi(
             }
         }
 
+        /** Réponse de config/entity_registry/list_for_display : « ei » identifiant, « pl » intégration, « tk » clé. */
+        fun parseRegistry(result: JSONObject): Map<String, RegistryInfo> {
+            val list = result.optJSONArray("entities") ?: return emptyMap()
+            return (0 until list.length()).mapNotNull { index ->
+                val entry = list.optJSONObject(index) ?: return@mapNotNull null
+                val id = entry.optString("ei").ifBlank { return@mapNotNull null }
+                id to RegistryInfo(platform = entry.optString("pl"), translationKey = entry.optString("tk").ifBlank { null })
+            }.toMap()
+        }
+
         internal fun unreachable() = HomeAssistantException(HomeAssistantException.Kind.Unreachable, "Home Assistant injoignable")
         internal fun notHomeAssistant() =
             HomeAssistantException(HomeAssistantException.Kind.NotHomeAssistant, "Ce n'est pas un serveur Home Assistant")
@@ -158,6 +168,27 @@ class HomeAssistantSession internal constructor(
     suspend fun states(): List<HaEntity> {
         val list = command("get_states") as? JSONArray ?: throw HomeAssistantApi.notHomeAssistant()
         return (0 until list.length()).mapNotNull { list.optJSONObject(it)?.let(HaEntity::fromState) }
+    }
+
+    /**
+     * Intégration et clé de traduction de chaque entité active. Commande ouverte aux comptes non-admin
+     * (l'interface de Home Assistant s'en sert pour tous) ; vide si ce Home Assistant ne la connaît pas.
+     */
+    suspend fun registry(): Map<String, RegistryInfo> {
+        val result = try {
+            command("config/entity_registry/list_for_display") as? JSONObject
+        } catch (e: HomeAssistantException) {
+            if (e.kind == HomeAssistantException.Kind.Server) null else throw e
+        } ?: return emptyMap()
+        return HomeAssistantApi.parseRegistry(result)
+    }
+
+    /** Les états, complétés par le registre : c'est ce que reconnaît [SensorCatalog]. */
+    suspend fun entities(): List<HaEntity> {
+        val registry = registry()
+        return states().map { entity ->
+            registry[entity.id]?.let { entity.copy(platform = it.platform, translationKey = it.translationKey) } ?: entity
+        }
     }
 
     /** Révoque un jeton longue durée de l'utilisateur connecté. */

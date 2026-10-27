@@ -289,7 +289,7 @@ private fun SensorRow(entity: HaEntity, checked: Boolean, onToggle: () -> Unit) 
                 if (checked) Text("✓", style = MaterialTheme.typography.titleSmall, color = Nuit)
             }
             Column(Modifier.weight(1f)) {
-                Text(entity.name, style = MaterialTheme.typography.titleSmall)
+                Text(entity.label, style = MaterialTheme.typography.titleSmall)
                 Text(
                     entity.id,
                     style = MaterialTheme.typography.labelMedium.copy(fontFamily = FontFamily.Monospace),
