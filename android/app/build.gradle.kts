@@ -60,8 +60,9 @@ android {
         release {
             signingConfig = signingConfigs.findByName("release")
             optimization {
+                // Pas de packageScope : avec R8 9.4, il sortait StringsKt__StringNumberConversionsJVMKt
+                // de kotlin.text sans son parent non public, et la 0.4.0 plantait au démarrage.
                 enable = true
-                packageScope = setOf("androidx.**", "kotlin.**", "kotlinx.**")
             }
         }
     }
