@@ -22,6 +22,7 @@ import io.github.touya0.nimbe.feature.onboarding.JellyfinConnectScreen
 import io.github.touya0.nimbe.feature.series.SeriesDetailScreen
 import io.github.touya0.nimbe.feature.series.SeriesScreen
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
@@ -85,9 +86,11 @@ fun NimbeApp(
     updates: UpdateController,
     jellyfin: JellyfinAccount,
     library: JellyfinLibrary,
+    homePresses: Flow<Unit>,
 ) {
     val linked by remember(jellyfin) { jellyfin.link.map { Linked(it) } }.collectAsStateWithLifecycle(initialValue = null)
     var jellyfinConnectOpen by rememberSaveable { mutableStateOf(false) }
+    LaunchedEffect(homePresses) { homePresses.collect { jellyfinConnectOpen = false } }
     val health by library.health.collectAsStateWithLifecycle()
     val retryScope = rememberCoroutineScope()
 
@@ -117,7 +120,7 @@ fun NimbeApp(
         if (jellyfinConnectOpen) {
             JellyfinConnectScreen(jellyfin, linked?.link?.serverUrl, onClose = { jellyfinConnectOpen = false })
         } else {
-            NimbeShell(repository, prefs, launcher, connectivityMonitor, launches, updates, jellyfin)
+            NimbeShell(repository, prefs, launcher, connectivityMonitor, launches, updates, jellyfin, homePresses)
         }
     }
 }
@@ -131,6 +134,7 @@ private fun NimbeShell(
     launches: AppLaunchDao,
     updates: UpdateController,
     jellyfin: JellyfinAccount,
+    homePresses: Flow<Unit>,
 ) {
     var settingsOpen by rememberSaveable { mutableStateOf(false) }
     var returnToSettingsButton by remember { mutableStateOf(false) }
@@ -185,6 +189,14 @@ private fun NimbeShell(
 
     // Retour ramène à l'Accueil ; sur l'Accueil, il ne fait rien : c'est l'écran d'accueil du stick.
     BackHandler { focusTab(Tab.Home) }
+    // Accueil, depuis n'importe où dans Nimbe : réglages fermés, focus sur l'onglet Accueil.
+    LaunchedEffect(homePresses) {
+        homePresses.collect {
+            settingsOpen = false
+            returnToSettingsButton = false
+            focusTab(Tab.Home)
+        }
+    }
 
     // Une version téléchargée et vérifiée la nuit est proposée dès que quelqu'un est devant la TV.
     val updateState by updates.state.collectAsStateWithLifecycle(initialValue = UpdateState())
@@ -232,6 +244,17 @@ private fun NimbeShell(
     // Gardés d'un épisode à l'autre : épisodes vus sans toucher la télécommande, minuteur de veille.
     var untouchedEpisodes by remember { mutableIntStateOf(0) }
     var sleepTimer by remember { mutableStateOf<SleepTimer?>(null) }
+    // Accueil ferme aussi la fiche et le lecteur, qui enregistre la progression en partant.
+    LaunchedEffect(homePresses) {
+        homePresses.collect {
+            playing = null
+            askResume = null
+            destination = null
+            restoreFocusId = null
+            untouchedEpisodes = 0
+            sleepTimer = null
+        }
+    }
     fun requestPlay(item: MediaItem) {
         restoreFocusId = item.id
         if (ResumeRule.shouldAsk(item)) askResume = item else playing = ResumeRule.direct(item)

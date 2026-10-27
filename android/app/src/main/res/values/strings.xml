@@ -1,3 +1,5 @@
 <resources>
     <string name="app_name">Nimbe</string>
+    <string name="home_key_service_label">Touche Accueil de Nimbe</string>
+    <string name="home_key_service_description">Ouvre Nimbe quand tu appuies sur Accueil. Un appui long ouvre l\'accueil Google TV. Nimbe ne lit que cette touche, jamais le contenu de l\'écran.</string>
 </resources>

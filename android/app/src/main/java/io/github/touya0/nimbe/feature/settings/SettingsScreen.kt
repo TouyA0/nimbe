@@ -266,6 +266,12 @@ private fun AboutPage(about: AboutInfo?, links: SettingsLinks, onCacheCleared: (
     }
     SettingsGroupTitle("Ce stick")
     LinkRow("Nimbe ${about.version}", about.device, value = about.android, onClick = links.androidSettings)
+    LinkRow(
+        "Touche Accueil",
+        if (about.homeKeyOn) "Appui court : Nimbe · appui long : accueil Google TV" else "Ouvre Google TV · à activer une fois depuis le PC",
+        value = if (about.homeKeyOn) "Activée" else "Désactivée",
+        onClick = links.accessibility,
+    )
     SettingRow(
         title = "Stockage",
         detail = "Cache de Nimbe ${formatBytes(about.cacheBytes)} · libre ${formatBytes(about.freeBytes)} " +

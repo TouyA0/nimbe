@@ -55,16 +55,21 @@ object CrashGuard {
      */
     @SuppressLint("ApplySharedPref")
     fun startupMode(context: Context, now: Long = System.currentTimeMillis()): StartupMode {
+        val mode = currentMode(context, now)
+        if (mode == StartupMode.Rescue) {
+            prefs(context).edit().putBoolean(KEY_SAFE_MODE, true).remove(KEY_CRASHES).commit()
+        }
+        return mode
+    }
+
+    /** Ce que le launcher afficherait maintenant, sans rien enregistrer (pour la touche Accueil). */
+    fun currentMode(context: Context, now: Long = System.currentTimeMillis()): StartupMode {
         val prefs = prefs(context)
-        val mode = CrashPolicy.decide(
+        return CrashPolicy.decide(
             crashes = CrashPolicy.decode(prefs.getString(KEY_CRASHES, null)),
             safeMode = prefs.getBoolean(KEY_SAFE_MODE, false),
             now = now,
         )
-        if (mode == StartupMode.Rescue) {
-            prefs.edit().putBoolean(KEY_SAFE_MODE, true).remove(KEY_CRASHES).commit()
-        }
-        return mode
     }
 
     /** Sortie du mode sans échec, par « Réessayer » ou « Redémarrer normalement ». */

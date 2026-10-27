@@ -25,6 +25,7 @@ import io.github.touya0.nimbe.ui.theme.DisplaySettings
 import io.github.touya0.nimbe.ui.theme.NimbeTheme
 import io.github.touya0.nimbe.update.UpdateController
 import io.github.touya0.nimbe.update.Updater
+import kotlinx.coroutines.flow.MutableSharedFlow
 
 class MainActivity : ComponentActivity() {
 
@@ -35,6 +36,9 @@ class MainActivity : ComponentActivity() {
     private val connectivity by lazy { ConnectivityMonitor(applicationContext) }
     private val updates by lazy { UpdateController(this, Updater(applicationContext), lifecycleScope) }
     private var mode by mutableStateOf(StartupMode.Normal)
+
+    /** Un appui sur Accueil pendant que Nimbe tourne déjà : retour à l'onglet Accueil. */
+    private val homePresses = MutableSharedFlow<Unit>(extraBufferCapacity = 1)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -70,10 +74,16 @@ class MainActivity : ComponentActivity() {
                         updates = updates,
                         jellyfin = (application as NimbeApplication).jellyfin,
                         library = (application as NimbeApplication).library,
+                        homePresses = homePresses,
                     )
                 }
             }
         }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        if (intent.hasCategory(Intent.CATEGORY_HOME)) homePresses.tryEmit(Unit)
     }
 
     private fun restartNormally() {

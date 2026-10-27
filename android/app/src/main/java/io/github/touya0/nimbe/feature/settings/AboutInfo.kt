@@ -7,6 +7,7 @@ import android.os.StatFs
 import android.view.accessibility.AccessibilityManager
 import io.github.touya0.nimbe.crashguard.CrashGuard
 import io.github.touya0.nimbe.crashguard.LastError
+import io.github.touya0.nimbe.homekey.HomeKeyService
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.File
@@ -22,6 +23,7 @@ data class AboutInfo(
     val freeBytes: Long,
     val totalBytes: Long,
     val talkBackOn: Boolean,
+    val homeKeyOn: Boolean,
 )
 
 suspend fun loadAbout(context: Context): AboutInfo = withContext(Dispatchers.IO) {
@@ -36,6 +38,7 @@ suspend fun loadAbout(context: Context): AboutInfo = withContext(Dispatchers.IO)
         freeBytes = stats.availableBytes,
         totalBytes = stats.totalBytes,
         talkBackOn = accessibility?.isTouchExplorationEnabled == true,
+        homeKeyOn = HomeKeyService.isEnabled(context),
     )
 }
 

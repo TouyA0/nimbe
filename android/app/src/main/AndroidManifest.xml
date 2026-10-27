@@ -63,6 +63,20 @@
             </intent-filter>
         </activity>
 
+        <!-- Google TV garde la touche Accueil pour lui : ce service la rend à Nimbe (voir HomeKeyService). -->
+        <service
+            android:name=".homekey.HomeKeyService"
+            android:exported="true"
+            android:label="@string/home_key_service_label"
+            android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE">
+            <intent-filter>
+                <action android:name="android.accessibilityservice.AccessibilityService" />
+            </intent-filter>
+            <meta-data
+                android:name="android.accessibilityservice"
+                android:resource="@xml/home_key_service" />
+        </service>
+
         <!-- Résultat d'une installation de mise à jour, envoyé par Android à Nimbe seulement. -->
         <receiver
             android:name=".update.UpdateInstallReceiver"
