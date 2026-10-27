@@ -83,7 +83,8 @@ class MainActivity : ComponentActivity() {
 
     /**
      * Pour tester le garde-fou, uniquement dans les versions de développement :
-     * adb shell am start -n io.github.touya0.nimbe.debug/io.github.touya0.nimbe.MainActivity --ez nimbe.simulate_crash true
+     * adb shell am start -S -n io.github.touya0.nimbe.debug/io.github.touya0.nimbe.MainActivity --ez nimbe.simulate_crash true
+     * Le -S arrête d'abord l'appli : sans lui, l'activité (singleTask) déjà ouverte reçoit l'intent sans passer par onCreate.
      */
     private fun simulateCrashIfAsked(intent: Intent?) {
         val debuggable = applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE != 0
