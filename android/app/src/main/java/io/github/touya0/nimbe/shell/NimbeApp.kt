@@ -60,6 +60,7 @@ import io.github.touya0.nimbe.data.homeassistant.HaLive
 import io.github.touya0.nimbe.data.homeassistant.HistoryPoint
 import io.github.touya0.nimbe.data.homeassistant.HomeAssistantAccount
 import io.github.touya0.nimbe.data.homeassistant.HomeAssistantMonitor
+import io.github.touya0.nimbe.feature.screensaver.ScreensaverContent
 import io.github.touya0.nimbe.feature.status.JellyfinWatch
 import io.github.touya0.nimbe.feature.status.ServerStatus
 import io.github.touya0.nimbe.feature.status.ServerStatusScreen
@@ -273,11 +274,13 @@ private fun NimbeShell(
             links = SettingsLinks(
                 accessibility = launcher::openAccessibilitySettings,
                 androidSettings = launcher::openAndroidSettings,
+                screensaverSettings = launcher::openScreensaverSettings,
                 stockLauncher = { StockLauncher.open(context) },
             ),
             updates = updates,
             jellyfin = jellyfin,
             homeAssistant = homeAssistant,
+            screensaverPreview = { ScreensaverContent(status, ha) },
             onOpenUpdate = { updateOpen = true },
             onClose = { settingsOpen = false },
         )

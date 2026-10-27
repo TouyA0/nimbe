@@ -2,6 +2,10 @@ package io.github.touya0.nimbe.feature.settings
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
+import androidx.compose.foundation.focusable
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.input.key.type
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Box
@@ -50,6 +54,7 @@ import io.github.touya0.nimbe.feature.homeassistant.HomeAssistantColor
 import io.github.touya0.nimbe.feature.homeassistant.HomeAssistantConnectController
 import io.github.touya0.nimbe.feature.homeassistant.HomeAssistantConnectScreen
 import io.github.touya0.nimbe.feature.onboarding.JellyfinConnectScreen
+import io.github.touya0.nimbe.feature.screensaver.ScreensaverSetting
 import io.github.touya0.nimbe.feature.onboarding.ServiceInitial
 import io.github.touya0.nimbe.ui.components.focusRing
 import io.github.touya0.nimbe.ui.theme.Alerte
@@ -81,6 +86,7 @@ import kotlinx.coroutines.launch
 /** Les rubriques déjà construites ; les autres de la maquette arriveront avec leurs fonctions. */
 enum class SettingsSection(val label: String) {
     Display("Affichage et accessibilité"),
+    Screensaver("Écran de veille"),
     Servers("Serveurs et comptes"),
     Updates("Mises à jour"),
     About("À propos et diagnostic"),
@@ -90,6 +96,7 @@ enum class SettingsSection(val label: String) {
 class SettingsLinks(
     val accessibility: () -> Unit,
     val androidSettings: () -> Unit,
+    val screensaverSettings: () -> Unit,
     val stockLauncher: () -> Unit,
 )
 
@@ -101,6 +108,8 @@ fun SettingsScreen(
     updates: UpdateController,
     jellyfin: JellyfinAccount,
     homeAssistant: HomeAssistantAccount,
+    /** L'écran de veille en plein écran, tel qu'Android l'affichera. */
+    screensaverPreview: @Composable () -> Unit,
     onOpenUpdate: () -> Unit,
     onClose: () -> Unit,
 ) {
@@ -113,6 +122,11 @@ fun SettingsScreen(
     val jellyfinLink by remember(jellyfin) { jellyfin.link.map { Linked(it) } }.collectAsStateWithLifecycle(initialValue = null)
     if (jellyfinConnectOpen) {
         JellyfinConnectScreen(jellyfin, jellyfinLink?.link?.serverUrl, onClose = { jellyfinConnectOpen = false })
+        return
+    }
+    var previewOpen by remember { mutableStateOf(false) }
+    if (previewOpen) {
+        ScreensaverPreview(screensaverPreview, onClose = { previewOpen = false })
         return
     }
     var homeAssistantConnectOpen by rememberSaveable { mutableStateOf(false) }
@@ -173,6 +187,7 @@ fun SettingsScreen(
         ) {
             when (section) {
                 SettingsSection.Display -> DisplayPage(display, onDisplayChange, about, links)
+                SettingsSection.Screensaver -> ScreensaverPage(links, onPreview = { previewOpen = true })
                 SettingsSection.Servers -> ServersPage(
                     jellyfin,
                     jellyfinLink,
@@ -208,6 +223,59 @@ private fun DisplayPage(display: DisplaySettings, onChange: (DisplaySettings) ->
         value = if (about?.talkBackOn == true) "Activé" else "Désactivé",
         onClick = links.accessibility,
     )
+}
+
+@Composable
+private fun ScreensaverPage(links: SettingsLinks, onPreview: () -> Unit) {
+    val context = LocalContext.current
+    // Relu au retour des réglages Android, où l'écran de veille se choisit.
+    var active by remember { mutableStateOf(ScreensaverSetting.isActive(context)) }
+    LifecycleResumeEffect(Unit) {
+        active = ScreensaverSetting.isActive(context)
+        onPauseOrDispose {}
+    }
+    PageTitle("Écran de veille", "Ce qui s'affiche quand personne ne touche à la télécommande. Pour toute la TV.")
+    SettingsGroupTitle("Heure et serveur")
+    LinkRow(
+        "Voir en plein écran",
+        "Fond noir, heure, date et météo, état du serveur · n'importe quelle touche pour revenir",
+        value = "Aperçu",
+        onClick = onPreview,
+    )
+    LinkRow(
+        "Nimbe comme écran de veille",
+        when (active) {
+            true -> "Android l'affiche après l'inactivité"
+            else -> "Sur Google TV, à choisir une fois depuis le PC : adb shell settings put secure " +
+                "screensaver_components ${ScreensaverSetting.component(context)}"
+        },
+        value = when (active) {
+            true -> "Activé"
+            false -> "Désactivé"
+            null -> "Inconnu"
+        },
+        onClick = links.screensaverSettings,
+    )
+    SettingsGroupTitle("Bientôt")
+    SettingRow("Photos", "Tes albums Nextcloud en plein écran, avec l'heure par-dessus · arrive avec la Galerie", onClick = {})
+}
+
+/** L'écran de veille dans Nimbe, comme Android l'affichera : n'importe quelle touche le ferme. */
+@Composable
+private fun ScreensaverPreview(content: @Composable () -> Unit, onClose: () -> Unit) {
+    val focus = remember { FocusRequester() }
+    LaunchedEffect(Unit) { runCatching { focus.requestFocus() } }
+    BackHandler(onBack = onClose)
+    Box(
+        Modifier
+            .fillMaxSize()
+            .focusRequester(focus)
+            .focusable()
+            .onPreviewKeyEvent { event ->
+                if (event.type == KeyEventType.KeyUp) onClose()
+                true
+            },
+    ) { content() }
 }
 
 /** Enveloppe pour distinguer « pas encore lu » (null) de « pas connecté ». */

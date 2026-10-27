@@ -33,6 +33,18 @@ cd android
 ./gradlew assembleDebug
 ```
 
+## Réglages du stick à faire une fois (adb)
+
+Google TV ne propose pas de choisir un écran de veille tiers : on le règle depuis le PC.
+
+```bash
+adb shell settings put secure screensaver_components io.github.touya0.nimbe/io.github.touya0.nimbe.feature.screensaver.NimbeDream
+adb shell settings put secure screensaver_enabled 1
+```
+
+Pour revenir à l'écran de veille de Google TV : `adb shell settings put secure screensaver_components com.google.android.backdrop/.Backdrop`
+(valeur d'origine à relever avant avec `adb shell settings get secure screensaver_components`).
+
 ## Publier une version
 
 Un tag `v*` lance [`release.yml`](.github/workflows/release.yml) : tests, APK signé, empreinte SHA-256

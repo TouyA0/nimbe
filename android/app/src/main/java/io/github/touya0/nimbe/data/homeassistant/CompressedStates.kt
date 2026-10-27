@@ -30,6 +30,7 @@ object CompressedStates {
                         unit = attributes?.optString("unit_of_measurement")?.ifBlank { null } ?: entity.unit,
                         deviceClass = attributes?.optString("device_class")?.ifBlank { null } ?: entity.deviceClass,
                         updatedAt = time(plus) ?: entity.updatedAt,
+                        temperature = attributes?.optDouble("temperature")?.takeUnless { it.isNaN() } ?: entity.temperature,
                     )
                 }
                 diff.optJSONObject("-")?.optJSONArray("a")?.let { removed ->

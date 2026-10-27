@@ -49,6 +49,11 @@ class AppLauncher(
 
     fun openAccessibilitySettings() = start(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS), "Impossible d'ouvrir l'accessibilité")
 
+    /** Choix de l'écran de veille dans Android ; Google TV n'a pas cet écran, on ouvre alors les réglages. */
+    fun openScreensaverSettings() {
+        if (!tryStart(Intent(Settings.ACTION_DREAM_SETTINGS))) openAndroidSettings()
+    }
+
     fun openAndroidSettings() = start(Intent(Settings.ACTION_SETTINGS), "Impossible d'ouvrir les réglages Android")
 
     private fun start(intent: Intent?, error: String) {

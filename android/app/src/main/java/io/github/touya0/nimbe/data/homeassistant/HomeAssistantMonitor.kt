@@ -37,7 +37,11 @@ data class HaLive(
     val entities: Map<String, HaEntity> = emptyMap(),
     /** Prochain essai automatique après une perte de connexion. */
     val retryAt: Long? = null,
-)
+    /** Entité météo de Home Assistant (la première trouvée), pour l'écran de veille. */
+    val weatherId: String? = null,
+) {
+    val weather: HaEntity? get() = weatherId?.let { entities[it] }
+}
 
 /**
  * Suivi en direct des capteurs choisis, par le WebSocket (subscribe_entities) : Home Assistant envoie
@@ -71,8 +75,12 @@ class HomeAssistantMonitor(private val account: HomeAssistantAccount, scope: Cor
                 val auth = account.auth() ?: throw HomeAssistantException(HomeAssistantException.Kind.Unauthorized, "Token illisible")
                 account.api.session(auth.server, auth.token) {
                     val registry = registry()
-                    val subscription = subscribeEntities(link.sensors)
-                    state = state.copy(connection = HaConnection.Live(System.currentTimeMillis()), retryAt = null)
+                    // Météo : celle de l'intégration par défaut (Met.no) si elle est là, sinon la première venue.
+                    val weatherId = registry.filterKeys { it.startsWith("weather.") }
+                        .entries.sortedBy { if (it.value.platform == "met") 0 else 1 }
+                        .firstOrNull()?.key
+                    val subscription = subscribeEntities(link.sensors + listOfNotNull(weatherId))
+                    state = state.copy(connection = HaConnection.Live(System.currentTimeMillis()), retryAt = null, weatherId = weatherId)
                     send(state)
                     while (true) {
                         val received = CompressedStates.apply(state.entities, nextEvent(subscription))

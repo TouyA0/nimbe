@@ -18,6 +18,8 @@ data class HaEntity(
     val platform: String? = null,
     /** Clé de traduction de l'intégration (« processor_use ») : la même quelle que soit la langue. */
     val translationKey: String? = null,
+    /** Attribut « temperature » : celle annoncée par une entité météo. */
+    val temperature: Double? = null,
 ) {
     val domain: String get() = id.substringBefore('.')
 
@@ -62,6 +64,7 @@ data class HaEntity(
             unit = attributes.optString("unit_of_measurement").ifBlank { null },
             deviceClass = attributes.optString("device_class").ifBlank { null },
             updatedAt = updatedAt,
+            temperature = attributes.optDouble("temperature").takeUnless { it.isNaN() },
         )
 
         private fun parseTime(text: String): Long? = try {

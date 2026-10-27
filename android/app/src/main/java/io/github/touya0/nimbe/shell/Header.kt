@@ -174,16 +174,13 @@ private fun SettingsButton(onClick: () -> Unit, modifier: Modifier) {
  */
 @Composable
 private fun StatusPill(status: ServerVerdict, onClick: () -> Unit) {
-    val (label, dot) = when (status.level) {
-        ServerLevel.NoNetwork -> "Pas de réseau" to Alerte
-        ServerLevel.PiUnreachable -> "Serveur injoignable" to Alerte
-        ServerLevel.ServiceDown -> status.down.singleOrNull()?.let { "$it en panne" } to Focus
-        ServerLevel.NoInternet -> "Pas d'internet" to Focus
-        ServerLevel.Unknown -> "État inconnu" to LuneAttenuee
-        ServerLevel.Ok -> "Serveur OK" to EnLigne
-        ServerLevel.Hidden -> return
+    val text = status.label ?: return
+    val dot = when (status.level) {
+        ServerLevel.NoNetwork, ServerLevel.PiUnreachable -> Alerte
+        ServerLevel.ServiceDown, ServerLevel.NoInternet -> Focus
+        ServerLevel.Unknown, ServerLevel.Hidden -> LuneAttenuee
+        ServerLevel.Ok -> EnLigne
     }
-    val text = label ?: "${status.down.size} services en panne"
     val tinted = status.level != ServerLevel.Ok && status.level != ServerLevel.Unknown
     var focused by remember { mutableStateOf(false) }
     Surface(

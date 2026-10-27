@@ -336,7 +336,7 @@ private fun Banner(
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Box(Modifier.size(44.dp).background(color.copy(alpha = 0.18f), RoundedCornerShape(12.dp)), contentAlignment = Alignment.Center) {
-            Text(icon, style = MaterialTheme.typography.titleLarge, color = color)
+            Text(icon, style = MaterialTheme.typography.headlineSmall, color = color)
         }
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
             Text(title, style = MaterialTheme.typography.headlineSmall)
@@ -377,7 +377,7 @@ private fun MeasureTile(entity: HaEntity, live: Boolean, modifier: Modifier) {
             Text(MeasureNames[kind] ?: entity.label, style = MaterialTheme.typography.labelMedium, color = LuneAttenuee, modifier = Modifier.weight(1f), maxLines = 1)
             if (!fresh) entity.updatedAt?.let { Text("à ${hour(it)}", style = MaterialTheme.typography.labelMedium, color = LuneAttenuee) }
         }
-        Text(entity.displayValue, style = MaterialTheme.typography.headlineMedium, color = if (fresh) Lune else LuneAttenuee)
+        Text(entity.displayValue, style = MaterialTheme.typography.displaySmall, color = if (fresh) Lune else LuneAttenuee)
         // Jauge : pourcentage, ou température sur 0-85 °C (le Pi 5 ralentit vers 85 °C).
         val fraction = number?.let { if (kind == SensorKind.Temperature) it / 85.0 else it / 100.0 }?.coerceIn(0.0, 1.0)
         Box(Modifier.fillMaxWidth().height(5.dp).background(PanneauClair, CircleShape)) {

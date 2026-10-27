@@ -31,7 +31,19 @@ enum class ServerLevel {
 }
 
 /** [down] : noms des services en panne, pour le voyant (« Jellyfin en panne »). */
-data class ServerVerdict(val level: ServerLevel, val down: List<String> = emptyList())
+data class ServerVerdict(val level: ServerLevel, val down: List<String> = emptyList()) {
+    /** Texte du voyant (en-tête, écran de veille) ; null quand il n'y a rien à afficher. */
+    val label: String?
+        get() = when (level) {
+            ServerLevel.NoNetwork -> "Pas de réseau"
+            ServerLevel.PiUnreachable -> "Serveur injoignable"
+            ServerLevel.ServiceDown -> down.singleOrNull()?.let { "$it en panne" } ?: "${down.size} services en panne"
+            ServerLevel.NoInternet -> "Pas d'internet"
+            ServerLevel.Unknown -> "État inconnu"
+            ServerLevel.Ok -> "Serveur OK"
+            ServerLevel.Hidden -> null
+        }
+}
 
 /**
  * Choisit le voyant. Règle du dossier : « inconnu » n'est jamais affiché comme « OK ». Le vert demande
