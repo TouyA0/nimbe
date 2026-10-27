@@ -28,7 +28,11 @@ data class JellyfinLink(
  * L'identifiant d'appareil est tiré une fois : Jellyfin remplace alors l'ancienne session de cette TV
  * à chaque reconnexion, au lieu d'empiler les appareils.
  */
-class JellyfinAccount(context: Context, private val vault: SecretVault) {
+class JellyfinAccount(
+    context: Context,
+    private val vault: SecretVault,
+    private val onDisconnected: suspend () -> Unit = {},
+) {
 
     private val appContext = context.applicationContext
     private val store = appContext.jellyfinStore
@@ -68,7 +72,7 @@ class JellyfinAccount(context: Context, private val vault: SecretVault) {
         }
     }
 
-    /** Révoque le jeton sur le serveur si possible, puis oublie le compte (même si le Pi est coupé). */
+    /** Révoque le jeton sur le serveur si possible, puis oublie le compte et ses contenus enregistrés (même si le Pi est coupé). */
     suspend fun disconnect() {
         val url = link.first()?.serverUrl
         val token = token()
@@ -77,6 +81,7 @@ class JellyfinAccount(context: Context, private val vault: SecretVault) {
         store.edit { prefs ->
             listOf(SERVER_URL, SERVER_ID, SERVER_NAME, USER_ID, USER_NAME).forEach { prefs.remove(it) }
         }
+        onDisconnected()
     }
 
     private suspend fun clientInfo(): ClientInfo = ClientInfo(

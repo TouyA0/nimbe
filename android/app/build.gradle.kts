@@ -113,4 +113,10 @@ dependencies {
     androidTestImplementation(libs.androidx.compose.ui.test.junit4)
     debugImplementation(libs.androidx.compose.ui.test.manifest)
     debugImplementation(libs.androidx.compose.ui.tooling)
+
+    constraints {
+        // Lifecycle 2.11 tire kotlinx.serialization 1.7.3, mais room-testing (lecture des schémas
+        // dans le test de migration) a besoin de 1.8 : sans cela, il plante à l'exécution.
+        implementation(libs.kotlinx.serialization.core)
+    }
 }

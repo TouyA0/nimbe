@@ -88,8 +88,30 @@ fun NimbeApp(
 ) {
     val linked by remember(jellyfin) { jellyfin.link.map { Linked(it) } }.collectAsStateWithLifecycle(initialValue = null)
     var jellyfinConnectOpen by rememberSaveable { mutableStateOf(false) }
-    val ui = remember(linked) {
-        JellyfinUi(library, linked?.link, linkKnown = linked != null, onConnect = { jellyfinConnectOpen = true })
+    val health by library.health.collectAsStateWithLifecycle()
+    val retryScope = rememberCoroutineScope()
+
+    // Pendant une coupure, on redemande au serveur toutes les minutes ; « Réessayer » le fait tout de suite.
+    var retryAt by remember { mutableStateOf<Long?>(null) }
+    LaunchedEffect(health.reachable, linked?.link) {
+        retryAt = null
+        if (health.reachable || linked?.link == null) return@LaunchedEffect
+        while (true) {
+            retryAt = System.currentTimeMillis() + RETRY_INTERVAL_MS
+            delay(RETRY_INTERVAL_MS)
+            if (library.check()) break
+        }
+    }
+    val ui = remember(linked, health, retryAt) {
+        JellyfinUi(
+            library = library,
+            link = linked?.link,
+            linkKnown = linked != null,
+            onConnect = { jellyfinConnectOpen = true },
+            health = health,
+            retryAt = retryAt,
+            onRetry = { retryScope.launch { library.check() } },
+        )
     }
     CompositionLocalProvider(LocalJellyfin provides ui) {
         if (jellyfinConnectOpen) {
@@ -289,6 +311,7 @@ private fun NimbeShell(
                 onSelect = { tab = it },
                 requesters = requesters,
                 connectivity = connectivity,
+                jellyfinDown = LocalJellyfin.current?.down == true,
                 onSettings = {
                     returnToSettingsButton = true
                     settingsOpen = true
@@ -363,6 +386,9 @@ private fun NimbeShell(
         }
     }
 }
+
+/** Essai automatique pendant une coupure de Jellyfin. */
+private const val RETRY_INTERVAL_MS = 60_000L
 
 /** Au-delà, la carte d'origine n'est plus affichée (liste rechargée) : le focus retourne sur l'onglet. */
 private const val RESTORE_FOCUS_TIMEOUT_MS = 800L

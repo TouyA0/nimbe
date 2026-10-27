@@ -29,9 +29,11 @@ class NimbeApplication : Application(), SingletonImageLoader.Factory {
     val vault: SecretVault by lazy { SecretVault(this) }
 
     /** Connexion à Jellyfin, partagée par les écrans et le lecteur. */
-    val jellyfin: JellyfinAccount by lazy { JellyfinAccount(this, vault) }
+    val jellyfin: JellyfinAccount by lazy {
+        JellyfinAccount(this, vault, onDisconnected = { database.cachedResponses().clear() })
+    }
 
-    val library: JellyfinLibrary by lazy { JellyfinLibrary(jellyfin) }
+    val library: JellyfinLibrary by lazy { JellyfinLibrary(jellyfin, database.cachedResponses()) }
 
     /** Travaux courts qui ne doivent pas retarder l'affichage. */
     val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
@@ -43,6 +45,8 @@ class NimbeApplication : Application(), SingletonImageLoader.Factory {
         UpdateScheduler.schedule(this)
         // Après une mise à jour, on oublie la proposition qui vient d'être installée.
         scope.launch { runCatching { Updater(this@NimbeApplication).reconcile() } }
+        // Les contenus enregistrés de plus d'un mois ne servent plus : on les retire.
+        scope.launch { database.cachedResponses().deleteOlderThan(System.currentTimeMillis() - CACHE_MAX_AGE_MS) }
     }
 
     /**
@@ -65,6 +69,7 @@ class NimbeApplication : Application(), SingletonImageLoader.Factory {
 
     companion object {
         private const val IMAGE_DISK_CACHE_BYTES = 1024L * 1024 * 1024
+        private const val CACHE_MAX_AGE_MS = 30L * 24 * 60 * 60 * 1000
 
         /**
          * Paquet de Nimbe et de son code. La version de développement s'installe sous BASE_PACKAGE.debug :

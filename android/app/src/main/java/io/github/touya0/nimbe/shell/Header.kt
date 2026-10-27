@@ -45,12 +45,15 @@ import java.time.LocalTime
 import java.time.format.DateTimeFormatter
 import kotlinx.coroutines.delay
 
-/** [needsInternet] : onglet barré pendant une coupure d'internet (Films et Galerie viennent du Pi). */
-enum class Tab(val label: String, val needsInternet: Boolean = false) {
+/**
+ * [needsInternet] : onglet barré pendant une coupure d'internet (Films et Galerie viennent du Pi).
+ * [needsJellyfin] : onglet barré quand Jellyfin ne répond plus.
+ */
+enum class Tab(val label: String, val needsInternet: Boolean = false, val needsJellyfin: Boolean = false) {
     Home("Accueil"),
     Tv("TV", needsInternet = true),
-    Movies("Films"),
-    Series("Séries"),
+    Movies("Films", needsJellyfin = true),
+    Series("Séries", needsJellyfin = true),
     Music("Musique", needsInternet = true),
     Gallery("Galerie"),
     Apps("Applis"),
@@ -66,6 +69,7 @@ fun Header(
     onSelect: (Tab) -> Unit,
     requesters: Map<Tab, FocusRequester>,
     connectivity: ConnectivityStatus,
+    jellyfinDown: Boolean,
     onSettings: () -> Unit,
     settingsRequester: FocusRequester,
     modifier: Modifier = Modifier,
@@ -81,13 +85,13 @@ fun Header(
                     tab = tab,
                     selected = tab == selected,
                     onSelect = { onSelect(tab) },
-                    struck = tab.needsInternet && connectivity.offline,
+                    struck = (tab.needsInternet && connectivity.offline) || (tab.needsJellyfin && jellyfinDown),
                     modifier = Modifier.focusRequester(requesters.getValue(tab)),
                 )
             }
         }
         Spacer(Modifier.weight(1f))
-        ConnectivityPill(connectivity.state)
+        ConnectivityPill(connectivity.state, jellyfinDown)
         Spacer(Modifier.width(12.dp))
         SettingsButton(onSettings, Modifier.focusRequester(settingsRequester))
         Spacer(Modifier.width(16.dp))
@@ -155,11 +159,13 @@ private fun SettingsButton(onClick: () -> Unit, modifier: Modifier) {
 
 /** Voyant d'état, affiché seulement quand quelque chose ne va pas (pas encore d'état du Pi). */
 @Composable
-private fun ConnectivityPill(state: NetworkState) {
-    val (label, dot) = when (state) {
-        NetworkState.NoInternet -> "Pas d'internet" to Focus
-        NetworkState.NoNetwork -> "Pas de réseau" to Alerte
-        NetworkState.Online, NetworkState.Unknown -> return
+private fun ConnectivityPill(state: NetworkState, jellyfinDown: Boolean) {
+    // Sans réseau, Jellyfin est forcément injoignable : on affiche la cause, pas la conséquence.
+    val (label, dot) = when {
+        state == NetworkState.NoNetwork -> "Pas de réseau" to Alerte
+        jellyfinDown -> "Serveur injoignable" to Alerte
+        state == NetworkState.NoInternet -> "Pas d'internet" to Focus
+        else -> return
     }
     Row(
         modifier = Modifier.background(dot.copy(alpha = 0.22f), NimbeFocus.PillShape).padding(horizontal = 14.dp, vertical = 7.dp),

@@ -38,6 +38,7 @@ import io.github.touya0.nimbe.data.jellyfin.JellyfinLibrary
 import io.github.touya0.nimbe.data.jellyfin.MediaItem
 import io.github.touya0.nimbe.ui.components.bleed
 import io.github.touya0.nimbe.ui.components.focusRing
+import io.github.touya0.nimbe.ui.theme.Alerte
 import io.github.touya0.nimbe.ui.theme.Lune
 import io.github.touya0.nimbe.ui.theme.LuneAttenuee
 import io.github.touya0.nimbe.ui.theme.NimbeFocus
@@ -108,6 +109,10 @@ fun LibraryScreen(
             Row(Modifier.padding(top = 4.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 Text(title, style = MaterialTheme.typography.headlineSmall)
                 if (total > 0) Text("$total", style = MaterialTheme.typography.titleSmall, color = LuneAttenuee)
+                // Liste relue dans la base pendant une coupure : on le dit, sans cacher ce qui est connu.
+                if (ui?.down == true && items.isNotEmpty()) {
+                    Text("● Jellyfin injoignable · dernière liste reçue", style = MaterialTheme.typography.titleSmall, color = Alerte)
+                }
                 Spacer(Modifier.weight(1f))
                 filters()
             }

@@ -24,10 +24,15 @@ import androidx.tv.material3.MaterialTheme
 import androidx.tv.material3.Text
 import io.github.touya0.nimbe.data.jellyfin.JellyfinAuth
 import io.github.touya0.nimbe.data.jellyfin.JellyfinException
+import io.github.touya0.nimbe.data.jellyfin.JellyfinHealth
 import io.github.touya0.nimbe.data.jellyfin.JellyfinLibrary
 import io.github.touya0.nimbe.data.jellyfin.JellyfinLink
 import io.github.touya0.nimbe.ui.components.PillButton
 import io.github.touya0.nimbe.ui.theme.LuneAttenuee
+import java.time.Instant
+import java.time.ZoneId
+import java.time.format.DateTimeFormatter
+import kotlinx.coroutines.delay
 
 /**
  * Ce dont les écrans Jellyfin ont besoin : la bibliothèque, le compte relié (null si aucun),
@@ -35,7 +40,19 @@ import io.github.touya0.nimbe.ui.theme.LuneAttenuee
  * on n'affiche pas « pas connecté » le temps d'un éclair au démarrage.
  */
 @Stable
-class JellyfinUi(val library: JellyfinLibrary, val link: JellyfinLink?, val linkKnown: Boolean, val onConnect: () -> Unit)
+class JellyfinUi(
+    val library: JellyfinLibrary,
+    val link: JellyfinLink?,
+    val linkKnown: Boolean,
+    val onConnect: () -> Unit,
+    val health: JellyfinHealth = JellyfinHealth(),
+    /** Heure du prochain essai automatique pendant une coupure. */
+    val retryAt: Long? = null,
+    val onRetry: () -> Unit = {},
+) {
+    /** Jellyfin est relié mais ne répond plus : contenus enregistrés grisés, onglets barrés. */
+    val down: Boolean get() = link != null && !health.reachable
+}
 
 val LocalJellyfin = compositionLocalOf<JellyfinUi?> { null }
 
@@ -61,7 +78,8 @@ fun <T> rememberJellyfin(cacheKey: String?, vararg keys: Any?, load: suspend Jel
     val ui = LocalJellyfin.current
     var attempt by remember { mutableIntStateOf(0) }
     val cached = remember(ui?.link, cacheKey) { cacheKey?.let { ui?.library?.peek<T>(it) } }
-    val state by produceState<Load<T>>(cached?.let { Load.Ready(it) } ?: Load.Loading, ui?.link, ui?.linkKnown, attempt, *keys) {
+    // Quand Jellyfin revient après une coupure, tout se recharge.
+    val state by produceState<Load<T>>(cached?.let { Load.Ready(it) } ?: Load.Loading, ui?.link, ui?.linkKnown, ui?.health?.recoveries, attempt, *keys) {
         if (ui != null && !ui.linkKnown) return@produceState
         val library = ui?.library
         val auth = if (ui?.link == null || library == null) null else library.auth()
@@ -136,12 +154,38 @@ fun <T> LoadStates(loader: Loader<T>, what: String, takeFocus: Boolean, content:
         } else {
             StateMessage(
                 title = "Jellyfin injoignable",
-                detail = "${state.message}. Vérifie que le Raspberry Pi est allumé ; tes applis restent disponibles.",
-                action = "Réessayer",
-                onAction = loader.retry,
+                detail = unreachableDetail(ui),
+                action = "Réessayer maintenant",
+                onAction = {
+                    ui?.onRetry?.invoke()
+                    loader.retry()
+                },
                 takeFocus = takeFocus,
             )
         }
         is Load.Ready -> content(state.value)
     }
+}
+
+/**
+ * « Le serveur 192.168.1.20:8096 ne répond pas depuis 21:34… Nouvel essai automatique dans 0:48. »
+ * Recalculé chaque seconde pour le décompte. [short] : version courte, pour l'encart de l'accueil.
+ */
+@Composable
+fun unreachableDetail(ui: JellyfinUi?, short: Boolean = false): String {
+    val now by produceState(System.currentTimeMillis()) {
+        while (true) {
+            delay(1_000)
+            value = System.currentTimeMillis()
+        }
+    }
+    val host = ui?.link?.serverUrl?.substringAfter("://")
+    val since = ui?.health?.since?.let { " depuis " + DateTimeFormatter.ofPattern("HH:mm").format(Instant.ofEpochMilli(it).atZone(ZoneId.systemDefault())) }.orEmpty()
+    val retry = ui?.retryAt?.let { at ->
+        val seconds = ((at - now) / 1000).coerceAtLeast(0)
+        " Nouvel essai automatique dans %d:%02d.".format(seconds / 60, seconds % 60)
+    }.orEmpty()
+    if (short) return "Films et Séries sont en pause$since ; tes applis marchent normalement.$retry"
+    return "Le serveur ${host ?: "Jellyfin"} ne répond pas$since. Vérifie que le Raspberry Pi est allumé et que Jellyfin tourne : " +
+        "tes applis, elles, marchent normalement.$retry"
 }

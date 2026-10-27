@@ -1,17 +1,22 @@
 package io.github.touya0.nimbe.feature.home
 
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -33,7 +38,10 @@ import io.github.touya0.nimbe.feature.apps.AppTile
 import io.github.touya0.nimbe.feature.apps.InstalledApp
 import io.github.touya0.nimbe.feature.media.Backdrop
 import io.github.touya0.nimbe.feature.media.Hero
+import io.github.touya0.nimbe.feature.media.JellyfinUi
 import io.github.touya0.nimbe.feature.media.Load
+import io.github.touya0.nimbe.feature.media.LocalJellyfin
+import io.github.touya0.nimbe.feature.media.unreachableDetail
 import io.github.touya0.nimbe.feature.media.MediaText
 import io.github.touya0.nimbe.feature.media.PosterCard
 import io.github.touya0.nimbe.feature.media.ScrollToRestore
@@ -42,8 +50,10 @@ import io.github.touya0.nimbe.feature.media.rememberJellyfin
 import io.github.touya0.nimbe.ui.components.KeyHints
 import io.github.touya0.nimbe.ui.components.PillButton
 import io.github.touya0.nimbe.ui.components.bleed
+import io.github.touya0.nimbe.ui.theme.Alerte
 import io.github.touya0.nimbe.ui.theme.Focus
 import io.github.touya0.nimbe.ui.theme.LuneAttenuee
+import io.github.touya0.nimbe.ui.theme.Panneau
 import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
@@ -71,6 +81,7 @@ fun HomeScreen(
     onRestored: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    val jellyfin = LocalJellyfin.current
     val continueRow = rememberJellyfin("continue") { continueWatching(it) }
     val latestRow = rememberJellyfin("latest") { latest(it) }
     val resume = continueRow.value.orEmpty()
@@ -84,11 +95,12 @@ fun HomeScreen(
         ?: latest.firstOrNull()?.let { HeroPick(it, MediaText.added(it.dateCreated)) }
 
     Box(modifier.fillMaxSize()) {
-        if (!connectivity.offline) Backdrop(hero?.item?.backdrop)
+        if (!connectivity.offline && jellyfin?.down != true) Backdrop(hero?.item?.backdrop)
         Column(Modifier.fillMaxSize().padding(horizontal = 48.dp)) {
             Box(Modifier.height(176.dp), contentAlignment = Alignment.TopStart) {
                 when {
                     connectivity.offline -> OfflineBanner(connectivity, onNetworkSettings)
+                    jellyfin?.down == true -> ServerDownBanner(jellyfin)
                     hero != null -> Hero(hero.item, hero.kicker, overviewLines = 2)
                     else -> Column {
                         Text("Bienvenue sur Nimbe", style = MaterialTheme.typography.displaySmall)
@@ -124,7 +136,7 @@ fun HomeScreen(
                             )
                         }
                     }
-                } else if (continueRow.state is Load.Failed) {
+                } else if (continueRow.state is Load.Failed && jellyfin?.down != true) {
                     Text(
                         "Jellyfin ne répond pas : tes films reviendront avec le serveur. Tes applis restent disponibles.",
                         style = MaterialTheme.typography.bodyMedium,
@@ -194,6 +206,28 @@ fun HomeScreen(
 @Composable
 private fun RowTitle(text: String) {
     Text(text, style = MaterialTheme.typography.headlineSmall, modifier = Modifier.padding(top = 4.dp))
+}
+
+/** Haut de l'accueil quand Jellyfin ne répond plus : ce qui est en pause, ce qui marche, le prochain essai. */
+@Composable
+private fun ServerDownBanner(jellyfin: JellyfinUi) {
+    Column(
+        Modifier
+            .width(620.dp)
+            .background(Panneau.copy(alpha = 0.95f), RoundedCornerShape(16.dp))
+            .border(1.dp, Alerte.copy(alpha = 0.35f), RoundedCornerShape(16.dp))
+            .padding(horizontal = 18.dp, vertical = 14.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
+            Box(Modifier.size(28.dp).background(Alerte.copy(alpha = 0.2f), RoundedCornerShape(8.dp)), contentAlignment = Alignment.Center) {
+                Text("!", style = MaterialTheme.typography.titleMedium, color = Alerte)
+            }
+            Text("Jellyfin ne répond pas", style = MaterialTheme.typography.headlineSmall)
+        }
+        Text(unreachableDetail(jellyfin, short = true), style = MaterialTheme.typography.bodyMedium, color = LuneAttenuee, maxLines = 2)
+        PillButton("Réessayer maintenant", onClick = jellyfin.onRetry)
+    }
 }
 
 /** Haut de l'accueil pendant une coupure : ce qui marche encore, et depuis quand ça ne marche plus. */

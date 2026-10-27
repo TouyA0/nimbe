@@ -21,6 +21,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
@@ -114,7 +115,11 @@ private fun MediaSurface(
             pressedContainerColor = Panneau,
         ),
         scale = ClickableSurfaceDefaults.scale(focusedScale = 1f),
-    ) { content() }
+    ) {
+        // Pendant une coupure, les contenus enregistrés restent visibles mais grisés.
+        val down = LocalJellyfin.current?.down == true
+        Box(Modifier.fillMaxSize().alpha(if (down) 0.4f else 1f)) { content() }
+    }
 }
 
 /** Affiche 2:3 d'un film ou d'une série, sans texte dessous : le bandeau du haut donne le détail. */
@@ -169,6 +174,14 @@ fun WideCard(
                 JellyfinImage(image, width = width, height = null, modifier = Modifier.fillMaxSize())
                 badge?.let { SourceBadge(it, Modifier.align(Alignment.TopStart).padding(8.dp)) }
                 WatchedMarks(item)
+                if (LocalJellyfin.current?.down == true) {
+                    Text(
+                        "Indisponible",
+                        style = MaterialTheme.typography.titleSmall,
+                        color = Lune,
+                        modifier = Modifier.align(Alignment.Center).background(Nuit.copy(alpha = 0.85f), RoundedCornerShape(6.dp)).padding(horizontal = 10.dp, vertical = 4.dp),
+                    )
+                }
             }
         }
         Text(label, style = MaterialTheme.typography.titleSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)

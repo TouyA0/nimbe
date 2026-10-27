@@ -1,10 +1,12 @@
 package io.github.touya0.nimbe.core.storage
 
 import android.content.Context
+import androidx.room.AutoMigration
 import androidx.room.Dao
 import androidx.room.Database
 import androidx.room.Entity
 import androidx.room.Insert
+import androidx.room.OnConflictStrategy
 import androidx.room.PrimaryKey
 import androidx.room.Query
 import androidx.room.Room
@@ -13,12 +15,18 @@ import androidx.room.Transaction
 import kotlinx.coroutines.flow.Flow
 
 /**
- * Base locale du launcher (Room). Elle accueillera le cache des contenus (Jellyfin, guide TV…) pour
- * afficher l'accueil tout de suite et tenir quand le Pi est coupé. Pour l'instant : les lancements d'applis.
+ * Base locale du launcher (Room) : lancements d'applis, et dernières réponses de Jellyfin
+ * pour tenir quand le Pi est coupé. Chaque version ajoute sa migration, testée sur le schéma exporté.
  */
-@Database(entities = [AppLaunch::class], version = 1, exportSchema = true)
+@Database(
+    entities = [AppLaunch::class, CachedResponse::class],
+    version = 2,
+    exportSchema = true,
+    autoMigrations = [AutoMigration(from = 1, to = 2)],
+)
 abstract class NimbeDatabase : RoomDatabase() {
     abstract fun appLaunches(): AppLaunchDao
+    abstract fun cachedResponses(): CachedResponseDao
 
     companion object {
         fun create(context: Context): NimbeDatabase =
@@ -55,4 +63,34 @@ interface AppLaunchDao {
 
     @Query("DELETE FROM app_launches WHERE packageName = :packageName")
     suspend fun forget(packageName: String)
+}
+
+/**
+ * Dernière réponse JSON d'une requête de contenu (liste de films, fiche…), telle que le serveur l'a envoyée.
+ * [key] commence par le serveur et l'utilisateur : un autre compte ne lit jamais ces réponses.
+ * Rien de secret ici : ni jeton ni adresse de flux.
+ */
+@Entity(tableName = "cached_responses")
+data class CachedResponse(
+    @PrimaryKey val key: String,
+    val json: String,
+    val savedAt: Long,
+)
+
+@Dao
+interface CachedResponseDao {
+
+    @Query("SELECT * FROM cached_responses WHERE `key` = :key")
+    suspend fun get(key: String): CachedResponse?
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun put(response: CachedResponse)
+
+    /** Ménage : les réponses trop vieilles ne servent plus à rien. */
+    @Query("DELETE FROM cached_responses WHERE savedAt < :before")
+    suspend fun deleteOlderThan(before: Long)
+
+    /** À la déconnexion : on oublie tout ce qui venait du compte. */
+    @Query("DELETE FROM cached_responses")
+    suspend fun clear()
 }

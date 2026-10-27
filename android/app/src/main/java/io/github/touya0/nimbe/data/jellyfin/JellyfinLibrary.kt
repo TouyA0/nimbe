@@ -1,8 +1,16 @@
 package io.github.touya0.nimbe.data.jellyfin
 
+import io.github.touya0.nimbe.core.storage.CachedResponse
+import io.github.touya0.nimbe.core.storage.CachedResponseDao
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.update
+import org.json.JSONException
 import org.json.JSONObject
+import org.json.JSONTokener
 import java.util.concurrent.ConcurrentHashMap
 
 /** Tri de la bibliothèque de films, comme les filtres de la maquette. */
@@ -13,10 +21,33 @@ enum class MovieSort(val label: String) {
 }
 
 /**
- * Les contenus Jellyfin de l'utilisateur connecté. Chaque réponse est gardée en mémoire :
- * revenir d'une fiche affiche aussitôt la dernière liste, pendant qu'on la rafraîchit.
+ * Le serveur répond-il ? [since] : début de la coupure. [recoveries] augmente à chaque retour :
+ * les écrans s'en servent pour se recharger dès que Jellyfin revient.
  */
-class JellyfinLibrary(private val account: JellyfinAccount) {
+data class JellyfinHealth(val reachable: Boolean = true, val since: Long? = null, val recoveries: Int = 0)
+
+/**
+ * Les contenus Jellyfin de l'utilisateur connecté. Chaque réponse est gardée en mémoire
+ * (revenir d'une fiche affiche aussitôt la dernière liste) et dans la base : quand le Pi est coupé,
+ * on relit la dernière réponse reçue, et [health] passe à « injoignable ».
+ */
+class JellyfinLibrary(private val account: JellyfinAccount, private val cache: CachedResponseDao) {
+
+    private val healthState = MutableStateFlow(JellyfinHealth())
+    val health: StateFlow<JellyfinHealth> = healthState.asStateFlow()
+
+    /** Demande au serveur s'il répond (sans compte), pour l'essai automatique pendant une coupure. */
+    suspend fun check(): Boolean {
+        val auth = auth() ?: return true
+        return try {
+            account.api.publicInfo(auth.server)
+            markReachable()
+            true
+        } catch (e: JellyfinException) {
+            if (e.kind == JellyfinException.Kind.Unreachable) markUnreachable()
+            false
+        }
+    }
 
     private val memory = ConcurrentHashMap<String, Any>()
 
@@ -114,12 +145,12 @@ class JellyfinLibrary(private val account: JellyfinAccount) {
     }
 
     suspend fun item(auth: JellyfinAuth, id: String): MediaItem = remember(auth, "item:$id") {
-        JellyfinJson.item(account.api.get(auth, "/Items/$id", mapOf("userId" to auth.userId, "fields" to FIELDS)) as JSONObject)
+        JellyfinJson.item(fetch(auth, "/Items/$id", mapOf("userId" to auth.userId, "fields" to FIELDS)) as JSONObject)
     }
 
     suspend fun detail(auth: JellyfinAuth, id: String): ItemDetail = remember(auth, "detail:$id") {
         val fields = "$FIELDS,People,MediaSources,MediaStreams"
-        JellyfinJson.detail(account.api.get(auth, "/Items/$id", mapOf("userId" to auth.userId, "fields" to fields)) as JSONObject)
+        JellyfinJson.detail(fetch(auth, "/Items/$id", mapOf("userId" to auth.userId, "fields" to fields)) as JSONObject)
     }
 
     private suspend fun page(auth: JellyfinAuth, path: String, params: Map<String, Any?>): ItemPage {
@@ -130,8 +161,36 @@ class JellyfinLibrary(private val account: JellyfinAccount) {
             "imageTypeLimit" to 1,
             "enableUserData" to true,
         )
-        return JellyfinJson.page(account.api.get(auth, path, common + params))
+        return JellyfinJson.page(fetch(auth, path, common + params))
     }
+
+    /**
+     * Requête de lecture, enregistrée dans la base. Si le serveur ne répond pas (ou répond mal),
+     * la dernière réponse enregistrée la remplace ; sans elle, l'erreur remonte à l'écran.
+     * Un jeton refusé n'est jamais masqué : il faut se reconnecter.
+     */
+    private suspend fun fetch(auth: JellyfinAuth, path: String, params: Map<String, Any?>): Any {
+        val key = cacheKey(auth, path, params)
+        try {
+            val response = account.api.get(auth, path, params)
+            markReachable()
+            cache.put(CachedResponse(key, response.toString(), System.currentTimeMillis()))
+            return response
+        } catch (e: JellyfinException) {
+            if (e.kind == JellyfinException.Kind.Unauthorized) throw e
+            if (e.kind == JellyfinException.Kind.Unreachable) markUnreachable()
+            val saved = cache.get(key) ?: throw e
+            return try {
+                JSONTokener(saved.json).nextValue()
+            } catch (_: JSONException) {
+                throw e
+            }
+        }
+    }
+
+    private fun markReachable() = healthState.update { if (it.reachable) it else JellyfinHealth(true, null, it.recoveries + 1) }
+
+    private fun markUnreachable() = healthState.update { if (it.reachable) it.copy(reachable = false, since = System.currentTimeMillis()) else it }
 
     /** Compte à qui appartient la mémoire : un autre compte repart de zéro. */
     @Volatile
@@ -150,6 +209,12 @@ class JellyfinLibrary(private val account: JellyfinAccount) {
 
     companion object {
         private const val FIELDS = "Overview,Genres,DateCreated,ChildCount,PrimaryImageAspectRatio"
+
+        /** Clé d'enregistrement : serveur, utilisateur, route et paramètres triés (l'ordre ne compte pas). */
+        fun cacheKey(auth: JellyfinAuth, path: String, params: Map<String, Any?>): String {
+            val query = params.filterValues { it != null }.toSortedMap().entries.joinToString("&") { "${it.key}=${it.value}" }
+            return "${auth.server}|${auth.userId}|$path?$query"
+        }
 
         /**
          * Les reprises d'abord, de la plus récente à la plus ancienne ; puis les épisodes suivants
