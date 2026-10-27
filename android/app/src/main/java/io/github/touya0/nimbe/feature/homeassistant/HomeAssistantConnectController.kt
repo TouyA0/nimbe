@@ -148,16 +148,11 @@ class HomeAssistantConnectController(
         }
     }
 
-    /**
-     * Capteurs reconnus, plus ceux déjà suivis que Home Assistant connaît encore.
-     * Cochés : la sélection enregistrée, sinon tous les capteurs reconnus.
-     */
+    /** Capteurs reconnus ; cochés : la sélection enregistrée, sinon tous. */
     private fun loaded(entities: List<HaEntity>): SensorsState.Loaded {
-        val recognized = SensorCatalog.candidates(entities)
-        val kept = entities.filter { it.id in storedSensors && it !in recognized }
-        val candidates = recognized + kept
+        val candidates = SensorCatalog.candidates(entities)
         val selected = storedSensors.filter { id -> candidates.any { it.id == id } }.toSet()
-        return SensorsState.Loaded(candidates, selected.ifEmpty { recognized.map { it.id }.toSet() })
+        return SensorsState.Loaded(candidates, selected.ifEmpty { candidates.map { it.id }.toSet() })
     }
 
     companion object {

@@ -57,22 +57,27 @@ enum class SensorKind { Processor, Temperature, Memory, Disk, Service }
 /**
  * Repère, parmi toutes les entités de Home Assistant, celles qui disent si le Pi va bien :
  * celles de System Monitor (processeur, température, mémoire, disque) et les capteurs de connectivité
- * (Ping, un par service). Les noms d'entités de System Monitor ont changé selon les versions
- * (« processor_use », « system_monitor_processor_use »…) : on reconnaît des morceaux de nom, avec l'unité.
+ * (un par service). Les noms de System Monitor ont changé selon les versions (« processor_use »,
+ * « system_monitor_processor_use »…) : on reconnaît la fin du nom, avec l'unité. Les noms sont stricts :
+ * d'autres intégrations (Docker, par exemple) ont des dizaines de capteurs « cpu » ou « memory_percent ».
  */
 object SensorCatalog {
+
+    private val PROCESSOR = Regex("""(^|_)(processor_use|cpu_use|cpu_usage)(_percent)?$""")
+    private val TEMPERATURE = Regex("""(^|_)(processor|cpu)_temperature$""")
+    private val MEMORY = Regex("""(^|_)memory_(use_percent|usage)$""")
+    private val DISK = Regex("""(^|_)disk_(use_percent|usage)(_.+)?$""")
 
     fun kindOf(entity: HaEntity): SensorKind? {
         val name = entity.id.substringAfter('.').lowercase()
         return when (entity.domain) {
             "binary_sensor" -> SensorKind.Service.takeIf { entity.deviceClass == "connectivity" }
             "sensor" -> when {
-                (entity.deviceClass == "temperature" || entity.unit == "°C") && ("processor" in name || "cpu" in name) ->
-                    SensorKind.Temperature
+                TEMPERATURE.containsMatchIn(name) && entity.unit == "°C" -> SensorKind.Temperature
                 entity.unit != "%" -> null
-                "processor" in name || "cpu" in name -> SensorKind.Processor
-                "memory" in name -> SensorKind.Memory
-                "disk" in name -> SensorKind.Disk
+                PROCESSOR.containsMatchIn(name) -> SensorKind.Processor
+                MEMORY.containsMatchIn(name) -> SensorKind.Memory
+                DISK.containsMatchIn(name) -> SensorKind.Disk
                 else -> null
             }
             else -> null

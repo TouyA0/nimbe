@@ -1,0 +1,25 @@
+# Capteurs suivis par Nimbe : un par service, « En ligne » ou « Hors ligne ».
+# À copier dans le dossier packages/ de la configuration de Home Assistant (voir README.md).
+#
+# Un Ping (ICMP) ne suffit pas : le Pi répond au ping même quand le conteneur Jellyfin est arrêté.
+# On interroge donc la page de santé de chaque service, toutes les 30 secondes.
+
+command_line:
+  - binary_sensor:
+      name: Jellyfin joignable
+      unique_id: nimbe_jellyfin
+      # /health répond « Healthy » quand Jellyfin tourne. Adresse vue depuis le conteneur Home Assistant.
+      command: "curl -sf -m 5 http://192.168.1.182:8097/health > /dev/null && echo ON || echo OFF"
+      payload_on: "ON"
+      payload_off: "OFF"
+      device_class: connectivity
+      scan_interval: 30
+
+  # - binary_sensor:
+  #     name: Nextcloud joignable
+  #     unique_id: nimbe_nextcloud
+  #     command: "curl -sf -m 5 https://nextcloud.example.lan/status.php > /dev/null && echo ON || echo OFF"
+  #     payload_on: "ON"
+  #     payload_off: "OFF"
+  #     device_class: connectivity
+  #     scan_interval: 30
