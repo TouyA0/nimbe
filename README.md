@@ -45,6 +45,18 @@ adb shell settings put secure screensaver_enabled 1
 Pour revenir à l'écran de veille de Google TV : `adb shell settings put secure screensaver_components com.google.android.backdrop/.Backdrop`
 (valeur d'origine à relever avant avec `adb shell settings get secure screensaver_components`).
 
+HDMI-CEC (Android 12 et plus garde ces réglages pour lui ; Nimbe ouvre seulement Affichage et son → HDMI-CEC) :
+
+```bash
+adb shell cmd hdmi_control cec_setting get power_control_mode
+```
+
+- `power_control_mode` : `to_tv` éteint la TV quand le stick se met en veille, `broadcast` éteint aussi les autres
+  appareils (barre de son), `none` laisse la TV allumée.
+- `volume_control_enabled` (`0` ou `1`) : la télécommande du stick règle le volume de la TV.
+- `tv_wake_on_one_touch_play` (`0` ou `1`) : réveiller le stick allume la TV et passe sur son entrée.
+- Pour changer : `adb shell cmd hdmi_control cec_setting set <réglage> <valeur>`.
+
 ## Publier une version
 
 Un tag `v*` lance [`release.yml`](.github/workflows/release.yml) : tests, APK signé, empreinte SHA-256

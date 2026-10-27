@@ -54,6 +54,14 @@ class AppLauncher(
         if (!tryStart(Intent(Settings.ACTION_DREAM_SETTINGS))) openAndroidSettings()
     }
 
+    /**
+     * « Affichage et son » de Google TV, où se trouve HDMI-CEC. Depuis Android 12, les réglages CEC sont
+     * privés au système : une appli ne peut ni les lire ni les changer, seulement ouvrir cet écran.
+     */
+    fun openDisplaySoundSettings() {
+        if (!tryStart(Intent(Settings.ACTION_SOUND_SETTINGS))) openAndroidSettings()
+    }
+
     fun openAndroidSettings() = start(Intent(Settings.ACTION_SETTINGS), "Impossible d'ouvrir les réglages Android")
 
     private fun start(intent: Intent?, error: String) {

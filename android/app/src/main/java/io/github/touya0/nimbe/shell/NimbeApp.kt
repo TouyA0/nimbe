@@ -275,6 +275,7 @@ private fun NimbeShell(
                 accessibility = launcher::openAccessibilitySettings,
                 androidSettings = launcher::openAndroidSettings,
                 screensaverSettings = launcher::openScreensaverSettings,
+                displaySoundSettings = launcher::openDisplaySoundSettings,
                 stockLauncher = { StockLauncher.open(context) },
             ),
             updates = updates,

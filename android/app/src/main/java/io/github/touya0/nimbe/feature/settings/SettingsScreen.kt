@@ -97,6 +97,7 @@ class SettingsLinks(
     val accessibility: () -> Unit,
     val androidSettings: () -> Unit,
     val screensaverSettings: () -> Unit,
+    val displaySoundSettings: () -> Unit,
     val stockLauncher: () -> Unit,
 )
 
@@ -222,6 +223,15 @@ private fun DisplayPage(display: DisplaySettings, onChange: (DisplaySettings) ->
         "Chaque élément est lu à voix haute · réglé dans Android",
         value = if (about?.talkBackOn == true) "Activé" else "Désactivé",
         onClick = links.accessibility,
+    )
+    // Android 12+ garde les réglages CEC pour lui : on explique ce qu'ils font et on ouvre le bon écran.
+    SettingsGroupTitle("Commande de la TV (HDMI-CEC)")
+    LinkRow(
+        "Allumer, éteindre et régler le volume de la TV",
+        "Le stick allume la TV et passe sur son entrée, l'éteint quand il se met en veille, et pilote le volume. " +
+            "Réglé dans Android : Affichage et son → HDMI-CEC",
+        value = "Ouvrir",
+        onClick = links.displaySoundSettings,
     )
 }
 
