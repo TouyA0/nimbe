@@ -15,6 +15,7 @@ class ServerAddressTest {
         assertEquals("http://192.168.1.20:8096", parsed("192.168.1.20"))
         assertEquals("http://192.168.1.182:8097", parsed(" 192.168.1.182:8097/ "))
         assertEquals("http://jellyfin.lan:8096", parsed("jellyfin.lan"))
+        assertEquals("http://192.168.1.182:8123", ServerAddress.parse("192.168.1.182", defaultPort = 8123).getOrThrow())
     }
 
     @Test

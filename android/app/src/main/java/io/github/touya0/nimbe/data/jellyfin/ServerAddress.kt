@@ -4,7 +4,7 @@ import java.net.URI
 import java.net.URISyntaxException
 
 /**
- * Adresse d'un serveur Jellyfin, telle que la saisit l'utilisateur à la télécommande :
+ * Adresse d'un serveur de la maison (Jellyfin, Home Assistant), telle que la saisit l'utilisateur :
  * « 192.168.1.20 », « pi5.lan:8097 » ou « https://films.example.org/jellyfin ».
  *
  * Le HTTP sans chiffrement n'est accepté que vers le réseau de la maison (adresses privées,
@@ -14,8 +14,11 @@ object ServerAddress {
 
     const val DEFAULT_PORT = 8096
 
-    /** Adresse normalisée (schéma, hôte, port, chemin sans barre finale), ou une explication en français. */
-    fun parse(input: String): Result<String> {
+    /**
+     * Adresse normalisée (schéma, hôte, port, chemin sans barre finale), ou une explication en français.
+     * [defaultPort] : port ajouté à une adresse en http:// qui n'en a pas (8096 pour Jellyfin, 8123 pour Home Assistant).
+     */
+    fun parse(input: String, defaultPort: Int = DEFAULT_PORT): Result<String> {
         val text = input.trim()
         if (text.isEmpty()) return failure("Saisis l'adresse du serveur")
         val withScheme = if ("://" in text) text else "http://$text"
@@ -29,10 +32,10 @@ object ServerAddress {
         val host = uri.host ?: return failure("Adresse invalide")
         if (scheme == "http" && !isLocalHost(host)) return failure("Hors de la maison, utilise une adresse en https://")
 
-        // Jellyfin écoute sur 8096 par défaut ; en https, c'est un proxy (Caddy) sur le port standard.
+        // En http, le port du service ; en https, c'est un proxy (Caddy) sur le port standard.
         val port = when {
             uri.port != -1 -> ":${uri.port}"
-            scheme == "http" -> ":$DEFAULT_PORT"
+            scheme == "http" -> ":$defaultPort"
             else -> ""
         }
         val path = uri.rawPath.orEmpty().trimEnd('/')

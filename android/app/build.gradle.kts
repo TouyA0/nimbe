@@ -104,6 +104,10 @@ dependencies {
     implementation(libs.media3.ui.compose)
     // Seulement pour l'affichage des sous-titres (SubtitleView).
     implementation(libs.media3.ui)
+    // WebSocket de Home Assistant. Même version que celle que tire déjà Coil.
+    implementation(libs.okhttp)
+    // QR code de l'écran « Connecter Home Assistant », dessiné par Compose.
+    implementation(libs.zxing.core)
     testImplementation(libs.junit)
     // org.json est fourni par Android ; pour les tests sur le PC, on prend la vraie bibliothèque.
     testImplementation(libs.json)

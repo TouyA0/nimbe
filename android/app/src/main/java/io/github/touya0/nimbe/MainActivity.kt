@@ -74,6 +74,7 @@ class MainActivity : ComponentActivity() {
                         updates = updates,
                         jellyfin = (application as NimbeApplication).jellyfin,
                         library = (application as NimbeApplication).library,
+                        homeAssistant = (application as NimbeApplication).homeAssistant,
                         homePresses = homePresses,
                     )
                 }

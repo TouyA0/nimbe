@@ -42,8 +42,13 @@ import androidx.tv.material3.ClickableSurfaceDefaults
 import androidx.tv.material3.MaterialTheme
 import androidx.tv.material3.Surface
 import androidx.tv.material3.Text
+import io.github.touya0.nimbe.data.homeassistant.HomeAssistantAccount
+import io.github.touya0.nimbe.data.homeassistant.HomeAssistantLink
 import io.github.touya0.nimbe.data.jellyfin.JellyfinAccount
 import io.github.touya0.nimbe.data.jellyfin.JellyfinLink
+import io.github.touya0.nimbe.feature.homeassistant.HomeAssistantColor
+import io.github.touya0.nimbe.feature.homeassistant.HomeAssistantConnectController
+import io.github.touya0.nimbe.feature.homeassistant.HomeAssistantConnectScreen
 import io.github.touya0.nimbe.feature.onboarding.JellyfinConnectScreen
 import io.github.touya0.nimbe.feature.onboarding.ServiceInitial
 import io.github.touya0.nimbe.ui.components.focusRing
@@ -65,6 +70,7 @@ import io.github.touya0.nimbe.update.UpdateInstaller
 import io.github.touya0.nimbe.update.UpdateProgress
 import io.github.touya0.nimbe.update.UpdateState
 import io.github.touya0.nimbe.update.formatSize
+import java.net.URI
 import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
@@ -94,6 +100,7 @@ fun SettingsScreen(
     links: SettingsLinks,
     updates: UpdateController,
     jellyfin: JellyfinAccount,
+    homeAssistant: HomeAssistantAccount,
     onOpenUpdate: () -> Unit,
     onClose: () -> Unit,
 ) {
@@ -106,6 +113,17 @@ fun SettingsScreen(
     val jellyfinLink by remember(jellyfin) { jellyfin.link.map { Linked(it) } }.collectAsStateWithLifecycle(initialValue = null)
     if (jellyfinConnectOpen) {
         JellyfinConnectScreen(jellyfin, jellyfinLink?.link?.serverUrl, onClose = { jellyfinConnectOpen = false })
+        return
+    }
+    var homeAssistantConnectOpen by rememberSaveable { mutableStateOf(false) }
+    val homeAssistantLink by remember(homeAssistant) { homeAssistant.link.map { HaLinked(it) } }
+        .collectAsStateWithLifecycle(initialValue = null)
+    if (homeAssistantConnectOpen) {
+        HomeAssistantConnectScreen(
+            homeAssistant,
+            fallbackAddress = homeAssistantGuess(jellyfinLink?.link?.serverUrl),
+            onClose = { homeAssistantConnectOpen = false },
+        )
         return
     }
 
@@ -155,7 +173,14 @@ fun SettingsScreen(
         ) {
             when (section) {
                 SettingsSection.Display -> DisplayPage(display, onDisplayChange, about, links)
-                SettingsSection.Servers -> ServersPage(jellyfin, jellyfinLink, onConnectJellyfin = { jellyfinConnectOpen = true })
+                SettingsSection.Servers -> ServersPage(
+                    jellyfin,
+                    jellyfinLink,
+                    onConnectJellyfin = { jellyfinConnectOpen = true },
+                    homeAssistant,
+                    homeAssistantLink,
+                    onConnectHomeAssistant = { homeAssistantConnectOpen = true },
+                )
                 SettingsSection.Updates -> UpdatesPage(updateState, updates, onOpenUpdate)
                 SettingsSection.About -> AboutPage(about, links, onCacheCleared = { aboutVersion++ })
             }
@@ -188,16 +213,36 @@ private fun DisplayPage(display: DisplaySettings, onChange: (DisplaySettings) ->
 /** Enveloppe pour distinguer « pas encore lu » (null) de « pas connecté ». */
 private data class Linked(val link: JellyfinLink?)
 
+private data class HaLinked(val link: HomeAssistantLink?)
+
+/** Home Assistant tourne en général sur le même Pi que Jellyfin : on propose son adresse, port 8123. */
+private fun homeAssistantGuess(jellyfinUrl: String?): String {
+    val host = jellyfinUrl?.let { runCatching { URI(it).host }.getOrNull() } ?: return ""
+    return "http://$host:${HomeAssistantConnectController.HOME_ASSISTANT_PORT}"
+}
+
 @Composable
-private fun ServersPage(jellyfin: JellyfinAccount, linked: Linked?, onConnectJellyfin: () -> Unit) {
-    val scope = rememberCoroutineScope()
+private fun ServersPage(
+    jellyfin: JellyfinAccount,
+    linked: Linked?,
+    onConnectJellyfin: () -> Unit,
+    homeAssistant: HomeAssistantAccount,
+    haLinked: HaLinked?,
+    onConnectHomeAssistant: () -> Unit,
+) {
     PageTitle("Serveurs et comptes", "Chaque accès est un jeton révocable. Aucun mot de passe n'est enregistré sur la TV.")
     SettingsGroupTitle("Sur ton réseau")
-    if (linked == null) {
+    if (linked == null || haLinked == null) {
         Text("Chargement…", style = MaterialTheme.typography.bodyLarge, color = LuneAttenuee)
         return
     }
-    val link = linked.link
+    JellyfinRows(jellyfin, linked.link, onConnectJellyfin)
+    HomeAssistantRows(homeAssistant, haLinked.link, onConnectHomeAssistant)
+}
+
+@Composable
+private fun JellyfinRows(jellyfin: JellyfinAccount, link: JellyfinLink?, onConnectJellyfin: () -> Unit) {
+    val scope = rememberCoroutineScope()
     val jellyfinRow = remember { FocusRequester() }
     if (link == null) {
         SettingRow(
@@ -245,6 +290,69 @@ private fun ServersPage(jellyfin: JellyfinAccount, linked: Linked?, onConnectJel
             } else {
                 runCatching { jellyfinRow.requestFocus() }
                 scope.launch { jellyfin.disconnect() }
+            }
+        },
+    )
+}
+
+@Composable
+private fun HomeAssistantRows(homeAssistant: HomeAssistantAccount, link: HomeAssistantLink?, onConnect: () -> Unit) {
+    val scope = rememberCoroutineScope()
+    val row = remember { FocusRequester() }
+    // Après « Déconnecter », la ligne disparaît : le focus revient sur « Home Assistant ».
+    var refocus by remember { mutableStateOf(false) }
+    if (link == null) {
+        LaunchedEffect(Unit) {
+            if (refocus) runCatching { row.requestFocus() }
+            refocus = false
+        }
+        SettingRow(
+            title = "Home Assistant",
+            detail = "État du Pi et des services · pas encore connecté",
+            onClick = onConnect,
+            modifier = Modifier.focusRequester(row),
+            leading = { ServiceInitial("H", HomeAssistantColor) },
+            trailing = {
+                Status("Non connecté", LuneAttenuee)
+                Value("Connecter")
+            },
+        )
+        return
+    }
+
+    // Vérifié à l'ouverture de la page : le token est-il encore accepté ?
+    val reachable by produceState<Boolean?>(null, link.serverUrl) {
+        val auth = homeAssistant.auth()
+        value = auth != null && runCatching { homeAssistant.api.session(auth.server, auth.token) { } }.isSuccess
+    }
+    val account = if (link.isAdmin) "compte « ${link.userName} » administrateur" else "compte « ${link.userName} » sans droits admin"
+    SettingRow(
+        title = "Home Assistant",
+        detail = "${link.serverUrl.substringAfter("://")} · $account · ${link.sensors.size} capteurs suivis",
+        onClick = onConnect,
+        modifier = Modifier.focusRequester(row),
+        leading = { ServiceInitial("H", HomeAssistantColor) },
+        trailing = {
+            when (reachable) {
+                null -> Status("Vérification…", LuneAttenuee)
+                true -> Status("Connecté", EnLigne)
+                false -> Status("Injoignable", Alerte)
+            }
+            Value("Capteurs")
+        },
+    )
+    var confirm by remember { mutableStateOf(false) }
+    LinkRow(
+        title = "Déconnecter Home Assistant",
+        detail = "Oublie le token sur cette TV, et le révoque dans Home Assistant si le Pi répond",
+        value = if (confirm) "OK pour confirmer" else "Déconnecter",
+        onClick = {
+            if (!confirm) {
+                confirm = true
+            } else {
+                runCatching { row.requestFocus() }
+                refocus = true
+                scope.launch { homeAssistant.disconnect() }
             }
         },
     )

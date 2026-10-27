@@ -51,6 +51,7 @@ import io.github.touya0.nimbe.core.storage.AppLaunchDao
 import io.github.touya0.nimbe.core.storage.LauncherPrefs
 import io.github.touya0.nimbe.crashguard.StockLauncher
 import io.github.touya0.nimbe.data.jellyfin.JellyfinAccount
+import io.github.touya0.nimbe.data.homeassistant.HomeAssistantAccount
 import io.github.touya0.nimbe.feature.apps.AppActions
 import io.github.touya0.nimbe.feature.apps.AppLauncher
 import io.github.touya0.nimbe.feature.apps.AppsRepository
@@ -86,6 +87,7 @@ fun NimbeApp(
     updates: UpdateController,
     jellyfin: JellyfinAccount,
     library: JellyfinLibrary,
+    homeAssistant: HomeAssistantAccount,
     homePresses: Flow<Unit>,
 ) {
     val linked by remember(jellyfin) { jellyfin.link.map { Linked(it) } }.collectAsStateWithLifecycle(initialValue = null)
@@ -120,7 +122,7 @@ fun NimbeApp(
         if (jellyfinConnectOpen) {
             JellyfinConnectScreen(jellyfin, linked?.link?.serverUrl, onClose = { jellyfinConnectOpen = false })
         } else {
-            NimbeShell(repository, prefs, launcher, connectivityMonitor, launches, updates, jellyfin, homePresses)
+            NimbeShell(repository, prefs, launcher, connectivityMonitor, launches, updates, jellyfin, homeAssistant, homePresses)
         }
     }
 }
@@ -134,6 +136,7 @@ private fun NimbeShell(
     launches: AppLaunchDao,
     updates: UpdateController,
     jellyfin: JellyfinAccount,
+    homeAssistant: HomeAssistantAccount,
     homePresses: Flow<Unit>,
 ) {
     var settingsOpen by rememberSaveable { mutableStateOf(false) }
@@ -224,6 +227,7 @@ private fun NimbeShell(
             ),
             updates = updates,
             jellyfin = jellyfin,
+            homeAssistant = homeAssistant,
             onOpenUpdate = { updateOpen = true },
             onClose = { settingsOpen = false },
         )
