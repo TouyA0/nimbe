@@ -53,4 +53,14 @@ class ServerStatusTest {
         assertEquals(ServerLevel.NoInternet, level(network = NetworkState.NoInternet))
         assertEquals(ServerLevel.ServiceDown, level(network = NetworkState.NoInternet, jellyfinDown = true))
     }
+
+    @Test
+    fun `seuils à surveiller`() {
+        fun disk(value: String) = HaEntity("sensor.disk_use_percent", "Disque", value, "%", null, 1L)
+        assertEquals(false, Watch.needed(disk("79.9")))
+        assertEquals(true, Watch.needed(disk("81")))
+        assertEquals(false, Watch.needed(disk("unavailable")))
+        assertEquals(true, Watch.needed(HaEntity("sensor.processor_temperature", "T", "76", "°C", "temperature", 1L)))
+        assertEquals(false, Watch.needed(jellyfinSensor))
+    }
 }

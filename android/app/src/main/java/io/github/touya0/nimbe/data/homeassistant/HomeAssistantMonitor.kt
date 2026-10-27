@@ -53,6 +53,12 @@ class HomeAssistantMonitor(private val account: HomeAssistantAccount, scope: Cor
         .flatMapLatest { link -> if (link == null) flowOf(HaLive(HaConnection.Off)) else watch(link) }
         .stateIn(scope, SharingStarted.WhileSubscribed(STOP_DELAY_MS), HaLive())
 
+    /** Les 24 dernières heures de [entityId], par une connexion à part (l'écran qui la demande attend la réponse). */
+    suspend fun history(entityId: String, now: Long = System.currentTimeMillis()): List<HistoryPoint> {
+        val auth = account.auth() ?: throw HomeAssistantException(HomeAssistantException.Kind.Unauthorized, "Token illisible")
+        return account.api.session(auth.server, auth.token) { history(entityId, now - DAY_MS) }
+    }
+
     fun retryNow() {
         retries.tryEmit(Unit)
     }
@@ -92,6 +98,7 @@ class HomeAssistantMonitor(private val account: HomeAssistantAccount, scope: Cor
 
     private companion object {
         const val RETRY_MS = 30_000L
+        const val DAY_MS = 24 * 60 * 60 * 1000L
 
         /** Un retour rapide (réglages ouverts puis refermés) ne coupe pas la connexion. */
         const val STOP_DELAY_MS = 5_000L

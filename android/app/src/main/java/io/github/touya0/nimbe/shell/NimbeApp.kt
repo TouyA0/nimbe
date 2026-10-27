@@ -57,6 +57,7 @@ import io.github.touya0.nimbe.crashguard.StockLauncher
 import io.github.touya0.nimbe.data.jellyfin.JellyfinAccount
 import io.github.touya0.nimbe.data.homeassistant.HaConnection
 import io.github.touya0.nimbe.data.homeassistant.HaLive
+import io.github.touya0.nimbe.data.homeassistant.HistoryPoint
 import io.github.touya0.nimbe.data.homeassistant.HomeAssistantAccount
 import io.github.touya0.nimbe.data.homeassistant.HomeAssistantMonitor
 import io.github.touya0.nimbe.feature.status.JellyfinWatch
@@ -153,7 +154,7 @@ fun NimbeApp(
         if (jellyfinConnectOpen) {
             JellyfinConnectScreen(jellyfin, linked?.link?.serverUrl, onClose = { jellyfinConnectOpen = false })
         } else {
-            NimbeShell(repository, prefs, launcher, connectivityMonitor, launches, updates, jellyfin, homeAssistant, ha, homePresses)
+            NimbeShell(repository, prefs, launcher, connectivityMonitor, launches, updates, jellyfin, homeAssistant, ha, homeAssistantMonitor::history, homePresses)
         }
     }
 }
@@ -169,6 +170,7 @@ private fun NimbeShell(
     jellyfin: JellyfinAccount,
     homeAssistant: HomeAssistantAccount,
     ha: HaLive,
+    loadHistory: suspend (String) -> List<HistoryPoint>,
     homePresses: Flow<Unit>,
 ) {
     var settingsOpen by rememberSaveable { mutableStateOf(false) }
@@ -257,6 +259,7 @@ private fun NimbeShell(
             verdict = status,
             ha = ha,
             jellyfin = JellyfinWatch(linked = jellyfinUi?.link != null, health = jellyfinUi?.health ?: JellyfinHealth()),
+            loadHistory = loadHistory,
             onRetry = { jellyfinUi?.onRetry?.invoke() },
             onClose = { statusOpen = false },
         )

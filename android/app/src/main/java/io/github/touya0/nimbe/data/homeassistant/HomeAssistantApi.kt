@@ -13,6 +13,7 @@ import org.json.JSONArray
 import org.json.JSONException
 import org.json.JSONObject
 import java.io.IOException
+import java.time.Instant
 import java.util.Base64
 import java.util.concurrent.TimeUnit
 
@@ -212,6 +213,18 @@ class HomeAssistantSession internal constructor(
                 return message.optJSONObject("event") ?: continue
             }
         }
+    }
+
+    /** Valeurs numériques de [entityId] depuis [startMs] (historique de Home Assistant), dans l'ordre. */
+    suspend fun history(entityId: String, startMs: Long): List<HistoryPoint> {
+        val fields = JSONObject()
+            .put("start_time", Instant.ofEpochMilli(startMs).toString())
+            .put("entity_ids", JSONArray(listOf(entityId)))
+            .put("minimal_response", true)
+            .put("no_attributes", true)
+            .put("significant_changes_only", false)
+        val result = command("history/history_during_period", fields) as? JSONObject ?: return emptyList()
+        return HistorySeriesBuilder.parse(result, entityId)
     }
 
     /** Révoque un jeton longue durée de l'utilisateur connecté. */

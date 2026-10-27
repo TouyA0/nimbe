@@ -15,6 +15,20 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.tv.material3.ClickableSurfaceDefaults
+import androidx.tv.material3.Surface
+import io.github.touya0.nimbe.data.homeassistant.HistoryPoint
+import io.github.touya0.nimbe.data.homeassistant.HistorySeries
+import io.github.touya0.nimbe.data.homeassistant.HistorySeriesBuilder
+import io.github.touya0.nimbe.ui.components.Spinner
+import io.github.touya0.nimbe.ui.components.focusRing
+import io.github.touya0.nimbe.ui.theme.NimbeFocus
+import kotlin.math.roundToInt
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -61,7 +75,14 @@ data class JellyfinWatch(val linked: Boolean, val health: JellyfinHealth)
  * et d'où vient l'information : Home Assistant en direct, ou dernières valeurs reçues (grisées, avec leur heure).
  */
 @Composable
-fun ServerStatusScreen(verdict: ServerVerdict, ha: HaLive, jellyfin: JellyfinWatch, onRetry: () -> Unit, onClose: () -> Unit) {
+fun ServerStatusScreen(
+    verdict: ServerVerdict,
+    ha: HaLive,
+    jellyfin: JellyfinWatch,
+    loadHistory: suspend (String) -> List<HistoryPoint>,
+    onRetry: () -> Unit,
+    onClose: () -> Unit,
+) {
     BackHandler(onBack = onClose)
     val action = remember { FocusRequester() }
     LaunchedEffect(Unit) { runCatching { action.requestFocus() } }
@@ -75,52 +96,181 @@ fun ServerStatusScreen(verdict: ServerVerdict, ha: HaLive, jellyfin: JellyfinWat
     val followed = ha.sensors.mapNotNull { ha.entities[it] }
     val measures = followed.filter { SensorCatalog.kindOf(it) != SensorKind.Service }
     val services = followed.filter { SensorCatalog.kindOf(it) == SensorKind.Service }
+    val watched = measures.filter { live && Watch.needed(it) }
+    val ok = verdict.level == ServerLevel.Ok
 
     Column(
-        Modifier.fillMaxSize().background(Nuit).verticalScroll(rememberScrollState()).padding(horizontal = 56.dp, vertical = 36.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp),
+        Modifier.fillMaxSize().background(Nuit).verticalScroll(rememberScrollState()).padding(horizontal = 56.dp, vertical = 24.dp),
+        verticalArrangement = Arrangement.spacedBy(18.dp),
     ) {
-        Text("HOME ASSISTANT · RASPBERRY PI", style = MaterialTheme.typography.labelMedium, color = LuneAttenuee)
-        Text("État du serveur", style = MaterialTheme.typography.displaySmall.copy(fontSize = 36.sp, lineHeight = 44.sp))
+        Row(verticalAlignment = Alignment.Bottom) {
+            Column(Modifier.weight(1f)) {
+                Text("HOME ASSISTANT · RASPBERRY PI", style = MaterialTheme.typography.labelMedium, color = LuneAttenuee)
+                Text("État du serveur", style = MaterialTheme.typography.displaySmall.copy(fontSize = 36.sp, lineHeight = 44.sp))
+            }
+            if (ok) AllGoodCard(watched)
+        }
+        if (!ok) Banner(verdict, ha, jellyfin, followed, onRetry, onClose, action)
 
-        Banner(verdict, ha, jellyfin, followed, onRetry, onClose, action)
-
-        if (measures.isNotEmpty()) {
-            Row(verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                Text(if (live) "Mesures en direct" else "Dernières valeurs connues", style = MaterialTheme.typography.headlineSmall)
-                val last = followed.mapNotNull { it.updatedAt }.maxOrNull()
-                if (!live && last != null) {
-                    Text("reçues à ${hour(last)}, ${ago(now - last)}", style = MaterialTheme.typography.labelMedium, color = LuneAttenuee)
+        Row(horizontalArrangement = Arrangement.spacedBy(24.dp)) {
+            Panel(Modifier.weight(1f)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("Raspberry Pi", style = MaterialTheme.typography.headlineSmall, modifier = Modifier.weight(1f))
+                    val last = followed.mapNotNull { it.updatedAt }.maxOrNull()
+                    Text(
+                        when {
+                            live -> "En direct"
+                            last != null -> "Reçues à ${hour(last)}, ${ago(now - last)}"
+                            else -> "Pas encore de mesure"
+                        },
+                        style = MaterialTheme.typography.labelMedium,
+                        color = LuneAttenuee,
+                    )
+                }
+                if (measures.isEmpty()) {
+                    Text(
+                        "Aucune mesure du Pi suivie. Choisis-les dans Réglages → Serveurs et comptes → Home Assistant.",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = LuneAttenuee,
+                    )
+                }
+                measures.chunked(2).forEach { row ->
+                    Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        row.forEach { MeasureTile(it, live, Modifier.weight(1f)) }
+                        if (row.size == 1) Spacer(Modifier.weight(1f))
+                    }
+                }
+                measures.firstOrNull { SensorCatalog.kindOf(it) == SensorKind.Temperature }?.let { temperature ->
+                    TemperatureHistory(temperature, loadHistory)
                 }
             }
-            measures.chunked(4).forEach { row ->
-                Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-                    row.forEach { MeasureTile(it, live, Modifier.weight(1f)) }
-                    repeat(4 - row.size) { Spacer(Modifier.weight(1f)) }
+            Panel(Modifier.weight(1f)) {
+                Text("Services", style = MaterialTheme.typography.headlineSmall)
+                // Le premier service prend le focus quand il n'y a pas de bandeau : OK revérifie tout.
+                var first = ok
+                fun focusFirst(): Modifier = if (first) Modifier.focusRequester(action).also { first = false } else Modifier
+                if (jellyfin.linked) {
+                    val health = jellyfin.health
+                    ServiceRow(
+                        "J", JellyfinColor, "Jellyfin",
+                        if (health.reachable) "Répond directement" else "Ne répond pas" + since(health.since),
+                        if (health.reachable) Status.Ok else Status.Down,
+                        onRetry, focusFirst(),
+                    )
+                }
+                services.filterNot { jellyfin.linked && it.serviceName.equals("Jellyfin", ignoreCase = true) }.forEach { entity ->
+                    val (detail, status) = when {
+                        !live -> "Dernière valeur : ${entity.displayValue.lowercase()}" + (entity.updatedAt?.let { " à ${hour(it)}" } ?: "") to Status.Unknown
+                        entity.unknown -> "Home Assistant ne sait pas" to Status.Unknown
+                        entity.state == "on" -> "En ligne · vu par Home Assistant" to Status.Ok
+                        else -> "Hors ligne · vu par Home Assistant" to Status.Down
+                    }
+                    ServiceRow(entity.serviceName.take(1).uppercase(), PanneauClair, entity.serviceName, detail, status, onRetry, focusFirst())
+                }
+                when (val connection = ha.connection) {
+                    is HaConnection.Live -> ServiceRow("H", HomeAssistantColor, "Home Assistant", "En ligne · mesures en direct", Status.Ok, onRetry, focusFirst())
+                    is HaConnection.Lost -> ServiceRow(
+                        "H", HomeAssistantColor, "Home Assistant",
+                        if (connection.refused) "Token refusé" else "Pas de réponse depuis ${hour(connection.since)}",
+                        Status.Down, onRetry, focusFirst(),
+                    )
+                    HaConnection.Connecting -> ServiceRow("H", HomeAssistantColor, "Home Assistant", "Connexion…", Status.Unknown, onRetry, focusFirst())
+                    HaConnection.Off -> Unit
+                }
+                watched.filter { SensorCatalog.kindOf(it) == SensorKind.Disk }.forEach { disk ->
+                    ServiceRow("D", Focus.copy(alpha = 0.7f), "Stockage", "Disque rempli à ${disk.displayValue}", Status.Watch, onRetry, focusFirst())
                 }
             }
         }
 
-        Text("Services", style = MaterialTheme.typography.headlineSmall)
-        val cards = buildList<@Composable (Modifier) -> Unit> {
-            if (jellyfin.linked) add { JellyfinCard(jellyfin.health, it) }
-            services.forEach { entity -> add { ServiceCard(entity, live, it) } }
-            if (ha.connection != HaConnection.Off) add { HomeAssistantCard(ha.connection, it) }
-        }
-        cards.chunked(3).forEach { row ->
-            Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-                row.forEach { card -> card(Modifier.weight(1f)) }
-                repeat(3 - row.size) { Spacer(Modifier.weight(1f)) }
+        Row(horizontalArrangement = Arrangement.spacedBy(28.dp)) {
+            Hint("OK", "vérifier maintenant")
+            Hint("Retour", "revenir à l'accueil")
+            val connection = ha.connection
+            if (connection is HaConnection.Lost) {
+                Text(
+                    if (connection.refused) "Le jeton d'accès a pu expirer → Réglages → Serveurs et comptes"
+                    else "Si ça dure : vérifie que le conteneur homeassistant tourne sur le Pi",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = LuneAttenuee,
+                )
+            } else {
+                Text("Voyant de l'accueil : orange ou rouge en cas de souci", style = MaterialTheme.typography.bodyMedium, color = LuneAttenuee)
             }
         }
+    }
+}
 
-        val connection = ha.connection
-        if (connection is HaConnection.Lost) {
-            Row(Modifier.padding(top = 8.dp), horizontalArrangement = Arrangement.spacedBy(40.dp)) {
-                Text("Si ça dure : vérifie que le conteneur homeassistant tourne sur le Pi", style = MaterialTheme.typography.bodyMedium, color = LuneAttenuee)
-                if (connection.refused) {
-                    Text("Le jeton d'accès a pu expirer → Réglages → Serveurs et comptes", style = MaterialTheme.typography.bodyMedium, color = LuneAttenuee)
-                }
+/** Carte verte en haut à droite, quand tout va bien ; signale les mesures à surveiller. */
+@Composable
+private fun AllGoodCard(watched: List<HaEntity>) {
+    Row(
+        Modifier
+            .background(EnLigne.copy(alpha = 0.12f), RoundedCornerShape(14.dp))
+            .border(1.dp, EnLigne.copy(alpha = 0.35f), RoundedCornerShape(14.dp))
+            .padding(horizontal = 18.dp, vertical = 12.dp),
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Box(Modifier.size(28.dp).background(EnLigne, CircleShape), contentAlignment = Alignment.Center) {
+            Text("✓", style = MaterialTheme.typography.titleSmall, color = Nuit)
+        }
+        Column {
+            Text("Tous les services sont en ligne", style = MaterialTheme.typography.titleMedium)
+            val names = watched.map { (MeasureNames[SensorCatalog.kindOf(it)] ?: it.label).lowercase() }
+            Text(
+                when (names.size) {
+                    0 -> "Mesures reçues en direct"
+                    1 -> "1 point à surveiller : ${names.first()} · en direct"
+                    else -> "${names.size} points à surveiller : ${names.joinToString(", ")} · en direct"
+                },
+                style = MaterialTheme.typography.labelMedium,
+                color = LuneAttenuee,
+            )
+        }
+    }
+}
+
+@Composable
+private fun Panel(modifier: Modifier, content: @Composable () -> Unit) {
+    Column(
+        modifier
+            .background(Panneau, RoundedCornerShape(20.dp))
+            .border(1.dp, PanneauClair, RoundedCornerShape(20.dp))
+            .padding(20.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+    ) { content() }
+}
+
+@Composable
+private fun Hint(key: String, action: String) {
+    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+        Text(key, style = MaterialTheme.typography.titleSmall)
+        Text(action, style = MaterialTheme.typography.bodyMedium, color = LuneAttenuee)
+    }
+}
+
+/** Courbe des 24 dernières heures, demandée à Home Assistant à l'ouverture de l'écran. */
+@Composable
+private fun TemperatureHistory(temperature: HaEntity, loadHistory: suspend (String) -> List<HistoryPoint>) {
+    val series by produceState<Result<HistorySeries>?>(null, temperature.id) {
+        val to = System.currentTimeMillis()
+        value = runCatching { HistorySeriesBuilder.build(loadHistory(temperature.id), to - DAY_MS, to) }
+    }
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Row {
+            Text("Température sur 24 h", style = MaterialTheme.typography.labelMedium, color = LuneAttenuee, modifier = Modifier.weight(1f))
+            series?.getOrNull()?.max?.let { max ->
+                Text("max ${max.value.roundToInt()} °C · ${spokenHourOnly(max.at)}", style = MaterialTheme.typography.labelMedium, color = LuneAttenuee)
+            }
+        }
+        val current = series
+        Box(Modifier.fillMaxWidth().height(72.dp), contentAlignment = Alignment.Center) {
+            when {
+                current == null -> Spinner()
+                current.isFailure -> Text("Historique indisponible : Home Assistant ne répond pas", style = MaterialTheme.typography.bodyMedium, color = LuneAttenuee)
+                current.getOrThrow().points.size < 2 -> Text("Pas encore assez de mesures", style = MaterialTheme.typography.bodyMedium, color = LuneAttenuee)
+                else -> HistoryChart(current.getOrThrow(), Modifier.fillMaxSize())
             }
         }
     }
@@ -213,70 +363,86 @@ private val MeasureNames = mapOf(
     SensorKind.Disk to "Disque",
 )
 
-/** Une mesure du Pi ; grisée quand elle n'est plus confirmée en direct. */
+/** Une mesure du Pi avec sa jauge ; grisée quand elle n'est plus confirmée en direct, ambre à surveiller. */
 @Composable
 private fun MeasureTile(entity: HaEntity, live: Boolean, modifier: Modifier) {
     val kind = SensorCatalog.kindOf(entity)
     val fresh = live && !entity.unknown
+    val number = entity.state.toDoubleOrNull()
     Column(
-        modifier.background(Panneau, RoundedCornerShape(14.dp)).border(1.dp, PanneauClair, RoundedCornerShape(14.dp)).padding(16.dp),
-        verticalArrangement = Arrangement.spacedBy(4.dp),
+        modifier.background(PanneauClair.copy(alpha = 0.5f), RoundedCornerShape(14.dp)).padding(14.dp),
+        verticalArrangement = Arrangement.spacedBy(6.dp),
     ) {
-        Text(MeasureNames[kind] ?: entity.label, style = MaterialTheme.typography.labelMedium, color = LuneAttenuee, maxLines = 1)
-        Text(
-            entity.displayValue,
-            style = MaterialTheme.typography.headlineMedium,
-            color = if (fresh) Lune else LuneAttenuee,
-        )
-        Text(entity.updatedAt?.let { "à ${hour(it)}" } ?: " ", style = MaterialTheme.typography.labelMedium, color = LuneAttenuee)
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(MeasureNames[kind] ?: entity.label, style = MaterialTheme.typography.labelMedium, color = LuneAttenuee, modifier = Modifier.weight(1f), maxLines = 1)
+            if (!fresh) entity.updatedAt?.let { Text("à ${hour(it)}", style = MaterialTheme.typography.labelMedium, color = LuneAttenuee) }
+        }
+        Text(entity.displayValue, style = MaterialTheme.typography.headlineMedium, color = if (fresh) Lune else LuneAttenuee)
+        // Jauge : pourcentage, ou température sur 0-85 °C (le Pi 5 ralentit vers 85 °C).
+        val fraction = number?.let { if (kind == SensorKind.Temperature) it / 85.0 else it / 100.0 }?.coerceIn(0.0, 1.0)
+        Box(Modifier.fillMaxWidth().height(5.dp).background(PanneauClair, CircleShape)) {
+            if (fraction != null) {
+                val color = when {
+                    !fresh -> LuneAttenuee
+                    Watch.needed(entity) -> Focus
+                    else -> EnLigne
+                }
+                Box(Modifier.fillMaxWidth(fraction.toFloat()).height(5.dp).background(color, CircleShape))
+            }
+        }
     }
 }
 
-@Composable
-private fun JellyfinCard(health: JellyfinHealth, modifier: Modifier) {
-    ServiceRow(
-        letter = "J",
-        letterColor = JellyfinColor,
-        title = "Jellyfin",
-        detail = if (health.reachable) "Répond directement · OK" else "Ne répond pas" + since(health.since),
-        detailColor = if (health.reachable) EnLigne else Alerte,
-        modifier = modifier,
-    )
+private enum class Status(val label: String) {
+    Ok("OK"),
+    Down("En panne"),
+    Unknown("Inconnu"),
+    Watch("À surveiller");
+
+    /** Lue à l'affichage : le gris suit le réglage « contraste élevé ». */
+    val color: Color
+        @Composable get() = when (this) {
+            Ok -> EnLigne
+            Down -> Alerte
+            Unknown -> LuneAttenuee
+            Watch -> Focus
+        }
 }
 
+/** Une ligne de service ; OK revérifie tout (Jellyfin et Home Assistant). */
 @Composable
-private fun ServiceCard(entity: HaEntity, live: Boolean, modifier: Modifier) {
-    val (detail, color) = when {
-        !live -> "Dernière valeur : ${entity.displayValue.lowercase()}" + (entity.updatedAt?.let { " à ${hour(it)}" } ?: "") to LuneAttenuee
-        entity.unknown -> "Inconnu" to LuneAttenuee
-        entity.state == "on" -> "En ligne · vu par Home Assistant" to EnLigne
-        else -> "Hors ligne · vu par Home Assistant" to Focus
-    }
-    ServiceRow(entity.serviceName.take(1).uppercase(), PanneauClair, entity.serviceName, detail, color, modifier)
-}
-
-@Composable
-private fun HomeAssistantCard(connection: HaConnection, modifier: Modifier) {
-    val (detail, color) = when (connection) {
-        is HaConnection.Live -> "En ligne · en direct" to EnLigne
-        is HaConnection.Lost -> (if (connection.refused) "Token refusé" else "Pas de réponse depuis ${hour(connection.since)}") to Alerte
-        else -> "Connexion…" to LuneAttenuee
-    }
-    ServiceRow("H", HomeAssistantColor, "Home Assistant", detail, color, modifier)
-}
-
-@Composable
-private fun ServiceRow(letter: String, letterColor: Color, title: String, detail: String, detailColor: Color, modifier: Modifier) {
-    Row(
-        modifier.background(Panneau, RoundedCornerShape(14.dp)).border(1.dp, PanneauClair, RoundedCornerShape(14.dp)).padding(14.dp),
-        horizontalArrangement = Arrangement.spacedBy(14.dp),
-        verticalAlignment = Alignment.CenterVertically,
+private fun ServiceRow(
+    letter: String,
+    letterColor: Color,
+    title: String,
+    detail: String,
+    status: Status,
+    onClick: () -> Unit,
+    modifier: Modifier,
+) {
+    var focused by remember { mutableStateOf(false) }
+    Surface(
+        onClick = onClick,
+        modifier = modifier
+            .fillMaxWidth()
+            .onFocusChanged { focused = it.isFocused }
+            .focusRing(focused, NimbeFocus.CardRadius, grow = false),
+        shape = ClickableSurfaceDefaults.shape(NimbeFocus.CardShape),
+        colors = ClickableSurfaceDefaults.colors(
+            containerColor = PanneauClair.copy(alpha = 0.5f),
+            contentColor = Lune,
+            focusedContainerColor = PanneauClair,
+            focusedContentColor = Lune,
+        ),
+        scale = ClickableSurfaceDefaults.scale(focusedScale = 1f),
     ) {
-        ServiceInitial(letter, letterColor)
-        Column {
-            Text(title, style = MaterialTheme.typography.titleMedium, maxLines = 1)
-            Spacer(Modifier.height(2.dp))
-            Text(detail, style = MaterialTheme.typography.labelMedium, color = detailColor, maxLines = 2)
+        Row(Modifier.padding(12.dp), horizontalArrangement = Arrangement.spacedBy(14.dp), verticalAlignment = Alignment.CenterVertically) {
+            ServiceInitial(letter, letterColor)
+            Column(Modifier.weight(1f)) {
+                Text(title, style = MaterialTheme.typography.titleMedium, maxLines = 1)
+                Text(detail, style = MaterialTheme.typography.labelMedium, color = LuneAttenuee, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            }
+            Text("● ${status.label}", style = MaterialTheme.typography.labelMedium, color = status.color)
         }
     }
 }
@@ -287,6 +453,12 @@ private val SpokenHourFormat = DateTimeFormatter.ofPattern("H 'h' mm")
 private fun hour(epochMs: Long): String = HourFormat.format(Instant.ofEpochMilli(epochMs).atZone(ZoneId.systemDefault()))
 
 private fun spokenHour(epochMs: Long): String = SpokenHourFormat.format(Instant.ofEpochMilli(epochMs).atZone(ZoneId.systemDefault()))
+
+private val HourOnlyFormat = DateTimeFormatter.ofPattern("H 'h'")
+
+private fun spokenHourOnly(epochMs: Long): String = HourOnlyFormat.format(Instant.ofEpochMilli(epochMs).atZone(ZoneId.systemDefault()))
+
+private const val DAY_MS = 24 * 60 * 60 * 1000L
 
 private fun since(epochMs: Long?): String = epochMs?.let { " depuis ${hour(it)}" }.orEmpty()
 

@@ -2,6 +2,7 @@ package io.github.touya0.nimbe.feature.status
 
 import io.github.touya0.nimbe.core.network.NetworkState
 import io.github.touya0.nimbe.data.homeassistant.HaConnection
+import io.github.touya0.nimbe.data.homeassistant.HaEntity
 import io.github.touya0.nimbe.data.homeassistant.HaLive
 import io.github.touya0.nimbe.data.homeassistant.SensorCatalog
 import io.github.touya0.nimbe.data.homeassistant.SensorKind
@@ -69,4 +70,21 @@ object ServerStatus {
     }
 
     private const val JELLYFIN = "Jellyfin"
+}
+
+/**
+ * Seuils « À surveiller » : la mesure reste valable, mais mérite un coup d'œil (jauge et ligne ambre).
+ * Le Pi 5 ralentit vers 85 °C ; un disque plein à plus de 80 % finit par bloquer Jellyfin et les sauvegardes.
+ */
+object Watch {
+    fun needed(entity: HaEntity): Boolean {
+        val value = entity.state.toDoubleOrNull() ?: return false
+        return when (SensorCatalog.kindOf(entity)) {
+            SensorKind.Processor -> value >= 90
+            SensorKind.Temperature -> value >= 75
+            SensorKind.Memory -> value >= 90
+            SensorKind.Disk -> value >= 80
+            SensorKind.Service, null -> false
+        }
+    }
 }
