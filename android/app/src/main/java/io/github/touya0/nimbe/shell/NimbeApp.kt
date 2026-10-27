@@ -9,6 +9,7 @@ import io.github.touya0.nimbe.feature.player.SleepTimer
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.CompositionLocalProvider
+import io.github.touya0.nimbe.data.jellyfin.JellyfinHealth
 import io.github.touya0.nimbe.data.jellyfin.JellyfinLibrary
 import io.github.touya0.nimbe.data.jellyfin.JellyfinLink
 import io.github.touya0.nimbe.data.jellyfin.MediaItem
@@ -44,6 +45,9 @@ import androidx.compose.ui.focus.FocusDirection
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.platform.LocalContext
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.lifecycle.repeatOnLifecycle
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import io.github.touya0.nimbe.core.network.ConnectivityMonitor
 import io.github.touya0.nimbe.core.network.rememberConnectivity
@@ -51,7 +55,13 @@ import io.github.touya0.nimbe.core.storage.AppLaunchDao
 import io.github.touya0.nimbe.core.storage.LauncherPrefs
 import io.github.touya0.nimbe.crashguard.StockLauncher
 import io.github.touya0.nimbe.data.jellyfin.JellyfinAccount
+import io.github.touya0.nimbe.data.homeassistant.HaConnection
+import io.github.touya0.nimbe.data.homeassistant.HaLive
 import io.github.touya0.nimbe.data.homeassistant.HomeAssistantAccount
+import io.github.touya0.nimbe.data.homeassistant.HomeAssistantMonitor
+import io.github.touya0.nimbe.feature.status.JellyfinWatch
+import io.github.touya0.nimbe.feature.status.ServerStatus
+import io.github.touya0.nimbe.feature.status.ServerStatusScreen
 import io.github.touya0.nimbe.feature.apps.AppActions
 import io.github.touya0.nimbe.feature.apps.AppLauncher
 import io.github.touya0.nimbe.feature.apps.AppsRepository
@@ -88,6 +98,7 @@ fun NimbeApp(
     jellyfin: JellyfinAccount,
     library: JellyfinLibrary,
     homeAssistant: HomeAssistantAccount,
+    homeAssistantMonitor: HomeAssistantMonitor,
     homePresses: Flow<Unit>,
 ) {
     val linked by remember(jellyfin) { jellyfin.link.map { Linked(it) } }.collectAsStateWithLifecycle(initialValue = null)
@@ -98,16 +109,31 @@ fun NimbeApp(
 
     // Pendant une coupure, on redemande au serveur toutes les minutes ; « Réessayer » le fait tout de suite.
     var retryAt by remember { mutableStateOf<Long?>(null) }
+    val lifecycle = LocalLifecycleOwner.current.lifecycle
     LaunchedEffect(health.reachable, linked?.link) {
         retryAt = null
-        if (health.reachable || linked?.link == null) return@LaunchedEffect
-        while (true) {
-            retryAt = System.currentTimeMillis() + RETRY_INTERVAL_MS
-            delay(RETRY_INTERVAL_MS)
-            if (library.check()) break
+        if (linked?.link == null) return@LaunchedEffect
+        // Seulement quand Nimbe est à l'écran : pendant un film dans une autre appli, on laisse le Pi tranquille.
+        lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
+            // Jellyfin est vérifié directement toutes les 30 s, même quand tout va bien : couper Jellyfin
+            // doit se voir sur le voyant en moins d'une minute, sans attendre qu'on ouvre Films.
+            if (health.reachable) {
+                while (true) {
+                    delay(CHECK_INTERVAL_MS)
+                    library.check()
+                }
+            }
+            while (true) {
+                retryAt = System.currentTimeMillis() + CHECK_INTERVAL_MS
+                delay(CHECK_INTERVAL_MS)
+                if (library.check()) break
+            }
         }
     }
-    val ui = remember(linked, health, retryAt) {
+    val ha by homeAssistantMonitor.live.collectAsStateWithLifecycle()
+    val piDown = ha.connection is HaConnection.Lost
+    val piUp = ha.connection is HaConnection.Live
+    val ui = remember(linked, health, retryAt, piDown, piUp) {
         JellyfinUi(
             library = library,
             link = linked?.link,
@@ -115,14 +141,19 @@ fun NimbeApp(
             onConnect = { jellyfinConnectOpen = true },
             health = health,
             retryAt = retryAt,
-            onRetry = { retryScope.launch { library.check() } },
+            onRetry = {
+                retryScope.launch { library.check() }
+                homeAssistantMonitor.retryNow()
+            },
+            piDown = piDown,
+            piUp = piUp,
         )
     }
     CompositionLocalProvider(LocalJellyfin provides ui) {
         if (jellyfinConnectOpen) {
             JellyfinConnectScreen(jellyfin, linked?.link?.serverUrl, onClose = { jellyfinConnectOpen = false })
         } else {
-            NimbeShell(repository, prefs, launcher, connectivityMonitor, launches, updates, jellyfin, homeAssistant, homePresses)
+            NimbeShell(repository, prefs, launcher, connectivityMonitor, launches, updates, jellyfin, homeAssistant, ha, homePresses)
         }
     }
 }
@@ -137,9 +168,11 @@ private fun NimbeShell(
     updates: UpdateController,
     jellyfin: JellyfinAccount,
     homeAssistant: HomeAssistantAccount,
+    ha: HaLive,
     homePresses: Flow<Unit>,
 ) {
     var settingsOpen by rememberSaveable { mutableStateOf(false) }
+    var statusOpen by rememberSaveable { mutableStateOf(false) }
     var returnToSettingsButton by remember { mutableStateOf(false) }
     val context = LocalContext.current
     val settingsRequester = remember { FocusRequester() }
@@ -196,6 +229,7 @@ private fun NimbeShell(
     LaunchedEffect(homePresses) {
         homePresses.collect {
             settingsOpen = false
+            statusOpen = false
             returnToSettingsButton = false
             focusTab(Tab.Home)
         }
@@ -213,6 +247,19 @@ private fun NimbeShell(
             updates.snooze()
             updateOpen = false
         })
+        return
+    }
+
+    val jellyfinUi = LocalJellyfin.current
+    val status = ServerStatus.verdict(connectivity.state, jellyfinDown = jellyfinUi?.down == true, ha = ha)
+    if (statusOpen) {
+        ServerStatusScreen(
+            verdict = status,
+            ha = ha,
+            jellyfin = JellyfinWatch(linked = jellyfinUi?.link != null, health = jellyfinUi?.health ?: JellyfinHealth()),
+            onRetry = { jellyfinUi?.onRetry?.invoke() },
+            onClose = { statusOpen = false },
+        )
         return
     }
 
@@ -339,6 +386,8 @@ private fun NimbeShell(
                 requesters = requesters,
                 connectivity = connectivity,
                 jellyfinDown = LocalJellyfin.current?.down == true,
+                status = status,
+                onStatus = { statusOpen = true },
                 onSettings = {
                     returnToSettingsButton = true
                     settingsOpen = true
@@ -414,8 +463,8 @@ private fun NimbeShell(
     }
 }
 
-/** Essai automatique pendant une coupure de Jellyfin. */
-private const val RETRY_INTERVAL_MS = 60_000L
+/** Vérification directe de Jellyfin, et essai automatique pendant une coupure. */
+private const val CHECK_INTERVAL_MS = 30_000L
 
 /** Au-delà, la carte d'origine n'est plus affichée (liste rechargée) : le focus retourne sur l'onglet. */
 private const val RESTORE_FOCUS_TIMEOUT_MS = 800L

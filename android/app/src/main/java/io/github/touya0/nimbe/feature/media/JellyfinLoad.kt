@@ -49,6 +49,10 @@ class JellyfinUi(
     /** Heure du prochain essai automatique pendant une coupure. */
     val retryAt: Long? = null,
     val onRetry: () -> Unit = {},
+    /** Home Assistant ne répond pas non plus : c'est le Pi entier qui est injoignable, pas seulement Jellyfin. */
+    val piDown: Boolean = false,
+    /** Home Assistant répond en direct : le Pi est allumé, seule une panne de Jellyfin (orange, pas rouge). */
+    val piUp: Boolean = false,
 ) {
     /** Jellyfin est relié mais ne répond plus : contenus enregistrés grisés, onglets barrés. */
     val down: Boolean get() = link != null && !health.reachable

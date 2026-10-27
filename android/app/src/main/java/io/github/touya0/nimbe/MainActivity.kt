@@ -75,6 +75,7 @@ class MainActivity : ComponentActivity() {
                         jellyfin = (application as NimbeApplication).jellyfin,
                         library = (application as NimbeApplication).library,
                         homeAssistant = (application as NimbeApplication).homeAssistant,
+                        homeAssistantMonitor = (application as NimbeApplication).homeAssistantMonitor,
                         homePresses = homePresses,
                     )
                 }

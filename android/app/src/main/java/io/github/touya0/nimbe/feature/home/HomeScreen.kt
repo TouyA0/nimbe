@@ -211,19 +211,20 @@ private fun RowTitle(text: String) {
 /** Haut de l'accueil quand Jellyfin ne répond plus : ce qui est en pause, ce qui marche, le prochain essai. */
 @Composable
 private fun ServerDownBanner(jellyfin: JellyfinUi) {
+    val color = if (jellyfin.piUp) Focus else Alerte
     Column(
         Modifier
             .width(620.dp)
             .background(Panneau.copy(alpha = 0.95f), RoundedCornerShape(16.dp))
-            .border(1.dp, Alerte.copy(alpha = 0.35f), RoundedCornerShape(16.dp))
+            .border(1.dp, color.copy(alpha = 0.35f), RoundedCornerShape(16.dp))
             .padding(horizontal = 18.dp, vertical = 14.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
         Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
-            Box(Modifier.size(28.dp).background(Alerte.copy(alpha = 0.2f), RoundedCornerShape(8.dp)), contentAlignment = Alignment.Center) {
-                Text("!", style = MaterialTheme.typography.titleMedium, color = Alerte)
+            Box(Modifier.size(28.dp).background(color.copy(alpha = 0.2f), RoundedCornerShape(8.dp)), contentAlignment = Alignment.Center) {
+                Text("!", style = MaterialTheme.typography.titleMedium, color = color)
             }
-            Text("Jellyfin ne répond pas", style = MaterialTheme.typography.headlineSmall)
+            Text(if (jellyfin.piDown) "Ton Raspberry Pi ne répond pas" else "Jellyfin ne répond pas", style = MaterialTheme.typography.headlineSmall)
         }
         Text(unreachableDetail(jellyfin, short = true), style = MaterialTheme.typography.bodyMedium, color = LuneAttenuee, maxLines = 2)
         PillButton("Réessayer maintenant", onClick = jellyfin.onRetry)

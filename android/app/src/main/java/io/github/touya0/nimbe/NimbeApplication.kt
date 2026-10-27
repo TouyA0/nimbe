@@ -12,6 +12,7 @@ import io.github.touya0.nimbe.core.storage.NimbeDatabase
 import io.github.touya0.nimbe.core.storage.SecretVault
 import io.github.touya0.nimbe.crashguard.CrashGuard
 import io.github.touya0.nimbe.data.homeassistant.HomeAssistantAccount
+import io.github.touya0.nimbe.data.homeassistant.HomeAssistantMonitor
 import io.github.touya0.nimbe.data.jellyfin.JellyfinAccount
 import io.github.touya0.nimbe.data.jellyfin.JellyfinLibrary
 import io.github.touya0.nimbe.update.UpdateScheduler
@@ -36,6 +37,9 @@ class NimbeApplication : Application(), SingletonImageLoader.Factory {
 
     /** Connexion à Home Assistant, pour l'état du Pi et des services. */
     val homeAssistant: HomeAssistantAccount by lazy { HomeAssistantAccount(this, vault) }
+
+    /** État du Pi en direct, partagé par l'en-tête, l'écran « État du serveur » et bientôt l'écran de veille. */
+    val homeAssistantMonitor: HomeAssistantMonitor by lazy { HomeAssistantMonitor(homeAssistant, scope) }
 
     val library: JellyfinLibrary by lazy { JellyfinLibrary(jellyfin, database.cachedResponses()) }
 

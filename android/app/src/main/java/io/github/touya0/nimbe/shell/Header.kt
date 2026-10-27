@@ -1,6 +1,7 @@
 package io.github.touya0.nimbe.shell
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
@@ -22,8 +23,14 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.focusRestorer
+import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.PathEffect
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.dp
 import androidx.tv.material3.ClickableSurfaceDefaults
@@ -31,10 +38,12 @@ import androidx.tv.material3.MaterialTheme
 import androidx.tv.material3.Surface
 import androidx.tv.material3.Text
 import io.github.touya0.nimbe.core.network.ConnectivityStatus
-import io.github.touya0.nimbe.core.network.NetworkState
+import io.github.touya0.nimbe.feature.status.ServerLevel
+import io.github.touya0.nimbe.feature.status.ServerVerdict
 import io.github.touya0.nimbe.ui.components.focusRing
 import io.github.touya0.nimbe.ui.theme.Alerte
 import io.github.touya0.nimbe.ui.theme.ClockStyle
+import io.github.touya0.nimbe.ui.theme.EnLigne
 import io.github.touya0.nimbe.ui.theme.Focus
 import io.github.touya0.nimbe.ui.theme.Lune
 import io.github.touya0.nimbe.ui.theme.LuneAttenuee
@@ -70,6 +79,8 @@ fun Header(
     requesters: Map<Tab, FocusRequester>,
     connectivity: ConnectivityStatus,
     jellyfinDown: Boolean,
+    status: ServerVerdict,
+    onStatus: () -> Unit,
     onSettings: () -> Unit,
     settingsRequester: FocusRequester,
     modifier: Modifier = Modifier,
@@ -91,7 +102,7 @@ fun Header(
             }
         }
         Spacer(Modifier.weight(1f))
-        ConnectivityPill(connectivity.state, jellyfinDown)
+        StatusPill(status, onStatus)
         Spacer(Modifier.width(12.dp))
         SettingsButton(onSettings, Modifier.focusRequester(settingsRequester))
         Spacer(Modifier.width(16.dp))
@@ -157,24 +168,65 @@ private fun SettingsButton(onClick: () -> Unit, modifier: Modifier) {
     }
 }
 
-/** Voyant d'état, affiché seulement quand quelque chose ne va pas (pas encore d'état du Pi). */
+/**
+ * Voyant d'état : vert seulement quand Home Assistant confirme en direct que tout va bien,
+ * gris pointillé quand on ne sait pas. OK ouvre l'écran « État du serveur ».
+ */
 @Composable
-private fun ConnectivityPill(state: NetworkState, jellyfinDown: Boolean) {
-    // Sans réseau, Jellyfin est forcément injoignable : on affiche la cause, pas la conséquence.
-    val (label, dot) = when {
-        state == NetworkState.NoNetwork -> "Pas de réseau" to Alerte
-        jellyfinDown -> "Serveur injoignable" to Alerte
-        state == NetworkState.NoInternet -> "Pas d'internet" to Focus
-        else -> return
+private fun StatusPill(status: ServerVerdict, onClick: () -> Unit) {
+    val (label, dot) = when (status.level) {
+        ServerLevel.NoNetwork -> "Pas de réseau" to Alerte
+        ServerLevel.PiUnreachable -> "Serveur injoignable" to Alerte
+        ServerLevel.ServiceDown -> status.down.singleOrNull()?.let { "$it en panne" } to Focus
+        ServerLevel.NoInternet -> "Pas d'internet" to Focus
+        ServerLevel.Unknown -> "État inconnu" to LuneAttenuee
+        ServerLevel.Ok -> "Serveur OK" to EnLigne
+        ServerLevel.Hidden -> return
     }
-    Row(
-        modifier = Modifier.background(dot.copy(alpha = 0.22f), NimbeFocus.PillShape).padding(horizontal = 14.dp, vertical = 7.dp),
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
-        verticalAlignment = Alignment.CenterVertically,
+    val text = label ?: "${status.down.size} services en panne"
+    val tinted = status.level != ServerLevel.Ok && status.level != ServerLevel.Unknown
+    var focused by remember { mutableStateOf(false) }
+    Surface(
+        onClick = onClick,
+        modifier = Modifier
+            .onFocusChanged { focused = it.isFocused }
+            .focusRing(focused, NimbeFocus.PillRadius, grow = false)
+            .then(if (status.level == ServerLevel.Unknown) Modifier.dashedPill(LuneAttenuee) else Modifier),
+        shape = ClickableSurfaceDefaults.shape(NimbeFocus.PillShape),
+        colors = ClickableSurfaceDefaults.colors(
+            containerColor = if (tinted) dot.copy(alpha = 0.22f) else PanneauClair,
+            contentColor = Lune,
+            focusedContainerColor = Lune,
+            focusedContentColor = Nuit,
+        ),
+        scale = ClickableSurfaceDefaults.scale(focusedScale = 1f),
     ) {
-        Box(Modifier.size(8.dp).background(dot, CircleShape))
-        Text(label, style = MaterialTheme.typography.titleSmall, color = Lune)
+        Row(
+            Modifier.padding(horizontal = 14.dp, vertical = 7.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            if (status.level == ServerLevel.Unknown) {
+                Box(Modifier.size(8.dp).border(1.5.dp, if (focused) Nuit else dot, CircleShape))
+            } else {
+                Box(Modifier.size(8.dp).background(dot, CircleShape))
+            }
+            Text(text, style = MaterialTheme.typography.titleSmall)
+        }
     }
+}
+
+/** Bordure en pointillés de la pilule « État inconnu ». */
+private fun Modifier.dashedPill(color: Color): Modifier = drawWithContent {
+    drawContent()
+    val stroke = 1.5.dp.toPx()
+    drawRoundRect(
+        color = color,
+        topLeft = Offset(stroke / 2, stroke / 2),
+        size = Size(size.width - stroke, size.height - stroke),
+        cornerRadius = CornerRadius(size.height / 2),
+        style = Stroke(width = stroke, pathEffect = PathEffect.dashPathEffect(floatArrayOf(6f, 5f))),
+    )
 }
 
 private val ClockFormat = DateTimeFormatter.ofPattern("HH:mm")

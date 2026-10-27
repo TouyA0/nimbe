@@ -191,6 +191,29 @@ class HomeAssistantSession internal constructor(
         }
     }
 
+    /**
+     * S'abonne aux états des entités [ids] (format compressé de subscribe_entities).
+     * Renvoie le numéro de l'abonnement, à passer à [nextEvent].
+     */
+    suspend fun subscribeEntities(ids: List<String>): Int {
+        val id = nextId
+        command("subscribe_entities", JSONObject().put("entity_ids", JSONArray(ids)))
+        return id
+    }
+
+    /**
+     * Attend le prochain événement de l'abonnement [subscription], sans limite de temps :
+     * une connexion perdue est repérée par les pings d'OkHttp, qui ferment alors la session.
+     */
+    suspend fun nextEvent(subscription: Int): JSONObject {
+        while (true) {
+            val message = receive(timeoutMs = null)
+            if (message.optInt("id") == subscription && message.optString("type") == "event") {
+                return message.optJSONObject("event") ?: continue
+            }
+        }
+    }
+
     /** Révoque un jeton longue durée de l'utilisateur connecté. */
     suspend fun deleteRefreshToken(id: String) {
         command("auth/delete_refresh_token", JSONObject().put("refresh_token_id", id))
@@ -205,8 +228,8 @@ class HomeAssistantSession internal constructor(
         if (!socket.send(message.toString())) throw HomeAssistantApi.unreachable()
     }
 
-    private suspend fun receive(): JSONObject = try {
-        withTimeout(TIMEOUT_MS) { incoming.receive() }
+    private suspend fun receive(timeoutMs: Long? = TIMEOUT_MS): JSONObject = try {
+        if (timeoutMs == null) incoming.receive() else withTimeout(timeoutMs) { incoming.receive() }
     } catch (_: TimeoutCancellationException) {
         throw HomeAssistantApi.unreachable()
     } catch (_: ClosedReceiveChannelException) {

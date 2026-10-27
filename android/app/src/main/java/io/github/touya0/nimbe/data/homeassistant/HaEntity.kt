@@ -25,6 +25,13 @@ data class HaEntity(
     val label: String
         get() = name.removePrefix("System Monitor ").replaceFirstChar { it.uppercase() }
 
+    /** Nom du service d'un capteur de connectivité : « Jellyfin joignable » → « Jellyfin ». */
+    val serviceName: String
+        get() = label.removeSuffix(" joignable").removeSuffix(" en ligne")
+
+    /** La mesure ne dit rien (Home Assistant ne sait pas, ou l'intégration est arrêtée). */
+    val unknown: Boolean get() = state in UNKNOWN_STATES
+
     /** Valeur lisible : « 23 % », « 52 °C », « En ligne ». Une valeur absente n'est jamais présentée comme bonne. */
     val displayValue: String
         get() {
@@ -40,16 +47,22 @@ data class HaEntity(
 
         fun fromState(json: JSONObject): HaEntity? {
             val id = json.optString("entity_id").takeIf { '.' in it } ?: return null
-            val attributes = json.optJSONObject("attributes") ?: JSONObject()
-            return HaEntity(
+            return of(
                 id = id,
-                name = attributes.optString("friendly_name").ifBlank { id.substringAfter('.') },
                 state = json.optString("state"),
-                unit = attributes.optString("unit_of_measurement").ifBlank { null },
-                deviceClass = attributes.optString("device_class").ifBlank { null },
+                attributes = json.optJSONObject("attributes") ?: JSONObject(),
                 updatedAt = json.optString("last_updated").ifBlank { null }?.let(::parseTime),
             )
         }
+
+        fun of(id: String, state: String, attributes: JSONObject, updatedAt: Long?) = HaEntity(
+            id = id,
+            name = attributes.optString("friendly_name").ifBlank { id.substringAfter('.') },
+            state = state,
+            unit = attributes.optString("unit_of_measurement").ifBlank { null },
+            deviceClass = attributes.optString("device_class").ifBlank { null },
+            updatedAt = updatedAt,
+        )
 
         private fun parseTime(text: String): Long? = try {
             OffsetDateTime.parse(text).toInstant().toEpochMilli()
