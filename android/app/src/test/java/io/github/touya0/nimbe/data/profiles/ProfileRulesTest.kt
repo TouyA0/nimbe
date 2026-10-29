@@ -99,4 +99,32 @@ class ProfileRulesTest {
         assertTrue(invite.isGuest)
         assertFalse(quentin.isGuest)
     }
+
+    @Test
+    fun `applis autorisées de l'enfant gardées en JSON`() {
+        val child = enfant.copy(allowedApps = setOf("com.google.android.youtube.tvkids", "org.example"))
+        assertEquals(listOf(child), ProfileCodec.decode(ProfileCodec.encode(listOf(child))))
+        assertEquals(ChildMode.KidsApps, ChildMode.allowedApps(enfant))
+        assertEquals(emptySet<String>(), ChildMode.allowedApps(enfant.copy(allowedApps = emptySet())))
+    }
+
+    @Test
+    fun `accueil de l'enfant, sans reprise, sans TV, musique ni galerie`() {
+        val layout = LayoutRules.normalize(ChildMode.Layout)
+        assertEquals(listOf(HomeRow.Apps, HomeRow.Latest), layout.visibleRows)
+        assertEquals(listOf("home", "movies", "series", "apps"), layout.visibleTabs)
+        assertTrue(enfant.isRestricted)
+        assertTrue(invite.isRestricted)
+        assertFalse(quentin.isRestricted)
+    }
+
+    @Test
+    fun `quitter le profil Enfant demande le PIN, s'il existe`() {
+        assertTrue(leavingNeedsPin(enfant, quentin, pinSet = true))
+        assertFalse(leavingNeedsPin(enfant, quentin, pinSet = false))
+        assertFalse(leavingNeedsPin(enfant, enfant, pinSet = true))
+        assertFalse(leavingNeedsPin(quentin, enfant, pinSet = true))
+        // Même vers un autre profil Enfant : c'est au parent de choisir.
+        assertTrue(leavingNeedsPin(enfant, enfant.copy(id = "e2", name = "Léa"), pinSet = true))
+    }
 }

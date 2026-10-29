@@ -22,10 +22,15 @@ import io.github.touya0.nimbe.feature.media.MediaDestination
 import io.github.touya0.nimbe.data.layout.LayoutRules
 import io.github.touya0.nimbe.data.layout.LayoutStore
 import io.github.touya0.nimbe.data.layout.ProfileLayout
+import io.github.touya0.nimbe.data.profiles.Profile
 import io.github.touya0.nimbe.data.profiles.ProfilesState
+import io.github.touya0.nimbe.data.profiles.ChildMode
 import io.github.touya0.nimbe.data.profiles.GuestMode
 import io.github.touya0.nimbe.data.profiles.ProfilesStore
+import io.github.touya0.nimbe.data.profiles.isChild
 import io.github.touya0.nimbe.data.profiles.isGuest
+import io.github.touya0.nimbe.data.profiles.isRestricted
+import io.github.touya0.nimbe.data.profiles.leavingNeedsPin
 import io.github.touya0.nimbe.data.security.ParentPinStore
 import io.github.touya0.nimbe.feature.onboarding.FirstLaunchScreen
 import io.github.touya0.nimbe.feature.onboarding.SetupStep
@@ -85,11 +90,12 @@ import io.github.touya0.nimbe.feature.apps.Dock
 import io.github.touya0.nimbe.feature.apps.InstalledApp
 import io.github.touya0.nimbe.feature.apps.Recents
 import io.github.touya0.nimbe.feature.apps.appMenu
-import io.github.touya0.nimbe.feature.apps.guestAppMenu
+import io.github.touya0.nimbe.feature.apps.lockedAppMenu
 import io.github.touya0.nimbe.feature.apps.hiddenAppsMenu
 import io.github.touya0.nimbe.feature.apps.rememberInstalledApps
 import io.github.touya0.nimbe.feature.home.ComingSoonScreen
 import io.github.touya0.nimbe.feature.home.HomeScreen
+import io.github.touya0.nimbe.feature.home.HomeWelcome
 import io.github.touya0.nimbe.feature.layout.HomeEditScreen
 import io.github.touya0.nimbe.feature.settings.SettingsLinks
 import io.github.touya0.nimbe.feature.settings.SettingsScreen
@@ -270,14 +276,27 @@ private fun NimbeShell(
     // null tant que les réglages ne sont pas lus : on n'affiche pas un dock par défaut qui changerait aussitôt.
     val savedDock by prefs.dock.collectAsStateWithLifecycle(initialValue = null)
     val hidden by prefs.hidden.collectAsStateWithLifecycle(initialValue = emptySet())
-    // Profil Invité : rien n'est enregistré, pas de réglages, et les applis des comptes de la famille sont masquées.
-    val guest = profilesState.active.isGuest
-    val shownHidden = profilesState.active?.takeIf { guest }?.let { hidden + GuestMode.hiddenApps(it) } ?: hidden
-    val openApp: (InstalledApp) -> Unit = { launcher.open(it, record = !guest) }
+    // Profils Invité et Enfant : pas de réglages, « Mes applis » de la famille intouchable, rien dans les récentes.
+    // L'invité ne voit pas les applis des comptes de la famille ; l'enfant ne voit que les applis autorisées.
+    val active = profilesState.active
+    val guest = active.isGuest
+    val child = active.isChild
+    val restricted = active.isRestricted
+    val shownHidden = when {
+        guest -> hidden + GuestMode.hiddenApps(active!!)
+        child -> hidden + apps.orEmpty().map { it.packageName }.filterNot { it in ChildMode.allowedApps(active!!) }
+        else -> hidden
+    }
+    val openApp: (InstalledApp) -> Unit = { launcher.open(it, record = !restricted) }
     val visibleApps = apps?.filterNot { it.packageName in shownHidden }
     val recentLaunches by remember(launches) { launches.recent(limit = 20) }.collectAsStateWithLifecycle(initialValue = emptyList())
-    val recents = if (guest) emptyList() else apps?.let { Recents.resolve(recentLaunches.map { it.packageName }, it, hidden) }.orEmpty()
-    val dock = if (apps == null || savedDock == null) null else Dock.resolve(savedDock?.packages, apps, shownHidden)
+    val recents = if (restricted) emptyList() else apps?.let { Recents.resolve(recentLaunches.map { it.packageName }, it, hidden) }.orEmpty()
+    val dock = when {
+        apps == null || savedDock == null -> null
+        // L'enfant a toutes ses applis autorisées sur l'accueil, peu importe le dock de la famille.
+        child -> visibleApps
+        else -> Dock.resolve(savedDock?.packages, apps, shownHidden)
+    }
     // Toute modification part du dock affiché, pour que le dock par défaut devienne le point de départ.
     val dockPackages = dock.orEmpty().map { it.packageName }
 
@@ -286,7 +305,11 @@ private fun NimbeShell(
     // Mise en page du profil actif : celle par défaut le temps de la lire.
     val activeId = profilesState.active?.id.orEmpty()
     val savedLayout by remember(activeId) { layouts.layout(activeId) }.collectAsStateWithLifecycle(initialValue = null)
-    val layout = if (guest) LayoutRules.normalize(GuestMode.Layout) else savedLayout ?: ProfileLayout.Default
+    val layout = when {
+        guest -> LayoutRules.normalize(GuestMode.Layout)
+        child -> LayoutRules.normalize(ChildMode.Layout)
+        else -> savedLayout ?: ProfileLayout.Default
+    }
     val visibleTabs = layout.visibleTabs.mapNotNull(Tab::fromKey)
     fun saveLayout(changed: ProfileLayout) {
         scope.launch { layouts.save(activeId, changed) }
@@ -302,6 +325,7 @@ private fun NimbeShell(
     }
     LaunchedEffect(visibleTabs) { if (tab !in visibleTabs) focusTab(Tab.Home) }
     var homeEditOpen by rememberSaveable { mutableStateOf(false) }
+    var leavingTo by remember { mutableStateOf<Profile?>(null) }
     val menu = remember { MenuState() }
     // Quand une action fait disparaître la tuile qui a le focus, on pose le focus sur l'onglet courant
     // avant d'enregistrer : sinon Android le donne au premier élément venu, l'onglet Accueil.
@@ -338,6 +362,7 @@ private fun NimbeShell(
             statusOpen = false
             whoOpen = false
             homeEditOpen = false
+            leavingTo = null
             returnToSettingsButton = false
             focusTab(Tab.Home)
         }
@@ -358,14 +383,34 @@ private fun NimbeShell(
         return
     }
 
+    // Quitter le profil Enfant demande le PIN parent (tant que le réglage n'est pas lu, on le demande aussi).
+    leavingTo?.let { target ->
+        PinPrompt(
+            parentPin,
+            title = "Quitter le profil ${active?.name.orEmpty()}",
+            subtitle = "Saisis le PIN parent pour passer au profil ${target.name}.",
+            onSuccess = {
+                scope.launch { profiles.setActive(target.id) }
+                leavingTo = null
+                whoOpen = false
+            },
+            onCancel = { leavingTo = null },
+        )
+        return
+    }
+
     if (whoOpen) {
         WhoIsWatchingScreen(
             profilesState,
             onPick = { profile ->
-                scope.launch { profiles.setActive(profile.id) }
-                whoOpen = false
+                if (leavingNeedsPin(active, profile, pinSet = security?.pinSet != false)) {
+                    leavingTo = profile
+                } else {
+                    scope.launch { profiles.setActive(profile.id) }
+                    whoOpen = false
+                }
             },
-            onManage = if (guest) null else {
+            onManage = if (restricted) null else {
                 {
                     whoOpen = false
                     openSettings(SettingsSection.Profiles)
@@ -565,7 +610,7 @@ private fun NimbeShell(
                 jellyfinDown = LocalJellyfin.current?.down == true,
                 status = status,
                 onStatus = { statusOpen = true },
-                onSettings = if (guest) null else {
+                onSettings = if (restricted) null else {
                     {
                         returnToSettingsButton = true
                         openSettings(SettingsSection.Display)
@@ -591,10 +636,23 @@ private fun NimbeShell(
                 when (tab) {
                     Tab.Home -> HomeScreen(
                         rows = layout.visibleRows,
-                        guest = guest,
+                        welcome = when {
+                            guest -> HomeWelcome(
+                                "PROFIL INVITÉ",
+                                "Bienvenue, fais comme chez toi",
+                                "Les films de la maison et la TV sont ouverts. Rien n'est enregistré : pas d'historique, " +
+                                    "pas de galerie, pas de compte personnel.",
+                            )
+                            child -> HomeWelcome(
+                                "PROFIL ENFANT",
+                                "Coucou ${active?.name.orEmpty()} !",
+                                "Tes films, tes séries et tes applis. Pour changer de profil, demande à un parent.",
+                            )
+                            else -> null
+                        },
                         dock = dock,
                         onOpen = openApp,
-                        onMenu = { app, back -> menu.open(if (guest) guestAppMenu(app, openApp, back) else appMenu(app, dockPackages, actions, back)) },
+                        onMenu = { app, back -> menu.open(if (restricted) lockedAppMenu(app, openApp, back) else appMenu(app, dockPackages, actions, back)) },
                         onAllApps = { focusTab(Tab.Apps) },
                         connectivity = connectivity,
                         onNetworkSettings = launcher::openNetworkSettings,
@@ -606,10 +664,10 @@ private fun NimbeShell(
                     Tab.Apps -> AppsScreen(
                         apps = visibleApps,
                         recents = recents,
-                        // L'invité ne voit pas la tuile « Masquées » : il ne peut rien remettre.
-                        hiddenCount = if (guest) 0 else apps?.count { it.packageName in hidden } ?: 0,
+                        // L'invité et l'enfant ne voient pas la tuile « Masquées » : ils ne peuvent rien remettre.
+                        hiddenCount = if (restricted) 0 else apps?.count { it.packageName in hidden } ?: 0,
                         onOpen = openApp,
-                        onMenu = { app, back -> menu.open(if (guest) guestAppMenu(app, openApp, back) else appMenu(app, dockPackages, actions, back)) },
+                        onMenu = { app, back -> menu.open(if (restricted) lockedAppMenu(app, openApp, back) else appMenu(app, dockPackages, actions, back)) },
                         offline = connectivity.offline,
                         onShowHidden = { back ->
                             val hiddenApps = apps.orEmpty().filter { it.packageName in hidden }

@@ -60,6 +60,9 @@ import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 
+/** Accueil d'un profil Invité ou Enfant, en haut de l'écran tant qu'aucune carte n'a le focus. */
+data class HomeWelcome(val kicker: String, val title: String, val text: String)
+
 /** Ce que montre le haut de l'accueil : un contenu et son accroche (« REPRENDRE », « AJOUTÉ HIER »). */
 private data class HeroPick(val item: MediaItem, val kicker: String?)
 
@@ -72,8 +75,8 @@ private data class HeroPick(val item: MediaItem, val kicker: String?)
 @Composable
 fun HomeScreen(
     rows: List<HomeRow>,
-    /** Profil Invité : le haut de l'écran l'accueille et dit ce qui est ouvert, tant qu'aucune carte n'a le focus. */
-    guest: Boolean,
+    /** Profils Invité et Enfant : le haut de l'écran les accueille, tant qu'aucune carte n'a le focus. */
+    welcome: HomeWelcome?,
     dock: List<InstalledApp>?,
     onOpen: (InstalledApp) -> Unit,
     onMenu: (InstalledApp, FocusRequester) -> Unit,
@@ -107,7 +110,7 @@ fun HomeScreen(
                 when {
                     connectivity.offline -> OfflineBanner(connectivity, onNetworkSettings)
                     jellyfin?.down == true -> ServerDownBanner(jellyfin)
-                    guest && focusedPick == null -> GuestWelcome()
+                    welcome != null && focusedPick == null -> Welcome(welcome)
                     hero != null -> Hero(hero.item, hero.kicker, overviewLines = 2)
                     else -> Column {
                         Text("Bienvenue sur Nimbe", style = MaterialTheme.typography.displaySmall)
@@ -223,13 +226,12 @@ fun HomeScreen(
 }
 
 @Composable
-private fun GuestWelcome() {
+private fun Welcome(welcome: HomeWelcome) {
     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-        Text("PROFIL INVITÉ", style = MaterialTheme.typography.titleSmall, color = Focus)
-        Text("Bienvenue, fais comme chez toi", style = MaterialTheme.typography.displaySmall)
+        Text(welcome.kicker, style = MaterialTheme.typography.titleSmall, color = Focus)
+        Text(welcome.title, style = MaterialTheme.typography.displaySmall)
         Text(
-            "Les films de la maison et la TV sont ouverts. Rien n'est enregistré : pas d'historique, " +
-                "pas de galerie, pas de compte personnel.",
+            welcome.text,
             style = MaterialTheme.typography.bodyLarge,
             color = LuneAttenuee,
             modifier = Modifier.width(620.dp),

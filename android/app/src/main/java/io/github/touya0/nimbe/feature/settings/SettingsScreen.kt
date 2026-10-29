@@ -53,7 +53,9 @@ import io.github.touya0.nimbe.data.jellyfin.JellyfinLink
 import io.github.touya0.nimbe.data.layout.LayoutRules
 import io.github.touya0.nimbe.data.layout.ProfileLayout
 import io.github.touya0.nimbe.data.layout.TabKeys
+import io.github.touya0.nimbe.data.profiles.ChildMode
 import io.github.touya0.nimbe.data.profiles.GuestMode
+import io.github.touya0.nimbe.data.profiles.Profile
 import io.github.touya0.nimbe.data.profiles.ProfileKind
 import io.github.touya0.nimbe.data.profiles.ProfilesState
 import io.github.touya0.nimbe.data.profiles.ProfilesStore
@@ -72,7 +74,7 @@ import io.github.touya0.nimbe.feature.onboarding.JellyfinConnectScreen
 import io.github.touya0.nimbe.feature.screensaver.ScreensaverSetting
 import io.github.touya0.nimbe.feature.onboarding.ServiceInitial
 import io.github.touya0.nimbe.feature.apps.InstalledApp
-import io.github.touya0.nimbe.feature.profiles.GuestAppsScreen
+import io.github.touya0.nimbe.feature.profiles.AppChoiceScreen
 import io.github.touya0.nimbe.feature.profiles.ProfilesManager
 import io.github.touya0.nimbe.feature.security.PinChange
 import io.github.touya0.nimbe.feature.security.PinChangeScreen
@@ -172,18 +174,40 @@ fun SettingsScreen(
         return
     }
     val security by parentPin.settings.collectAsStateWithLifecycle(initialValue = null)
-    // Applis masquées pour l'invité : en plein écran, par-dessus Profils.
-    var guestAppsOpen by remember { mutableStateOf(false) }
-    val guestProfile = profilesState.profiles.firstOrNull { it.kind == ProfileKind.Guest }
-    if (guestAppsOpen && guestProfile != null) {
+    // Applis masquées pour l'invité ou autorisées pour un enfant : en plein écran, par-dessus Profils.
+    var appChoiceFor by remember { mutableStateOf<String?>(null) }
+    profilesState.profiles.firstOrNull { it.id == appChoiceFor }?.let { profile ->
         val scope = rememberCoroutineScope()
-        GuestAppsScreen(
-            apps = installedApps,
-            hidden = GuestMode.hiddenApps(guestProfile),
-            onChange = { scope.launch { profiles.save(guestProfile.copy(hiddenApps = it)) } },
-            onReset = { scope.launch { profiles.save(guestProfile.copy(hiddenApps = null)) } },
-            onClose = { guestAppsOpen = false },
-        )
+        fun save(changed: Profile) {
+            scope.launch { profiles.save(changed) }
+        }
+        if (profile.kind == ProfileKind.Child) {
+            AppChoiceScreen(
+                title = "Applis autorisées pour ${profile.name}",
+                explanation = "OK pour autoriser ou retirer. Une appli non cochée n'apparaît nulle part dans ce profil",
+                apps = installedApps,
+                selected = ChildMode.allowedApps(profile),
+                dimmed = { allowed -> !allowed },
+                dimmedNote = "Pas autorisée",
+                countLabel = { "$it autorisée(s)" },
+                onChange = { save(profile.copy(allowedApps = it)) },
+                onReset = { save(profile.copy(allowedApps = null)) },
+                onClose = { appChoiceFor = null },
+            )
+        } else {
+            AppChoiceScreen(
+                title = "Applis masquées pour l'invité",
+                explanation = "OK pour masquer ou remettre. Masque celles où la famille est connectée avec ses comptes",
+                apps = installedApps,
+                selected = GuestMode.hiddenApps(profile),
+                dimmed = { masked -> masked },
+                dimmedNote = "Masquée pour l'invité",
+                countLabel = { "$it masquée(s)" },
+                onChange = { save(profile.copy(hiddenApps = it)) },
+                onReset = { save(profile.copy(hiddenApps = null)) },
+                onClose = { appChoiceFor = null },
+            )
+        }
         return
     }
     var previewOpen by remember { mutableStateOf(false) }
@@ -250,7 +274,7 @@ fun SettingsScreen(
             when (section) {
                 SettingsSection.Home -> HomeLayoutPage(layout, profilesState.active?.name.orEmpty(), onLayoutChange, onLayoutReset, onEditHome)
                 SettingsSection.Tabs -> TabsPage(layout, profilesState.active?.name.orEmpty(), onLayoutChange, onLayoutReset)
-                SettingsSection.Profiles -> ProfilesPage(profiles, profilesState, installedApps, onProfileDeleted, onGuestApps = { guestAppsOpen = true })
+                SettingsSection.Profiles -> ProfilesPage(profiles, profilesState, installedApps, onProfileDeleted, onAppChoice = { appChoiceFor = it })
                 SettingsSection.Display -> DisplayPage(display, onDisplayChange, about, links)
                 SettingsSection.Screensaver -> ScreensaverPage(links, onPreview = { previewOpen = true })
                 SettingsSection.Servers -> ServersPage(
@@ -322,7 +346,8 @@ private fun ProfilesPage(
     state: ProfilesState,
     installedApps: List<InstalledApp>?,
     onDeleted: (String) -> Unit,
-    onGuestApps: () -> Unit,
+    /** Ouvre le choix des applis d'un profil Invité ou Enfant. */
+    onAppChoice: (String) -> Unit,
 ) {
     val scope = rememberCoroutineScope()
     PageTitle(
@@ -349,7 +374,22 @@ private fun ProfilesPage(
                     "Choisies à la main"
                 },
                 value = if (count == 0) "Aucune" else "$count masquée(s)",
-                onClick = onGuestApps,
+                onClick = { onAppChoice(guest.id) },
+            )
+        }
+        state.profiles.filter { it.kind == ProfileKind.Child }.forEach { child ->
+            SettingsGroupTitle("Profil ${child.name}")
+            val allowed = ChildMode.allowedApps(child).count { id -> installedApps?.any { it.packageName == id } == true }
+            LinkRow(
+                "Applis autorisées",
+                if (child.allowedApps == null) "Les applis pour enfants (YouTube Kids) tant que tu n'as rien choisi" else "Choisies à la main",
+                value = if (allowed == 0) "Aucune" else "$allowed autorisée(s)",
+                onClick = { onAppChoice(child.id) },
+            )
+            SettingRow(
+                "Ce que voit ${child.name}",
+                "Films et séries de Jellyfin, ses applis autorisées. Pas de réglages ; changer de profil demande le PIN parent.",
+                onClick = {},
             )
         }
         SettingsGroupTitle("Pour toute la TV")

@@ -31,20 +31,26 @@ import io.github.touya0.nimbe.ui.theme.LuneAttenuee
 import io.github.touya0.nimbe.ui.theme.Nuit
 
 /**
- * Applis que l'invité ne voit pas : OK masque ou remet. Par défaut, celles où la famille est connectée
- * avec ses comptes (Netflix, Disney+…). Chaque changement est enregistré tout de suite.
+ * Choix d'applis pour un profil, OK pour cocher ou décocher : celles que l'invité ne voit pas,
+ * ou celles que l'enfant a le droit d'ouvrir. Chaque changement est enregistré tout de suite.
+ * [dimmed] : les tuiles grisées (l'appli ne sera pas visible sur le profil), avec [dimmedNote] sous leur nom.
  */
 @Composable
-fun GuestAppsScreen(
+fun AppChoiceScreen(
+    title: String,
+    explanation: String,
     apps: List<InstalledApp>?,
-    hidden: Set<String>,
+    selected: Set<String>,
+    dimmed: (Boolean) -> Boolean,
+    dimmedNote: String,
+    countLabel: (Int) -> String,
     onChange: (Set<String>) -> Unit,
     onReset: () -> Unit,
     onClose: () -> Unit,
 ) {
     BackHandler(onBack = onClose)
     // Toujours la dernière liste : un clic gardé par une tuile ne repart pas d'un choix périmé.
-    val current by rememberUpdatedState(hidden)
+    val current by rememberUpdatedState(selected)
     val change by rememberUpdatedState(onChange)
     val first = remember { FocusRequester() }
     LaunchedEffect(apps != null) { runCatching { first.requestFocus() } }
@@ -54,10 +60,9 @@ fun GuestAppsScreen(
     ) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             Column(Modifier.weight(1f)) {
-                Text("Applis masquées pour l'invité", style = MaterialTheme.typography.displaySmall)
+                Text(title, style = MaterialTheme.typography.displaySmall)
                 Text(
-                    "OK pour masquer ou remettre. Masque celles où la famille est connectée avec ses comptes : " +
-                        "${hidden.count { id -> apps?.any { it.packageName == id } == true }} masquée(s).",
+                    "$explanation · ${countLabel(selected.count { id -> apps?.any { it.packageName == id } == true })}",
                     style = MaterialTheme.typography.bodyLarge,
                     color = LuneAttenuee,
                 )
@@ -77,7 +82,7 @@ fun GuestAppsScreen(
             verticalArrangement = Arrangement.spacedBy(14.dp),
         ) {
             itemsIndexed(apps, key = { _, app -> app.packageName }) { index, app ->
-                val masked = app.packageName in hidden
+                val off = dimmed(app.packageName in selected)
                 AppTile(
                     app,
                     onClick = {
@@ -85,8 +90,8 @@ fun GuestAppsScreen(
                         change(if (id in current) current - id else current + id)
                     },
                     modifier = Modifier.fillMaxWidth().then(if (index == 0) Modifier.focusRequester(first) else Modifier),
-                    // Grisée : l'invité ne la verra pas.
-                    dimmedNote = "Masquée pour l'invité".takeIf { masked },
+                    // Grisée : le profil ne la verra pas.
+                    dimmedNote = dimmedNote.takeIf { off },
                 )
             }
         }
