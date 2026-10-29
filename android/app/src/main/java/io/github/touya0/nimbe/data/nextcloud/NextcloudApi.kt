@@ -1,0 +1,177 @@
+package io.github.touya0.nimbe.data.nextcloud
+
+import io.github.touya0.nimbe.data.jellyfin.ServerAddress
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import org.json.JSONException
+import org.json.JSONObject
+import java.io.IOException
+import java.net.HttpURLConnection
+import java.net.URI
+import java.net.URL
+import java.net.URLEncoder
+import java.util.Base64
+
+data class NextcloudStatus(val version: String, val productName: String)
+
+/** Connexion en attente : [loginUrl] s'ouvre sur le téléphone (QR code), [pollToken] reste sur la TV. */
+data class LoginFlow(val loginUrl: String, val pollEndpoint: String, val pollToken: String)
+
+/**
+ * De quoi faire une requête au nom d'un compte. [appPassword] est un mot de passe d'application :
+ * révocable dans Nextcloud (Paramètres → Sécurité → Appareils et sessions), jamais le vrai mot de passe.
+ */
+data class NextcloudAuth(val server: String, val loginName: String, val appPassword: String) {
+    /** Hors du toString généré : un mot de passe ne doit jamais finir dans un message d'erreur. */
+    override fun toString() = "NextcloudAuth(server=$server, loginName=$loginName)"
+}
+
+/** [id] sert dans les chemins WebDAV ; il peut différer du nom de connexion (une adresse e-mail, par exemple). */
+data class NextcloudUser(val id: String, val displayName: String)
+
+class NextcloudException(val kind: Kind, message: String) : IOException(message) {
+    /** [NotFound] : 404, aussi la réponse normale d'une connexion pas encore autorisée. */
+    enum class Kind { Unreachable, NotNextcloud, NotFound, Maintenance, Unauthorized, Server }
+}
+
+/**
+ * Client Nextcloud, sans bibliothèque : connexion par Login Flow v2, compte, révocation.
+ * Le mot de passe d'application passe dans l'en-tête Authorization, jamais dans une adresse.
+ * Ne jamais journaliser un mot de passe d'application ni un jeton de connexion.
+ *
+ * [userAgent] : Nextcloud en tire le nom de l'appareil affiché dans les sessions (« Nimbe (Salon) »).
+ */
+class NextcloudApi(private val userAgent: () -> String) {
+
+    /** Répond sans connexion : sert à vérifier qu'une adresse mène bien à un Nextcloud. */
+    suspend fun status(server: String): NextcloudStatus {
+        val json = call("GET", "$server/status.php")
+        if (!json.optBoolean("installed")) throw notNextcloud()
+        if (json.optBoolean("maintenance")) {
+            throw NextcloudException(NextcloudException.Kind.Maintenance, "Nextcloud est en maintenance, réessaie dans un moment")
+        }
+        return NextcloudStatus(json.optString("versionstring"), json.optString("productname", "Nextcloud"))
+    }
+
+    suspend fun startLogin(server: String): LoginFlow {
+        val json = call("POST", "$server/index.php/login/v2")
+        return try {
+            val poll = json.getJSONObject("poll")
+            LoginFlow(
+                loginUrl = safeUrl(json.getString("login")),
+                pollEndpoint = safeUrl(poll.getString("endpoint")),
+                pollToken = poll.getString("token"),
+            )
+        } catch (_: JSONException) {
+            throw notNextcloud()
+        }
+    }
+
+    /** null tant que la connexion n'a pas été autorisée sur le téléphone. Le serveur oublie la demande après 20 minutes. */
+    suspend fun pollLogin(server: String, flow: LoginFlow): NextcloudAuth? {
+        val body = "token=" + URLEncoder.encode(flow.pollToken, "UTF-8")
+        val json = try {
+            call("POST", flow.pollEndpoint, form = body)
+        } catch (e: NextcloudException) {
+            // 404 : pas encore autorisée (ou demande expirée, que l'appelant compte lui-même).
+            if (e.kind == NextcloudException.Kind.NotFound) return null else throw e
+        }
+        return try {
+            // On garde l'adresse saisie, vérifiée : celle que renvoie le serveur dépend de sa configuration.
+            NextcloudAuth(server, json.getString("loginName"), json.getString("appPassword"))
+        } catch (_: JSONException) {
+            throw notNextcloud()
+        }
+    }
+
+    suspend fun user(auth: NextcloudAuth): NextcloudUser {
+        val json = call("GET", "${auth.server}/ocs/v2.php/cloud/user?format=json", auth)
+        return try {
+            val data = json.getJSONObject("ocs").getJSONObject("data")
+            val id = data.getString("id")
+            NextcloudUser(id, data.optString("display-name").ifBlank { data.optString("displayname").ifBlank { id } })
+        } catch (_: JSONException) {
+            throw notNextcloud()
+        }
+    }
+
+    /** Supprime le mot de passe d'application sur le serveur : la TV disparaît des appareils du compte. */
+    suspend fun revoke(auth: NextcloudAuth) {
+        call("DELETE", "${auth.server}/ocs/v2.php/core/apppassword?format=json", auth)
+    }
+
+    private suspend fun call(method: String, url: String, auth: NextcloudAuth? = null, form: String? = null): JSONObject =
+        withContext(Dispatchers.IO) {
+            val connection = try {
+                (URL(url).openConnection() as HttpURLConnection).apply {
+                    requestMethod = method
+                    connectTimeout = 5_000
+                    readTimeout = 15_000
+                    instanceFollowRedirects = false
+                    setRequestProperty("User-Agent", userAgent())
+                    setRequestProperty("Accept", "application/json")
+                    setRequestProperty("OCS-APIRequest", "true")
+                    auth?.let { setRequestProperty("Authorization", basic(it)) }
+                }
+            } catch (_: IOException) {
+                throw unreachable()
+            }
+            try {
+                if (form != null || method == "POST") {
+                    connection.doOutput = true
+                    connection.setRequestProperty("Content-Type", "application/x-www-form-urlencoded")
+                    connection.outputStream.use { it.write((form ?: "").toByteArray(Charsets.UTF_8)) }
+                }
+                val code = connection.responseCode
+                when {
+                    code == HttpURLConnection.HTTP_UNAUTHORIZED ->
+                        throw NextcloudException(NextcloudException.Kind.Unauthorized, "Accès refusé par Nextcloud")
+                    code == HttpURLConnection.HTTP_NOT_FOUND ->
+                        throw NextcloudException(NextcloudException.Kind.NotFound, "Ce n'est pas un serveur Nextcloud")
+                    code == HttpURLConnection.HTTP_UNAVAILABLE ->
+                        throw NextcloudException(NextcloudException.Kind.Maintenance, "Nextcloud est en maintenance, réessaie dans un moment")
+                    code !in 200..299 -> throw NextcloudException(NextcloudException.Kind.Server, "Nextcloud a répondu $code")
+                }
+                val text = connection.inputStream.bufferedReader().use { it.readText() }
+                if (text.isBlank()) JSONObject() else JSONObject(text)
+            } catch (e: NextcloudException) {
+                throw e
+            } catch (_: JSONException) {
+                throw notNextcloud()
+            } catch (_: IOException) {
+                throw unreachable()
+            } finally {
+                connection.disconnect()
+            }
+        }
+
+    companion object {
+        fun basic(auth: NextcloudAuth): String =
+            "Basic " + Base64.getEncoder().encodeToString("${auth.loginName}:${auth.appPassword}".toByteArray(Charsets.UTF_8))
+
+        /**
+         * Adresse renvoyée par le serveur : même règle que pour une adresse saisie, le HTTP sans
+         * chiffrement seulement vers la maison. Un mot de passe ne doit pas traverser internet en clair.
+         */
+        internal fun safeUrl(url: String): String {
+            val uri = try {
+                URI(url)
+            } catch (_: Exception) {
+                throw notNextcloud()
+            }
+            val host = uri.host ?: throw notNextcloud()
+            return when (uri.scheme?.lowercase()) {
+                "https" -> url
+                "http" -> if (ServerAddress.isLocalHost(host)) url else throw insecure()
+                else -> throw notNextcloud()
+            }
+        }
+
+        private fun unreachable() = NextcloudException(NextcloudException.Kind.Unreachable, "Serveur injoignable")
+        private fun notNextcloud() = NextcloudException(NextcloudException.Kind.NotNextcloud, "Ce n'est pas un serveur Nextcloud")
+        private fun insecure() = NextcloudException(
+            NextcloudException.Kind.Server,
+            "Nextcloud propose une adresse en http:// hors de la maison : règle overwriteprotocol sur https",
+        )
+    }
+}

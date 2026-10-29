@@ -79,6 +79,7 @@ import io.github.touya0.nimbe.core.storage.AppLaunchDao
 import io.github.touya0.nimbe.core.storage.LauncherPrefs
 import io.github.touya0.nimbe.crashguard.StockLauncher
 import io.github.touya0.nimbe.data.jellyfin.JellyfinAccount
+import io.github.touya0.nimbe.data.nextcloud.NextcloudAccounts
 import io.github.touya0.nimbe.data.homeassistant.HaConnection
 import io.github.touya0.nimbe.data.homeassistant.HaLive
 import io.github.touya0.nimbe.data.homeassistant.HistoryPoint
@@ -130,6 +131,7 @@ fun NimbeApp(
     library: JellyfinLibrary,
     homeAssistant: HomeAssistantAccount,
     homeAssistantMonitor: HomeAssistantMonitor,
+    nextcloud: NextcloudAccounts,
     profiles: ProfilesStore,
     parentPin: ParentPinStore,
     layouts: LayoutStore,
@@ -224,7 +226,7 @@ fun NimbeApp(
             JellyfinConnectScreen(jellyfin, linked?.link?.serverUrl, onClose = { jellyfinConnectOpen = false })
         } else {
             NimbeShell(
-                repository, prefs, launcher, connectivityMonitor, launches, updates, jellyfin, homeAssistant, ha,
+                repository, prefs, launcher, connectivityMonitor, launches, updates, jellyfin, homeAssistant, nextcloud, ha,
                 homeAssistantMonitor::history, profiles, state, parentPin, layouts, screenTime, homePresses, screenOn,
             )
         }
@@ -241,6 +243,7 @@ private fun NimbeShell(
     updates: UpdateController,
     jellyfin: JellyfinAccount,
     homeAssistant: HomeAssistantAccount,
+    nextcloud: NextcloudAccounts,
     ha: HaLive,
     loadHistory: suspend (String) -> List<HistoryPoint>,
     profiles: ProfilesStore,
@@ -513,6 +516,7 @@ private fun NimbeShell(
             updates = updates,
             jellyfin = jellyfin,
             homeAssistant = homeAssistant,
+            nextcloud = nextcloud,
             profiles = profiles,
             profilesState = profilesState,
             parentPin = parentPin,
@@ -523,6 +527,8 @@ private fun NimbeShell(
                 scope.launch {
                     layouts.remove(id)
                     screenTime.remove(id)
+                    // Sa galerie aussi : un accès sans profil ne doit pas rester ouvert sur le serveur.
+                    nextcloud.disconnect(id)
                 }
             },
             installedApps = apps,

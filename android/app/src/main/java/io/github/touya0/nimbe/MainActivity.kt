@@ -89,6 +89,7 @@ class MainActivity : ComponentActivity() {
                         library = (application as NimbeApplication).library,
                         homeAssistant = (application as NimbeApplication).homeAssistant,
                         homeAssistantMonitor = (application as NimbeApplication).homeAssistantMonitor,
+                        nextcloud = (application as NimbeApplication).nextcloud,
                         profiles = (application as NimbeApplication).profiles,
                         parentPin = (application as NimbeApplication).parentPin,
                         layouts = (application as NimbeApplication).layouts,

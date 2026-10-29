@@ -17,11 +17,12 @@ object ServerAddress {
     /**
      * Adresse normalisée (schéma, hôte, port, chemin sans barre finale), ou une explication en français.
      * [defaultPort] : port ajouté à une adresse en http:// qui n'en a pas (8096 pour Jellyfin, 8123 pour Home Assistant).
+     * [secureByDefault] : une adresse sans schéma part en https:// (Nextcloud, derrière un proxy), sinon en http://.
      */
-    fun parse(input: String, defaultPort: Int = DEFAULT_PORT): Result<String> {
+    fun parse(input: String, defaultPort: Int = DEFAULT_PORT, secureByDefault: Boolean = false): Result<String> {
         val text = input.trim()
         if (text.isEmpty()) return failure("Saisis l'adresse du serveur")
-        val withScheme = if ("://" in text) text else "http://$text"
+        val withScheme = if ("://" in text) text else if (secureByDefault) "https://$text" else "http://$text"
         val uri = try {
             URI(withScheme)
         } catch (_: URISyntaxException) {

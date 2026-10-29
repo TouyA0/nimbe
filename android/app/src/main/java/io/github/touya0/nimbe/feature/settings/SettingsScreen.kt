@@ -51,6 +51,9 @@ import io.github.touya0.nimbe.data.homeassistant.HomeAssistantLink
 import io.github.touya0.nimbe.data.jellyfin.JellyfinAccount
 import io.github.touya0.nimbe.data.jellyfin.JellyfinLink
 import io.github.touya0.nimbe.data.layout.LayoutRules
+import io.github.touya0.nimbe.data.nextcloud.NextcloudAccounts
+import io.github.touya0.nimbe.data.nextcloud.NextcloudException
+import io.github.touya0.nimbe.data.nextcloud.NextcloudLink
 import io.github.touya0.nimbe.data.layout.ProfileLayout
 import io.github.touya0.nimbe.data.layout.TabKeys
 import io.github.touya0.nimbe.data.profiles.ChildMode
@@ -71,11 +74,13 @@ import io.github.touya0.nimbe.feature.layout.HomePreview
 import io.github.touya0.nimbe.feature.layout.LayoutEditor
 import io.github.touya0.nimbe.feature.layout.homeRowLabel
 import io.github.touya0.nimbe.feature.layout.tabLabel
+import io.github.touya0.nimbe.feature.nextcloud.NextcloudConnectScreen
 import io.github.touya0.nimbe.feature.onboarding.JellyfinConnectScreen
 import io.github.touya0.nimbe.feature.screensaver.ScreensaverSetting
 import io.github.touya0.nimbe.feature.onboarding.ServiceInitial
 import io.github.touya0.nimbe.feature.apps.InstalledApp
 import io.github.touya0.nimbe.feature.profiles.AppChoiceScreen
+import io.github.touya0.nimbe.feature.profiles.ProfileAvatar
 import io.github.touya0.nimbe.feature.profiles.ProfilesManager
 import io.github.touya0.nimbe.feature.security.PinChange
 import io.github.touya0.nimbe.feature.security.PinChangeScreen
@@ -136,6 +141,8 @@ fun SettingsScreen(
     updates: UpdateController,
     jellyfin: JellyfinAccount,
     homeAssistant: HomeAssistantAccount,
+    /** Galeries Nextcloud, une par profil adulte. */
+    nextcloud: NextcloudAccounts,
     profiles: ProfilesStore,
     profilesState: ProfilesState,
     parentPin: ParentPinStore,
@@ -216,6 +223,20 @@ fun SettingsScreen(
         ScreensaverPreview(screensaverPreview, onClose = { previewOpen = false })
         return
     }
+    // Relier la galerie d'un profil adulte : en plein écran, par-dessus « Serveurs et comptes ».
+    var nextcloudConnectFor by rememberSaveable { mutableStateOf<String?>(null) }
+    val nextcloudLinks by remember(nextcloud) { nextcloud.links }.collectAsStateWithLifecycle(initialValue = null)
+    val nextcloudServer by remember(nextcloud) { nextcloud.lastServer }.collectAsStateWithLifecycle(initialValue = null)
+    profilesState.profiles.firstOrNull { it.id == nextcloudConnectFor }?.let { profile ->
+        NextcloudConnectScreen(
+            nextcloud,
+            profileId = profile.id,
+            profileName = profile.name,
+            knownServer = nextcloudLinks?.get(profile.id)?.serverUrl ?: nextcloudServer,
+            onClose = { nextcloudConnectFor = null },
+        )
+        return
+    }
     var homeAssistantConnectOpen by rememberSaveable { mutableStateOf(false) }
     val homeAssistantLink by remember(homeAssistant) { homeAssistant.link.map { HaLinked(it) } }
         .collectAsStateWithLifecycle(initialValue = null)
@@ -285,6 +306,10 @@ fun SettingsScreen(
                     homeAssistant,
                     homeAssistantLink,
                     onConnectHomeAssistant = { homeAssistantConnectOpen = true },
+                    nextcloud,
+                    nextcloudLinks,
+                    adults = profilesState.profiles.filter { it.kind == ProfileKind.Adult },
+                    onConnectNextcloud = { nextcloudConnectFor = it },
                 )
                 SettingsSection.Security -> SecurityPage(
                     parentPin,
@@ -294,8 +319,8 @@ fun SettingsScreen(
                     linkedServices = listOfNotNull(
                         jellyfinLink?.link?.let { "Jellyfin (${it.userName})" },
                         homeAssistantLink?.link?.let { "Home Assistant (${it.userName})" },
-                    ),
-                    onRevokeAll = { revokeAll(jellyfin, homeAssistant) },
+                    ) + nextcloudLinks.orEmpty().values.map { "Nextcloud (${it.loginName})" },
+                    onRevokeAll = { revokeAll(jellyfin, homeAssistant, nextcloud) },
                 )
                 SettingsSection.Updates -> UpdatesPage(updateState, updates, onOpenUpdate)
                 SettingsSection.About -> AboutPage(about, links, onCacheCleared = { aboutVersion++ }, onRestartSetup = onRestartSetup)
@@ -627,6 +652,10 @@ private fun ServersPage(
     homeAssistant: HomeAssistantAccount,
     haLinked: HaLinked?,
     onConnectHomeAssistant: () -> Unit,
+    nextcloud: NextcloudAccounts,
+    nextcloudLinks: Map<String, NextcloudLink>?,
+    adults: List<Profile>,
+    onConnectNextcloud: (String) -> Unit,
 ) {
     PageTitle("Serveurs et comptes", "Chaque accès est un jeton révocable. Aucun mot de passe n'est enregistré sur la TV.")
     SettingsGroupTitle("Sur ton réseau")
@@ -636,7 +665,92 @@ private fun ServersPage(
     }
     JellyfinRows(jellyfin, linked.link, onConnectJellyfin)
     HomeAssistantRows(homeAssistant, haLinked.link, onConnectHomeAssistant)
+    SettingsGroupTitle("Galeries Nextcloud")
+    Text(
+        "Chaque adulte relie son propre compte : ses photos ne s'affichent que dans son profil.",
+        style = MaterialTheme.typography.bodyMedium,
+        color = LuneAttenuee,
+    )
+    when {
+        nextcloudLinks == null -> Text("Chargement…", style = MaterialTheme.typography.bodyLarge, color = LuneAttenuee)
+        adults.isEmpty() -> Text("Crée d'abord un profil adulte dans Profils.", style = MaterialTheme.typography.bodyLarge, color = LuneAttenuee)
+        else -> adults.forEach { profile ->
+            NextcloudRows(nextcloud, profile, nextcloudLinks[profile.id], onConnect = { onConnectNextcloud(profile.id) })
+        }
+    }
 }
+
+@Composable
+private fun NextcloudRows(nextcloud: NextcloudAccounts, profile: Profile, link: NextcloudLink?, onConnect: () -> Unit) {
+    val scope = rememberCoroutineScope()
+    val row = remember { FocusRequester() }
+    // Après « Déconnecter », la ligne disparaît : le focus revient sur la galerie du profil.
+    var refocus by remember { mutableStateOf(false) }
+    if (link == null) {
+        LaunchedEffect(Unit) {
+            if (refocus) runCatching { row.requestFocus() }
+            refocus = false
+        }
+        SettingRow(
+            title = "Galerie de ${profile.name}",
+            detail = "Photos et vidéos · pas encore reliée",
+            onClick = onConnect,
+            modifier = Modifier.focusRequester(row),
+            leading = { ProfileAvatar(profile, 40.dp) },
+            trailing = {
+                Status("Non reliée", LuneAttenuee)
+                Value("Relier")
+            },
+        )
+        return
+    }
+
+    // Vérifié à l'ouverture de la page : le mot de passe d'application est-il encore accepté ?
+    val state by produceState<NextcloudCheck>(NextcloudCheck.Checking, link) {
+        val auth = nextcloud.auth(profile.id)
+        value = when {
+            auth == null -> NextcloudCheck.Lost
+            else -> runCatching { nextcloud.api.user(auth) }.fold(
+                onSuccess = { NextcloudCheck.Ok },
+                onFailure = { if ((it as? NextcloudException)?.kind == NextcloudException.Kind.Unauthorized) NextcloudCheck.Lost else NextcloudCheck.Unreachable },
+            )
+        }
+    }
+    SettingRow(
+        title = "Galerie de ${profile.name}",
+        detail = "${link.serverUrl.substringAfter("://")} · compte ${link.loginName}",
+        onClick = onConnect,
+        modifier = Modifier.focusRequester(row),
+        leading = { ProfileAvatar(profile, 40.dp) },
+        trailing = {
+            when (state) {
+                NextcloudCheck.Checking -> Status("Vérification…", LuneAttenuee)
+                NextcloudCheck.Ok -> Status("Reliée", EnLigne)
+                NextcloudCheck.Unreachable -> Status("Injoignable", Alerte)
+                NextcloudCheck.Lost -> Status("Accès retiré", Alerte)
+            }
+            Value(if (state == NextcloudCheck.Lost) "Relier" else "Changer")
+        },
+    )
+    var confirm by remember { mutableStateOf(false) }
+    LinkRow(
+        title = "Déconnecter la galerie de ${profile.name}",
+        detail = "Retire l'accès de cette TV, sur Nextcloud aussi",
+        value = if (confirm) "OK pour confirmer" else "Déconnecter",
+        onClick = {
+            if (!confirm) {
+                confirm = true
+            } else {
+                runCatching { row.requestFocus() }
+                refocus = true
+                scope.launch { nextcloud.disconnect(profile.id) }
+            }
+        },
+    )
+}
+
+/** Résultat de la vérification d'une galerie. [Lost] : mot de passe révoqué sur le serveur ou illisible sur la TV. */
+private enum class NextcloudCheck { Checking, Ok, Unreachable, Lost }
 
 @Composable
 private fun JellyfinRows(jellyfin: JellyfinAccount, link: JellyfinLink?, onConnectJellyfin: () -> Unit) {

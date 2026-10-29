@@ -19,6 +19,13 @@ class ServerAddressTest {
     }
 
     @Test
+    fun `Nextcloud part en https sans schéma, le http reste possible à la maison`() {
+        fun nextcloud(input: String) = ServerAddress.parse(input, defaultPort = 80, secureByDefault = true).getOrThrow()
+        assertEquals("https://cloud.example.fr", nextcloud("cloud.example.fr/"))
+        assertEquals("http://192.168.1.182:8080", nextcloud("http://192.168.1.182:8080"))
+    }
+
+    @Test
     fun `le chemin d'un proxy est gardé, sans barre finale`() {
         assertEquals("https://films.example.org/jellyfin", parsed("https://films.example.org/jellyfin/"))
         assertEquals("https://films.example.org:8920", parsed("https://films.example.org:8920"))
