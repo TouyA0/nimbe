@@ -7,9 +7,11 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -41,6 +43,7 @@ import androidx.tv.material3.Surface
 import androidx.tv.material3.Text
 import io.github.touya0.nimbe.data.homeassistant.HaEntity
 import io.github.touya0.nimbe.data.homeassistant.HomeAssistantAccount
+import io.github.touya0.nimbe.feature.onboarding.SetupChrome
 import io.github.touya0.nimbe.ui.components.PillButton
 import io.github.touya0.nimbe.ui.components.Spinner
 import io.github.touya0.nimbe.ui.components.focusRing
@@ -59,12 +62,13 @@ import kotlinx.coroutines.launch
 val HomeAssistantColor = Color(0xFF18BCF2)
 
 /**
- * Écran « Connecter Home Assistant », ouvert depuis Réglages → Serveurs et comptes.
+ * Écran « Connecter Home Assistant », ouvert depuis Réglages → Serveurs et comptes ou par le premier lancement.
  * La page de configuration n'est ouverte sur le réseau que tant que cet écran est affiché.
  * [fallbackAddress] : adresse proposée sur la page quand aucune n'est enregistrée.
+ * [onClose] : après l'enregistrement, et sur Retour sauf dans l'assistant ([setup]), qui a son propre Retour.
  */
 @Composable
-fun HomeAssistantConnectScreen(account: HomeAssistantAccount, fallbackAddress: String, onClose: () -> Unit) {
+fun HomeAssistantConnectScreen(account: HomeAssistantAccount, fallbackAddress: String, onClose: () -> Unit, setup: SetupChrome? = null) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val controller = remember { HomeAssistantConnectController(account, scope, fallbackAddress) }
@@ -72,7 +76,8 @@ fun HomeAssistantConnectScreen(account: HomeAssistantAccount, fallbackAddress: S
         controller.start(PairingServer.localAddress(context))
         onDispose { controller.stop() }
     }
-    BackHandler(onBack = onClose)
+    val onBack = setup?.onBack ?: onClose
+    BackHandler(onBack = onBack)
 
     val back = remember { FocusRequester() }
     val confirm = remember { FocusRequester() }
@@ -83,7 +88,11 @@ fun HomeAssistantConnectScreen(account: HomeAssistantAccount, fallbackAddress: S
         if (controller.sensors is SensorsState.Loaded) runCatching { confirm.requestFocus() }
     }
 
-    Column(Modifier.fillMaxSize().background(Nuit).padding(horizontal = 56.dp, vertical = 36.dp)) {
+    Column(Modifier.fillMaxSize().background(Nuit).padding(horizontal = 56.dp, vertical = if (setup != null) 32.dp else 36.dp)) {
+        setup?.let {
+            it.stepBar()
+            Spacer(Modifier.height(24.dp))
+        }
         Text("Connecter Home Assistant", style = MaterialTheme.typography.displaySmall.copy(fontSize = 36.sp, lineHeight = 44.sp))
         Text(
             "Pour afficher l'état du Pi et des services. Utilise le token d'un compte non-admin dédié à la TV.",
@@ -98,7 +107,8 @@ fun HomeAssistantConnectScreen(account: HomeAssistantAccount, fallbackAddress: S
             Panel(Modifier.weight(1f)) { SensorsPanel(controller) }
         }
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp, Alignment.End)) {
-            PillButton("Retour", onClick = onClose, modifier = Modifier.focusRequester(back))
+            PillButton("Retour", onClick = onBack, modifier = Modifier.focusRequester(back))
+            if (setup != null && !canSave) PillButton("Passer, plus tard", onClick = setup.onSkip)
             if (canSave) {
                 PillButton(
                     "Continuer",

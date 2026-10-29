@@ -57,6 +57,18 @@ class JellyfinConnectController(
         step = if (servers.isEmpty()) ConnectStep.Manual("Aucun serveur trouvé tout seul sur ton réseau.") else ConnectStep.Found(servers)
     }
 
+    /** Serveur déjà trouvé par l'étape « Serveur » : droit au code ; s'il ne répond plus, recherche normale. */
+    fun start(knownUrl: String) = launchStep {
+        step = ConnectStep.Searching
+        val info = try {
+            account.api.publicInfo(knownUrl)
+        } catch (_: JellyfinException) {
+            search()
+            return@launchStep
+        }
+        quickConnect(FoundServer(knownUrl, info))
+    }
+
     fun enterAddress() {
         job?.cancel()
         checking = false

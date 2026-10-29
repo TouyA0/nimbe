@@ -62,22 +62,37 @@ import kotlinx.coroutines.delay
 val JellyfinColor = Color(0xFF5B3FB5)
 
 /**
- * Écran « Connecter Jellyfin », ouvert depuis Réglages → Serveurs et comptes.
+ * Écran « Connecter Jellyfin », ouvert depuis Réglages → Serveurs et comptes ou par le premier lancement.
  * Plein écran : le focus ne peut pas s'échapper vers l'écran de derrière.
- * [currentUrl] pré-remplit l'adresse quand la TV est déjà reliée à un serveur.
+ * [currentUrl] pré-remplit l'adresse quand la TV est déjà reliée à un serveur ; [knownUrl] : serveur déjà
+ * trouvé, on passe directement au code. [onClose] : une fois relié, et sur Retour sauf dans l'assistant ([setup]).
  */
 @Composable
-fun JellyfinConnectScreen(account: JellyfinAccount, currentUrl: String?, onClose: () -> Unit) {
+fun JellyfinConnectScreen(
+    account: JellyfinAccount,
+    currentUrl: String?,
+    onClose: () -> Unit,
+    knownUrl: String? = null,
+    setup: SetupChrome? = null,
+) {
     val scope = rememberCoroutineScope()
     val controller = remember { JellyfinConnectController(account, JellyfinDiscovery(), scope) }
-    LaunchedEffect(Unit) { controller.search() }
-    BackHandler(onBack = onClose)
+    LaunchedEffect(Unit) { if (knownUrl != null) controller.start(knownUrl) else controller.search() }
+    BackHandler(onBack = setup?.onBack ?: onClose)
 
-    Row(
-        Modifier.fillMaxSize().background(Nuit).padding(horizontal = 56.dp, vertical = 40.dp),
-        horizontalArrangement = Arrangement.spacedBy(40.dp),
-    ) {
-        Column(Modifier.width(320.dp).padding(top = 40.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+    Column(Modifier.fillMaxSize().background(Nuit).padding(horizontal = 56.dp, vertical = if (setup != null) 32.dp else 40.dp)) {
+        setup?.let {
+            it.stepBar()
+            Spacer(Modifier.height(24.dp))
+        }
+        JellyfinConnectContent(controller, currentUrl, onClose, setup)
+    }
+}
+
+@Composable
+private fun JellyfinConnectContent(controller: JellyfinConnectController, currentUrl: String?, onClose: () -> Unit, setup: SetupChrome?) {
+    Row(Modifier.fillMaxSize(), horizontalArrangement = Arrangement.spacedBy(40.dp)) {
+        Column(Modifier.width(320.dp).padding(top = if (setup != null) 0.dp else 40.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
             Text("Connecter Jellyfin", style = MaterialTheme.typography.displaySmall.copy(fontSize = 36.sp, lineHeight = 44.sp))
             Text(
                 "Films et séries de ton serveur, avec la reprise de lecture. Aucun mot de passe ne passe par la TV : " +
@@ -88,6 +103,13 @@ fun JellyfinConnectScreen(account: JellyfinAccount, currentUrl: String?, onClose
             Spacer(Modifier.height(8.dp))
             Stage(1, "Trouver le serveur", done = controller.step.pastServer)
             Stage(2, "Autoriser avec Quick Connect", done = controller.step is ConnectStep.Done)
+            if (setup != null && controller.step !is ConnectStep.Done) {
+                Spacer(Modifier.height(8.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    PillButton("Retour", onClick = setup.onBack)
+                    PillButton("Passer", onClick = setup.onSkip)
+                }
+            }
         }
 
         Column(
@@ -108,7 +130,7 @@ fun JellyfinConnectScreen(account: JellyfinAccount, currentUrl: String?, onClose
                     onRetry = { controller.choose(step.server) },
                     onChangeServer = controller::enterAddress,
                 )
-                is ConnectStep.Done -> DoneContent(step, onClose)
+                is ConnectStep.Done -> DoneContent(step, if (setup != null) "Continuer" else "Terminer", onClose)
             }
         }
     }
@@ -210,7 +232,7 @@ private fun FailedContent(step: ConnectStep.Failed, onRetry: () -> Unit, onChang
 }
 
 @Composable
-private fun DoneContent(step: ConnectStep.Done, onClose: () -> Unit) {
+private fun DoneContent(step: ConnectStep.Done, label: String, onClose: () -> Unit) {
     val focus = rememberStepFocus()
     PanelHeader("Connecté", "Compte ${step.userName} sur ${step.serverName}", initial = true)
     Text(
@@ -219,7 +241,7 @@ private fun DoneContent(step: ConnectStep.Done, onClose: () -> Unit) {
         style = MaterialTheme.typography.bodyMedium,
         color = LuneAttenuee,
     )
-    PillButton("Terminer", onClick = onClose, modifier = Modifier.focusRequester(focus))
+    PillButton(label, onClick = onClose, modifier = Modifier.focusRequester(focus))
 }
 
 /** Chaque étape pose le focus sur son action principale dès qu'elle s'affiche. */

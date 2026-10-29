@@ -6,7 +6,9 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -29,11 +31,13 @@ import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.tv.material3.MaterialTheme
 import androidx.tv.material3.Text
 import io.github.touya0.nimbe.data.homeassistant.HomeAssistantAccount
 import io.github.touya0.nimbe.data.jellyfin.JellyfinAccount
 import io.github.touya0.nimbe.feature.homeassistant.HomeAssistantColor
+import io.github.touya0.nimbe.feature.homeassistant.HomeAssistantConnectScreen
 import io.github.touya0.nimbe.ui.components.PillButton
 import io.github.touya0.nimbe.ui.theme.Alerte
 import io.github.touya0.nimbe.ui.theme.EnLigne
@@ -43,6 +47,7 @@ import io.github.touya0.nimbe.ui.theme.LuneAttenuee
 import io.github.touya0.nimbe.ui.theme.Nuit
 import io.github.touya0.nimbe.ui.theme.Panneau
 import io.github.touya0.nimbe.ui.theme.PanneauClair
+import kotlinx.coroutines.flow.map
 
 /** Framboise de l'initiale « P » du Raspberry Pi. */
 private val PiColor = Color(0xFFC51A4A)
@@ -57,19 +62,170 @@ enum class SetupStep(val label: String, val summary: String) {
 }
 
 /**
+ * Ce que l'assistant ajoute à un écran de connexion (Home Assistant, Jellyfin) : le bandeau des étapes,
+ * Retour vers l'étape précédente et « Passer ».
+ */
+class SetupChrome(val stepBar: @Composable () -> Unit, val onBack: () -> Unit, val onSkip: () -> Unit)
+
+/** Les étapes déjà construites ; après la dernière, le premier lancement se termine. */
+private val BuiltSteps = listOf(SetupStep.Server, SetupStep.HomeAssistant, SetupStep.Jellyfin)
+
+/** Enveloppe pour distinguer « pas encore lu » (null) de « pas relié ». */
+private class Loaded<T>(val value: T?)
+
+/**
  * Premier lancement : Nimbe s'ouvre ici tant qu'il n'est pas terminé, même si des services sont déjà reliés
- * (ils s'affichent alors « Connecté »). Chaque étape peut être passée : Nimbe doit marcher Pi coupé.
+ * (leur étape propose alors de continuer ou de relier à nouveau). Chaque étape peut être passée :
+ * Nimbe doit marcher Pi coupé.
  */
 @Composable
 fun FirstLaunchScreen(jellyfin: JellyfinAccount, homeAssistant: HomeAssistantAccount, onFinish: () -> Unit) {
-    val step by rememberSaveable { mutableStateOf(SetupStep.Server) }
+    var step by rememberSaveable { mutableStateOf(SetupStep.Server) }
+    val scope = rememberCoroutineScope()
+    // Gardé d'une étape à l'autre : en revenant au serveur, on retrouve le résultat sans tout rechercher.
+    val server = remember { ServerStepController(PiScanner(jellyfin, homeAssistant), scope) }
+    LaunchedEffect(Unit) { server.scan() }
+    val scan = (server.step as? ServerStep.Result)?.scan
+    val jellyfinLink by remember(jellyfin) { jellyfin.link.map { Loaded(it) } }.collectAsStateWithLifecycle(initialValue = null)
+    val homeAssistantLink by remember(homeAssistant) { homeAssistant.link.map { Loaded(it) } }
+        .collectAsStateWithLifecycle(initialValue = null)
+    // « Relier à nouveau » sur un service déjà relié ; oublié en changeant d'étape.
+    var relink by remember(step) { mutableStateOf(false) }
+
+    fun next() {
+        val index = BuiltSteps.indexOf(step)
+        if (index == BuiltSteps.lastIndex) onFinish() else step = BuiltSteps[index + 1]
+    }
+    fun back() {
+        BuiltSteps.getOrNull(BuiltSteps.indexOf(step) - 1)?.let { step = it }
+    }
+    // Retour depuis « Relier à nouveau » ramène au résumé du service, pas à l'étape d'avant.
+    val chrome = SetupChrome(stepBar = { StepBar(step) }, onBack = { if (relink) relink = false else back() }, onSkip = ::next)
+
+    when (step) {
+        SetupStep.Server -> SetupFrame(step) { ServerStepContent(server, onContinue = ::next) }
+        SetupStep.HomeAssistant -> {
+            val link = homeAssistantLink ?: return
+            val linked = link.value
+            if (linked != null && !relink) {
+                SetupFrame(step) {
+                    LinkedStepContent(
+                        title = "Home Assistant",
+                        intro = "Il surveille le Pi et ses services : voyant de l'en-tête, écran « État du serveur » et écran de veille.",
+                        onContinue = ::next,
+                        onRelink = { relink = true },
+                        onBack = ::back,
+                    ) {
+                        ServiceRow(
+                            "H", HomeAssistantColor, "Home Assistant",
+                            spot = scan?.homeAssistant as? ServiceSpot.Linked ?: ServiceSpot.Linked(linked.serverUrl, reachable = true),
+                            detail = "Compte « ${linked.userName} » · ${sensorCount(linked.sensors.size)}",
+                        )
+                    }
+                }
+            } else {
+                HomeAssistantConnectScreen(
+                    homeAssistant,
+                    fallbackAddress = scan?.homeAssistant?.url ?: scan?.piHost?.let(PiScanner::homeAssistantUrl).orEmpty(),
+                    onClose = ::next,
+                    setup = chrome,
+                )
+            }
+        }
+        SetupStep.Jellyfin -> {
+            val link = jellyfinLink ?: return
+            val linked = link.value
+            if (linked != null && !relink) {
+                SetupFrame(step) {
+                    LinkedStepContent(
+                        title = "Jellyfin",
+                        intro = "Un seul compte pour toute la maison : films, séries et reprise de lecture sont partagés par les profils.",
+                        onContinue = ::next,
+                        onRelink = { relink = true },
+                        onBack = ::back,
+                    ) {
+                        ServiceRow(
+                            "J", JellyfinColor, "Jellyfin",
+                            spot = scan?.jellyfin as? ServiceSpot.Linked ?: ServiceSpot.Linked(linked.serverUrl, reachable = true),
+                            detail = "Compte « ${linked.userName} » sur ${linked.serverName}",
+                        )
+                    }
+                }
+            } else {
+                JellyfinConnectScreen(
+                    jellyfin,
+                    currentUrl = linked?.serverUrl,
+                    onClose = ::next,
+                    knownUrl = (scan?.jellyfin as? ServiceSpot.Found)?.url,
+                    setup = chrome,
+                )
+            }
+        }
+        SetupStep.Profiles, SetupStep.Apps -> Unit
+    }
+}
+
+private fun sensorCount(count: Int): String = when (count) {
+    0 -> "aucun capteur suivi"
+    1 -> "1 capteur suivi"
+    else -> "$count capteurs suivis"
+}
+
+/** Cadre commun des étapes dessinées ici : bandeau en haut, contenu en dessous. */
+@Composable
+private fun SetupFrame(step: SetupStep, content: @Composable () -> Unit) {
     Column(Modifier.fillMaxSize().background(Nuit).padding(horizontal = 56.dp, vertical = 32.dp)) {
         StepBar(step)
         Spacer(Modifier.height(28.dp))
-        when (step) {
-            // Les étapes suivantes arrivent une à une ; d'ici là, le premier lancement s'arrête au serveur.
-            SetupStep.Server -> ServerStepContent(jellyfin, homeAssistant, onContinue = onFinish)
-            else -> Unit
+        content()
+    }
+}
+
+/** Grand panneau de droite, comme sur la maquette. */
+@Composable
+private fun RowScope.SetupPanel(content: @Composable ColumnScope.() -> Unit) {
+    Column(
+        Modifier
+            .weight(1f)
+            .background(Panneau, RoundedCornerShape(20.dp))
+            .border(1.dp, PanneauClair, RoundedCornerShape(20.dp))
+            .padding(28.dp),
+        verticalArrangement = Arrangement.spacedBy(14.dp),
+        content = content,
+    )
+}
+
+/** Étape d'un service déjà relié : on continue sans rien refaire, ou on le relie à nouveau. */
+@Composable
+private fun LinkedStepContent(
+    title: String,
+    intro: String,
+    onContinue: () -> Unit,
+    onRelink: () -> Unit,
+    onBack: () -> Unit,
+    row: @Composable () -> Unit,
+) {
+    BackHandler(onBack = onBack)
+    val focus = rememberStepFocus()
+    Row(Modifier.fillMaxSize(), horizontalArrangement = Arrangement.spacedBy(40.dp)) {
+        Column(Modifier.width(340.dp).padding(top = 16.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+            Text(title, style = MaterialTheme.typography.displaySmall.copy(fontSize = 36.sp, lineHeight = 44.sp))
+            Text(intro, style = MaterialTheme.typography.bodyLarge, color = LuneAttenuee)
+        }
+        SetupPanel {
+            Text("● Déjà relié à cette TV", style = MaterialTheme.typography.labelMedium, color = EnLigne)
+            row()
+            Text(
+                "Rien à refaire. Pour changer de compte ou de serveur, relie-le à nouveau.",
+                style = MaterialTheme.typography.bodyMedium,
+                color = LuneAttenuee,
+            )
+            Spacer(Modifier.height(4.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                PillButton("Continuer", onClick = onContinue, modifier = Modifier.focusRequester(focus))
+                PillButton("Relier à nouveau", onClick = onRelink)
+                PillButton("Retour", onClick = onBack)
+            }
         }
     }
 }
@@ -110,10 +266,7 @@ private fun StepBar(current: SetupStep) {
 }
 
 @Composable
-private fun ServerStepContent(jellyfin: JellyfinAccount, homeAssistant: HomeAssistantAccount, onContinue: () -> Unit) {
-    val scope = rememberCoroutineScope()
-    val controller = remember { ServerStepController(PiScanner(jellyfin, homeAssistant), scope) }
-    LaunchedEffect(Unit) { controller.scan() }
+private fun ServerStepContent(controller: ServerStepController, onContinue: () -> Unit) {
     // Retour ramène de la saisie au résultat ; ailleurs il ne fait rien : Nimbe est l'écran d'accueil du stick.
     BackHandler(enabled = controller.step is ServerStep.Manual, onBack = controller::leaveAddress)
 
@@ -130,14 +283,7 @@ private fun ServerStepContent(jellyfin: JellyfinAccount, homeAssistant: HomeAssi
             SetupStep.entries.forEach { Instruction(it.ordinal + 1, it.summary) }
         }
 
-        Column(
-            Modifier
-                .weight(1f)
-                .background(Panneau, RoundedCornerShape(20.dp))
-                .border(1.dp, PanneauClair, RoundedCornerShape(20.dp))
-                .padding(28.dp),
-            verticalArrangement = Arrangement.spacedBy(14.dp),
-        ) {
+        SetupPanel {
             when (val step = controller.step) {
                 ServerStep.Scanning -> ScanningContent(onManual = controller::enterAddress)
                 is ServerStep.Result -> ResultContent(
@@ -233,12 +379,12 @@ private fun PanelTitle(title: String, subtitle: String) {
 }
 
 @Composable
-private fun ServiceRow(letter: String, color: Color, title: String, spot: ServiceSpot) {
+private fun ServiceRow(letter: String, color: Color, title: String, spot: ServiceSpot, detail: String? = null) {
     val address = spot.url?.removePrefix("http://")?.removePrefix("https://")
     when (spot) {
         is ServiceSpot.Linked -> SpotRow(
             letter, color, title,
-            detail = "$address · déjà relié à cette TV",
+            detail = "$address · ${detail ?: "déjà relié à cette TV"}",
             status = if (spot.reachable) "Connecté" else "Ne répond pas",
             statusColor = if (spot.reachable) EnLigne else Alerte,
         )
