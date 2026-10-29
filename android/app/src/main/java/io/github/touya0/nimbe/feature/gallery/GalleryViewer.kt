@@ -79,7 +79,8 @@ data class GalleryViewerRequest(
 
 /**
  * Photo ou vidéo en plein écran. Gauche et droite : précédente ou suivante. OK : lance ou arrête le
- * diaporama (photo suivante au rythme réglé, en fondu), ou lit et met en pause une vidéo.
+ * diaporama (photo suivante au rythme réglé, en fondu), ou met en pause et reprend une vidéo, qui se lit
+ * d'elle-même dès qu'elle s'affiche.
  * Haut, bas : réaffichent les infos. Retour : quitte, [onClose] reçoit l'élément regardé en dernier
  * pour que la grille le retrouve.
  */
@@ -97,8 +98,7 @@ fun GalleryViewer(request: GalleryViewerRequest, onClose: (GalleryItem) -> Unit)
         delay(OVERLAY_MS)
         overlay = false
     }
-    // Une vidéo ne démarre que sur OK, sauf pendant le diaporama.
-    var videoStarted by remember(index) { mutableStateOf(slideshow) }
+    // Une vidéo se lit dès qu'elle s'affiche, comme sur un téléphone ; OK met en pause ou reprend.
     var videoPlaying by remember { mutableStateOf(false) }
 
     fun go(delta: Int) {
@@ -144,7 +144,6 @@ fun GalleryViewer(request: GalleryViewerRequest, onClose: (GalleryItem) -> Unit)
                     Key.DirectionLeft -> go(-1)
                     Key.DirectionRight -> go(1)
                     Key.DirectionCenter, Key.Enter, Key.NumPadEnter, Key.MediaPlayPause -> when {
-                        item.isVideo && !videoStarted -> videoStarted = true
                         item.isVideo -> videoPlaying = !videoPlaying
                         else -> slideshow = !slideshow
                     }
@@ -156,7 +155,7 @@ fun GalleryViewer(request: GalleryViewerRequest, onClose: (GalleryItem) -> Unit)
             },
     ) {
         Crossfade(targetState = item, animationSpec = tween(FADE_MS), label = "photo") { shown ->
-            if (shown.isVideo && shown == item && videoStarted) {
+            if (shown.isVideo && shown == item) {
                 GalleryVideo(
                     url = NextcloudApi.fileUrl(request.auth.server, request.userId, shown.path),
                     authorization = NextcloudApi.basic(request.auth),
@@ -174,24 +173,12 @@ fun GalleryViewer(request: GalleryViewerRequest, onClose: (GalleryItem) -> Unit)
                     contentScale = ContentScale.Fit,
                     crop = false,
                     modifier = Modifier.fillMaxSize(),
-                    // Sans aperçu (vidéo pas encore préparée) : fond uni, le bandeau « OK pour lire » suffit.
+                    // Sans aperçu : fond uni le temps du fondu, la vidéo arrive aussitôt.
                     fallback = {},
                 )
             }
         }
-        LaunchedEffect(index, videoStarted) { if (item.isVideo && videoStarted) videoPlaying = true }
-
-        if (item.isVideo && !videoStarted) {
-            Text(
-                "▶  OK pour lire la vidéo",
-                style = MaterialTheme.typography.titleLarge,
-                color = Lune,
-                modifier = Modifier
-                    .align(Alignment.Center)
-                    .background(Nuit.copy(alpha = 0.75f), RoundedCornerShape(14.dp))
-                    .padding(horizontal = 28.dp, vertical = 14.dp),
-            )
-        }
+        LaunchedEffect(index) { videoPlaying = item.isVideo }
 
         AnimatedVisibility(overlay, enter = fadeIn(), exit = fadeOut(), modifier = Modifier.fillMaxSize()) {
             ViewerOverlay(item, index, items.size, slideshow)

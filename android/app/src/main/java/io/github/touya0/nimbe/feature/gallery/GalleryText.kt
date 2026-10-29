@@ -34,7 +34,7 @@ object GalleryText {
     /** Rappel des touches en bas de la visionneuse. */
     fun viewerHints(video: Boolean, slideshow: Boolean): String = listOf(
         when {
-            video -> "OK : lire ou mettre en pause"
+            video -> "OK : pause ou lecture"
             slideshow -> "OK : arrêter le diaporama"
             else -> "OK : lancer le diaporama"
         },
