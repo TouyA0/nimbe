@@ -245,6 +245,14 @@ fun SettingsScreen(
         )
         return
     }
+    // Adresse du Nextcloud à la maison : en plein écran, par-dessus « Serveurs et comptes ».
+    var localAddressFor by rememberSaveable { mutableStateOf<String?>(null) }
+    localAddressFor?.let { id ->
+        nextcloudLinks?.get(id)?.let { link ->
+            LocalAddressScreen(nextcloud, id, link, onClose = { localAddressFor = null })
+            return
+        }
+    }
     // Dossiers montrés par la galerie d'un profil : en plein écran, par-dessus « Serveurs et comptes ».
     var galleryFoldersFor by rememberSaveable { mutableStateOf<String?>(null) }
     profilesState.profiles.firstOrNull { it.id == galleryFoldersFor }?.let { profile ->
@@ -397,6 +405,7 @@ fun SettingsScreen(
                     adults = profilesState.profiles.filter { it.kind == ProfileKind.Adult },
                     onConnectNextcloud = { nextcloudConnectFor = it },
                     onGalleryFolders = { galleryFoldersFor = it },
+                    onLocalAddress = { localAddressFor = it },
                 )
                 SettingsSection.Security -> SecurityPage(
                     parentPin,
@@ -835,6 +844,7 @@ private fun ServersPage(
     adults: List<Profile>,
     onConnectNextcloud: (String) -> Unit,
     onGalleryFolders: (String) -> Unit,
+    onLocalAddress: (String) -> Unit,
 ) {
     PageTitle("Serveurs et comptes", "Chaque accès est un jeton révocable. Aucun mot de passe n'est enregistré sur la TV.")
     SettingsGroupTitle("Sur ton réseau")
@@ -860,13 +870,21 @@ private fun ServersPage(
                 nextcloudLinks[profile.id],
                 onConnect = { onConnectNextcloud(profile.id) },
                 onFolders = { onGalleryFolders(profile.id) },
+                onLocalAddress = { onLocalAddress(profile.id) },
             )
         }
     }
 }
 
 @Composable
-private fun NextcloudRows(nextcloud: NextcloudAccounts, profile: Profile, link: NextcloudLink?, onConnect: () -> Unit, onFolders: () -> Unit) {
+private fun NextcloudRows(
+    nextcloud: NextcloudAccounts,
+    profile: Profile,
+    link: NextcloudLink?,
+    onConnect: () -> Unit,
+    onFolders: () -> Unit,
+    onLocalAddress: () -> Unit,
+) {
     val scope = rememberCoroutineScope()
     val row = remember { FocusRequester() }
     // Après « Déconnecter », la ligne disparaît : le focus revient sur la galerie du profil.
@@ -922,6 +940,19 @@ private fun NextcloudRows(nextcloud: NextcloudAccounts, profile: Profile, link: 
         detail = "Ce que la galerie de ${profile.name} affiche sur la TV",
         value = NextcloudFolders.label(link.folders),
         onClick = onFolders,
+    )
+    // Vérifié à l'ouverture de la page : l'adresse de la maison répond-elle ?
+    val usingLocal by produceState<Boolean?>(null, link.localUrl) { value = nextcloud.usingLocal(profile.id) }
+    LinkRow(
+        title = "Adresse à la maison",
+        detail = when {
+            link.localUrl == null -> "Plus rapide, et sans internet : l'adresse du Pi sur ton réseau"
+            usingLocal == null -> "Vérification…"
+            usingLocal == true -> "Utilisée en ce moment : les photos viennent directement du Pi"
+            else -> "Ne répond pas : l'adresse publique sert en attendant"
+        },
+        value = link.localUrl?.substringAfter("://") ?: "Aucune",
+        onClick = onLocalAddress,
     )
     var confirm by remember { mutableStateOf(false) }
     LinkRow(

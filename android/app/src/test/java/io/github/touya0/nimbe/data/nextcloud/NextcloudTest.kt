@@ -30,4 +30,11 @@ class NextcloudTest {
         assertThrows(NextcloudException::class.java) { NextcloudApi.safeUrl("http://cloud.example.fr/login/v2/poll") }
         assertThrows(NextcloudException::class.java) { NextcloudApi.safeUrl("javascript:alert(1)") }
     }
+
+    @Test
+    fun `l'adresse de la maison est gardée avec le lien`() {
+        val link = NextcloudLink("https://cloud.example.fr", "q", "q", "Q", listOf("Photos"), localUrl = "http://192.168.1.182:7580")
+        assertEquals(link, NextcloudLinkCodec.decode(NextcloudLinkCodec.encode(link)))
+        assertNull(NextcloudLinkCodec.decode(NextcloudLinkCodec.encode(link.copy(localUrl = null)))?.localUrl)
+    }
 }

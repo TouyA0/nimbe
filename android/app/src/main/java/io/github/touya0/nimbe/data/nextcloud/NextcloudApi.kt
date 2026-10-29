@@ -49,6 +49,22 @@ class NextcloudException(val kind: Kind, message: String) : IOException(message)
 class NextcloudApi(private val userAgent: () -> String) {
 
     /** Répond sans connexion : sert à vérifier qu'une adresse mène bien à un Nextcloud. */
+    /** Répond-il vite ? Essai court (1,5 s), pour choisir entre l'adresse de la maison et l'adresse publique. */
+    suspend fun answers(server: String): Boolean = withContext(Dispatchers.IO) {
+        runCatching {
+            val connection = (URL("$server/status.php").openConnection() as HttpURLConnection).apply {
+                connectTimeout = 1_500
+                readTimeout = 1_500
+                instanceFollowRedirects = false
+            }
+            try {
+                connection.responseCode == HttpURLConnection.HTTP_OK
+            } finally {
+                connection.disconnect()
+            }
+        }.getOrDefault(false)
+    }
+
     suspend fun status(server: String): NextcloudStatus {
         val json = call("GET", "$server/status.php")
         if (!json.optBoolean("installed")) throw notNextcloud()

@@ -20,6 +20,8 @@ private val Context.nextcloudStore by preferencesDataStore(name = "nextcloud")
 /**
  * La galerie reliée à un profil. Rien de secret ici : le mot de passe d'application est dans le coffre.
  * [folders] : dossiers montrés, chemins depuis la racine du compte (« Photos/Vacances ») ; vide : tout le compte.
+ * [localUrl] : le même Nextcloud joint directement sur le réseau de la maison (« http://192.168.1.182:7580 »),
+ * utilisé quand il répond : bien plus rapide qu'un tunnel par internet, et il marche sans internet.
  */
 data class NextcloudLink(
     val serverUrl: String,
@@ -27,6 +29,7 @@ data class NextcloudLink(
     val userId: String,
     val displayName: String,
     val folders: List<String> = emptyList(),
+    val localUrl: String? = null,
 )
 
 /** Lecture et écriture d'un lien, sans Android, pour les tests. Un lien illisible est ignoré. */
@@ -37,12 +40,20 @@ object NextcloudLinkCodec {
         .put("user", link.userId)
         .put("name", link.displayName)
         .put("folders", JSONArray(link.folders))
+        .apply { link.localUrl?.let { put("local", it) } }
         .toString()
 
     fun decode(text: String): NextcloudLink? = try {
         val json = JSONObject(text)
         val folders = json.optJSONArray("folders")?.let { array -> List(array.length()) { array.getString(it) } }.orEmpty()
-        NextcloudLink(json.getString("server"), json.getString("login"), json.getString("user"), json.optString("name"), folders)
+        NextcloudLink(
+            json.getString("server"),
+            json.getString("login"),
+            json.getString("user"),
+            json.optString("name"),
+            folders,
+            json.optString("local").ifEmpty { null },
+        )
     } catch (_: JSONException) {
         null
     }
@@ -79,8 +90,48 @@ class NextcloudAccounts(
     /** null si le profil n'est pas relié, ou si le mot de passe est devenu illisible (il faudra relier à nouveau). */
     suspend fun auth(profileId: String): NextcloudAuth? {
         val link = links.first()[profileId] ?: return null
-        return NextcloudAuth(link.serverUrl, link.loginName, vault.get(secret(profileId)) ?: return null)
+        return NextcloudAuth(server(link), link.loginName, vault.get(secret(profileId)) ?: return null)
     }
+
+    /** Adresse à utiliser pour [link] : celle de la maison si elle a répondu récemment, sinon l'adresse publique. */
+    suspend fun server(link: NextcloudLink): String {
+        val local = link.localUrl ?: return link.serverUrl
+        val now = System.currentTimeMillis()
+        val known = localChecks[local]
+        val reachable = if (known != null && now - known.second < LOCAL_CHECK_MS) known.first else api.answers(local).also { localChecks[local] = it to now }
+        return if (reachable) local else link.serverUrl
+    }
+
+    /** L'adresse de la maison est-elle utilisée en ce moment par ce profil ? */
+    suspend fun usingLocal(profileId: String): Boolean {
+        val link = links.first()[profileId] ?: return false
+        return link.localUrl != null && server(link) == link.localUrl
+    }
+
+    /**
+     * Vérifie qu'à [localUrl] répond bien le même compte, avec le même mot de passe d'application, puis l'enregistre
+     * pour toutes les galeries de ce serveur (toute la maison a le même). Lève [NextcloudException] sinon.
+     */
+    suspend fun setLocalUrl(profileId: String, localUrl: String?) {
+        val link = links.first()[profileId] ?: return
+        if (localUrl != null) {
+            val password = vault.get(secret(profileId)) ?: throw NextcloudException(NextcloudException.Kind.Unauthorized, "Relie d'abord la galerie")
+            val user = api.user(NextcloudAuth(localUrl, link.loginName, password))
+            if (user.id != link.userId) throw NextcloudException(NextcloudException.Kind.NotNextcloud, "Ce n'est pas le même Nextcloud")
+            localChecks[localUrl] = true to System.currentTimeMillis()
+        }
+        store.edit { prefs ->
+            prefs.asMap().keys.filter { it.name.startsWith(LINK_PREFIX) }.forEach { key ->
+                @Suppress("UNCHECKED_CAST")
+                val typed = key as Preferences.Key<String>
+                val other = prefs[typed]?.let(NextcloudLinkCodec::decode) ?: return@forEach
+                if (other.serverUrl == link.serverUrl) prefs[typed] = NextcloudLinkCodec.encode(other.copy(localUrl = localUrl))
+            }
+        }
+    }
+
+    /** Résultat du dernier essai de chaque adresse de la maison, et quand : on ne réessaie pas à chaque image. */
+    private val localChecks = java.util.concurrent.ConcurrentHashMap<String, Pair<Boolean, Long>>()
 
     suspend fun rememberServer(serverUrl: String) {
         store.edit { it[LAST_SERVER] = serverUrl }
@@ -90,11 +141,12 @@ class NextcloudAccounts(
     suspend fun save(profileId: String, auth: NextcloudAuth, user: NextcloudUser) {
         auth(profileId)?.takeIf { it.appPassword != auth.appPassword }?.let { old -> runCatching { api.revoke(old) } }
         // Le même compte relié à nouveau garde ses dossiers ; un autre compte repart de tout le compte.
-        val folders = links.first()[profileId]?.takeIf { it.userId == user.id && it.serverUrl == auth.server }?.folders.orEmpty()
+        val previous = links.first()[profileId]?.takeIf { it.userId == user.id && it.serverUrl == auth.server }
+        val folders = previous?.folders.orEmpty()
         // Le mot de passe d'abord : un lien enregistré sans lui ferait croire à une connexion.
         vault.put(secret(profileId), auth.appPassword)
         store.edit {
-            it[link(profileId)] = NextcloudLinkCodec.encode(NextcloudLink(auth.server, auth.loginName, user.id, user.displayName, folders))
+            it[link(profileId)] = NextcloudLinkCodec.encode(NextcloudLink(auth.server, auth.loginName, user.id, user.displayName, folders, previous?.localUrl))
             it[LAST_SERVER] = auth.server
         }
     }
@@ -131,6 +183,8 @@ class NextcloudAccounts(
 
     private companion object {
         const val LINK_PREFIX = "link."
+        /** L'adresse de la maison est réessayée au plus toutes les 60 s (Pi redémarré, TV emportée ailleurs). */
+        const val LOCAL_CHECK_MS = 60_000L
         val LAST_SERVER = stringPreferencesKey("last_server")
     }
 }
