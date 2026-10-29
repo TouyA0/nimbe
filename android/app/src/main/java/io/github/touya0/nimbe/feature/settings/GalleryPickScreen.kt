@@ -37,13 +37,17 @@ import io.github.touya0.nimbe.ui.theme.Nuit
 import kotlinx.coroutines.launch
 
 /**
- * Choisir les photos qu'un enfant voit : un album ou un dossier de la galerie d'un adulte.
- * L'enfant ne verra rien d'autre de ce compte. [onSave] reçoit le choix (null : pas de galerie).
+ * Choisir un album ou un dossier de la galerie d'un adulte : ce que voit un enfant, ou les photos de
+ * l'écran de veille. [current] : le choix actuel ; [removeLabel] : le bouton qui l'efface ([onSave] reçoit null).
  */
 @Composable
-fun ChildGalleryScreen(
+fun GalleryPickScreen(
     gallery: NextcloudGallery,
-    child: Profile,
+    title: String,
+    explanation: String,
+    current: ChildGallery?,
+    emptyLabel: String,
+    removeLabel: String,
     adults: List<Profile>,
     links: Map<String, NextcloudLink>,
     onSave: (ChildGallery?) -> Unit,
@@ -51,7 +55,7 @@ fun ChildGalleryScreen(
 ) {
     val linkedAdults = adults.filter { it.id in links }
     // Le parent dont on parcourt la galerie : celui déjà choisi, sinon le seul relié.
-    var source by remember { mutableStateOf(child.gallery?.sourceProfileId?.takeIf { id -> linkedAdults.any { it.id == id } } ?: linkedAdults.singleOrNull()?.id) }
+    var source by remember { mutableStateOf(current?.sourceProfileId?.takeIf { id -> linkedAdults.any { it.id == id } } ?: linkedAdults.singleOrNull()?.id) }
     var folder by remember { mutableStateOf<String?>(null) }
     BackHandler {
         when {
@@ -68,16 +72,9 @@ fun ChildGalleryScreen(
         Modifier.fillMaxSize().background(Nuit).verticalScroll(rememberScrollState()).padding(horizontal = 96.dp, vertical = 40.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp),
     ) {
-        Text("Galerie de ${child.name}", style = MaterialTheme.typography.displaySmall)
-        Text(
-            "Choisis un album ou un dossier de ta galerie Nextcloud : ce sera la seule chose que ${child.name} verra dans l'onglet Galerie.",
-            style = MaterialTheme.typography.bodyLarge,
-            color = LuneAttenuee,
-        )
-        Text(
-            "Aujourd'hui : " + (child.gallery?.let { "« ${it.name} »" } ?: "pas de galerie"),
-            style = MaterialTheme.typography.titleMedium,
-        )
+        Text(title, style = MaterialTheme.typography.displaySmall)
+        Text(explanation, style = MaterialTheme.typography.bodyLarge, color = LuneAttenuee)
+        Text("Aujourd'hui : " + (current?.let { "« ${it.name} »" } ?: emptyLabel), style = MaterialTheme.typography.titleMedium)
 
         when {
             linkedAdults.isEmpty() -> {
@@ -104,8 +101,8 @@ fun ChildGalleryScreen(
         }
 
         Row(Modifier.padding(top = 16.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            if (child.gallery != null) {
-                PillButton("Retirer la galerie", onClick = {
+            if (current != null) {
+                PillButton(removeLabel, onClick = {
                     onSave(null)
                     onClose()
                 })

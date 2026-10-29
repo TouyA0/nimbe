@@ -58,6 +58,8 @@ class NimbeDream : DreamService(), LifecycleOwner, SavedStateRegistryOwner {
                 val network by rememberConnectivity(connectivity)
                 val ha by app.homeAssistantMonitor.live.collectAsStateWithLifecycle()
                 val jellyfin by app.library.health.collectAsStateWithLifecycle()
+                val saver by app.screensaver.prefs.collectAsStateWithLifecycle(initialValue = null)
+                val profiles by app.profiles.state.collectAsStateWithLifecycle(initialValue = null)
                 // Jellyfin vérifié comme sur l'accueil : sans cela, un Pi coupé pendant la veille passerait inaperçu.
                 LaunchedEffect(Unit) {
                     while (true) {
@@ -66,7 +68,14 @@ class NimbeDream : DreamService(), LifecycleOwner, SavedStateRegistryOwner {
                     }
                 }
                 NimbeTheme(display) {
-                    ScreensaverContent(ServerStatus.verdict(network.state, jellyfinDown = !jellyfin.reachable, ha), ha)
+                    val verdict = ServerStatus.verdict(network.state, jellyfinDown = !jellyfin.reachable, ha)
+                    val current = saver
+                    // Tant que les réglages ne sont pas lus : l'heure, jamais une photo qui ne devrait pas s'afficher.
+                    if (current == null || profiles == null) {
+                        ScreensaverContent(verdict, ha)
+                    } else {
+                        ScreensaverHost(verdict, ha, current, profiles?.active, app.gallery)
+                    }
                 }
             }
         }

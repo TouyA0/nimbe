@@ -86,7 +86,7 @@ fun ScreensaverContent(verdict: ServerVerdict, ha: HaLive) {
 }
 
 @Composable
-private fun ServerCorner(verdict: ServerVerdict, ha: HaLive) {
+internal fun ServerCorner(verdict: ServerVerdict, ha: HaLive) {
     val label = verdict.label ?: return
     val color = when (verdict.level) {
         ServerLevel.Ok -> EnLigne

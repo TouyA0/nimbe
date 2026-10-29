@@ -25,6 +25,7 @@ import io.github.touya0.nimbe.data.profiles.ProfilesStore
 import io.github.touya0.nimbe.data.profiles.ScreenTimeStore
 import io.github.touya0.nimbe.data.profiles.ScreenTimeTracker
 import io.github.touya0.nimbe.data.security.ParentPinStore
+import io.github.touya0.nimbe.feature.screensaver.ScreensaverStore
 import io.github.touya0.nimbe.update.UpdateScheduler
 import io.github.touya0.nimbe.update.Updater
 import kotlinx.coroutines.CoroutineScope
@@ -52,6 +53,9 @@ class NimbeApplication : Application(), SingletonImageLoader.Factory {
 
     /** Galeries Nextcloud, une par profil adulte. */
     val nextcloud: NextcloudAccounts by lazy { NextcloudAccounts(this, vault, onDisconnected = { gallery.forget(it) }) }
+
+    /** Réglages de l'écran de veille, pour toute la TV. */
+    val screensaver: ScreensaverStore by lazy { ScreensaverStore(this) }
 
     /** Réglages de galerie de chaque profil (vidéos, captures, souvenirs, rythme du diaporama). */
     val galleryPrefs: GalleryPrefsStore by lazy { GalleryPrefsStore(this) }

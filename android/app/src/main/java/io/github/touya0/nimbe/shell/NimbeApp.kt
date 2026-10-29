@@ -82,6 +82,7 @@ import io.github.touya0.nimbe.data.jellyfin.JellyfinAccount
 import io.github.touya0.nimbe.data.nextcloud.NextcloudAccounts
 import io.github.touya0.nimbe.data.nextcloud.NextcloudGallery
 import io.github.touya0.nimbe.feature.gallery.GalleryHomeRow
+import io.github.touya0.nimbe.feature.screensaver.ScreensaverHost
 import io.github.touya0.nimbe.feature.gallery.GalleryNav
 import io.github.touya0.nimbe.feature.gallery.GalleryScreen
 import io.github.touya0.nimbe.feature.gallery.GalleryViewer
@@ -557,7 +558,10 @@ private fun NimbeShell(
             },
             section = settingsSection,
             onSectionChange = { settingsSection = it },
-            screensaverPreview = { ScreensaverContent(status, ha) },
+            screensaverPreview = {
+                val saver by (context.applicationContext as NimbeApplication).screensaver.prefs.collectAsStateWithLifecycle(initialValue = null)
+                saver?.let { ScreensaverHost(status, ha, it, profilesState.active, gallery) } ?: ScreensaverContent(status, ha)
+            },
             onOpenUpdate = { updateOpen = true },
             onRestartSetup = {
                 settingsOpen = false

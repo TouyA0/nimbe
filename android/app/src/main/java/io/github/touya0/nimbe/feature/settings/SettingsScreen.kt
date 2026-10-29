@@ -78,7 +78,11 @@ import io.github.touya0.nimbe.feature.layout.homeRowLabel
 import io.github.touya0.nimbe.feature.layout.tabLabel
 import io.github.touya0.nimbe.feature.nextcloud.NextcloudConnectScreen
 import io.github.touya0.nimbe.feature.onboarding.JellyfinConnectScreen
+import io.github.touya0.nimbe.feature.screensaver.ScreensaverMode
+import io.github.touya0.nimbe.feature.screensaver.ScreensaverPrefs
 import io.github.touya0.nimbe.feature.screensaver.ScreensaverSetting
+import io.github.touya0.nimbe.feature.screensaver.ScreensaverStore
+import io.github.touya0.nimbe.NimbeApplication
 import io.github.touya0.nimbe.feature.onboarding.ServiceInitial
 import io.github.touya0.nimbe.feature.apps.InstalledApp
 import io.github.touya0.nimbe.feature.profiles.AppChoiceScreen
@@ -258,15 +262,45 @@ fun SettingsScreen(
     // En dehors de l'écran de choix : l'enregistrement continue une fois l'écran refermé.
     val childGalleryScope = rememberCoroutineScope()
     profilesState.profiles.firstOrNull { it.id == childGalleryFor }?.let { child ->
-        ChildGalleryScreen(
+        GalleryPickScreen(
             gallery,
-            child = child,
+            title = "Galerie de ${child.name}",
+            explanation = "Choisis un album ou un dossier de ta galerie Nextcloud : ce sera la seule chose que ${child.name} verra dans l'onglet Galerie.",
+            current = child.gallery,
+            emptyLabel = "pas de galerie",
+            removeLabel = "Retirer la galerie",
             adults = profilesState.profiles.filter { it.kind == ProfileKind.Adult },
             links = nextcloudLinks.orEmpty(),
             onSave = { choice -> childGalleryScope.launch { profiles.save(child.copy(gallery = choice)) } },
             onClose = { childGalleryFor = null },
         )
         return
+    }
+    // Album ou dossier de l'écran de veille : en plein écran, par-dessus « Écran de veille ».
+    val screensaverStore = (LocalContext.current.applicationContext as NimbeApplication).screensaver
+    var screensaverPickOpen by rememberSaveable { mutableStateOf(false) }
+    val screensaverScope = rememberCoroutineScope()
+    if (screensaverPickOpen) {
+        val saver by screensaverStore.prefs.collectAsStateWithLifecycle(initialValue = null)
+        saver?.let { current ->
+            GalleryPickScreen(
+                gallery,
+                title = "Photos de l'écran de veille",
+                explanation = "Un album ou un dossier : l'écran de veille ne montrera que ses photos. Sinon, toute la galerie choisie.",
+                current = current.pick,
+                emptyLabel = "toute la galerie",
+                removeLabel = "Toute la galerie",
+                adults = profilesState.profiles.filter { it.kind == ProfileKind.Adult },
+                links = nextcloudLinks.orEmpty(),
+                onSave = { pick ->
+                    screensaverScope.launch {
+                        screensaverStore.save(current.copy(pick = pick, sourceProfileId = pick?.sourceProfileId ?: current.sourceProfileId))
+                    }
+                },
+                onClose = { screensaverPickOpen = false },
+            )
+            return
+        }
     }
     var homeAssistantConnectOpen by rememberSaveable { mutableStateOf(false) }
     val homeAssistantLink by remember(homeAssistant) { homeAssistant.link.map { HaLinked(it) } }
@@ -343,7 +377,14 @@ fun SettingsScreen(
                     onChildGallery = { childGalleryFor = it },
                 )
                 SettingsSection.Display -> DisplayPage(display, onDisplayChange, about, links)
-                SettingsSection.Screensaver -> ScreensaverPage(links, onPreview = { previewOpen = true })
+                SettingsSection.Screensaver -> ScreensaverPage(
+                    links,
+                    onPreview = { previewOpen = true },
+                    store = screensaverStore,
+                    adults = profilesState.profiles.filter { it.kind == ProfileKind.Adult },
+                    galleryLinks = nextcloudLinks,
+                    onPickPhotos = { screensaverPickOpen = true },
+                )
                 SettingsSection.Servers -> ServersPage(
                     jellyfin,
                     jellyfinLink,
@@ -636,22 +677,106 @@ private fun DisplayPage(display: DisplaySettings, onChange: (DisplaySettings) ->
 }
 
 @Composable
-private fun ScreensaverPage(links: SettingsLinks, onPreview: () -> Unit) {
+private fun ScreensaverPage(
+    links: SettingsLinks,
+    onPreview: () -> Unit,
+    store: ScreensaverStore,
+    adults: List<Profile>,
+    galleryLinks: Map<String, NextcloudLink>?,
+    onPickPhotos: () -> Unit,
+) {
     val context = LocalContext.current
+    val scope = rememberCoroutineScope()
     // Relu au retour des réglages Android, où l'écran de veille se choisit.
     var active by remember { mutableStateOf(ScreensaverSetting.isActive(context)) }
     LifecycleResumeEffect(Unit) {
         active = ScreensaverSetting.isActive(context)
         onPauseOrDispose {}
     }
-    PageTitle("Écran de veille", "Ce qui s'affiche quand personne ne touche à la télécommande. Pour toute la TV.")
-    SettingsGroupTitle("Heure et serveur")
-    LinkRow(
-        "Voir en plein écran",
-        "Fond noir, heure, date et météo, état du serveur · n'importe quelle touche pour revenir",
-        value = "Aperçu",
-        onClick = onPreview,
-    )
+    val loaded by store.prefs.collectAsStateWithLifecycle(initialValue = null)
+    val prefs = loaded
+    PageTitle("Écran de veille", "Ce qui s'affiche quand personne ne touche à la télécommande : l'heure, l'état du serveur, tes photos, ou un mélange. Pour toute la TV.")
+    if (prefs == null) {
+        Text("Chargement…", style = MaterialTheme.typography.bodyLarge, color = LuneAttenuee)
+        return
+    }
+    fun save(changed: ScreensaverPrefs) {
+        scope.launch { store.save(changed) }
+    }
+
+    val linkedAdults = adults.filter { galleryLinks?.containsKey(it.id) == true }
+    SettingsGroupTitle("Que montrer")
+    ScreensaverMode.entries.forEach { mode ->
+        SettingRow(
+            title = mode.label,
+            detail = mode.detail,
+            // Premier passage aux photos : la galerie du premier adulte relié, sans avoir à la choisir.
+            onClick = { save(prefs.copy(mode = mode, sourceProfileId = prefs.sourceProfileId ?: linkedAdults.firstOrNull()?.id)) },
+            trailing = { if (mode == prefs.mode) Status("Choisi", EnLigne) },
+        )
+    }
+    LinkRow("Voir en plein écran", "Comme Android l'affichera · n'importe quelle touche pour revenir", value = "Aperçu", onClick = onPreview)
+
+    if (prefs.mode != ScreensaverMode.Clock) {
+        SettingsGroupTitle("Photos")
+        val source = linkedAdults.firstOrNull { it.id == prefs.sourceProfileId }
+        if (linkedAdults.isEmpty()) {
+            Text(
+                "Aucune galerie reliée : Réglages → Serveurs et comptes → Galeries Nextcloud. En attendant, c'est l'heure et le serveur.",
+                style = MaterialTheme.typography.bodyLarge,
+                color = Alerte,
+            )
+        } else {
+            // OK fait défiler les adultes dont la galerie est reliée.
+            LinkRow(
+                "Galerie de",
+                "Les photos viennent de la galerie Nextcloud de ce profil",
+                value = source?.name ?: "À choisir",
+                onClick = {
+                    val next = linkedAdults[(linkedAdults.indexOf(source) + 1).mod(linkedAdults.size)]
+                    save(prefs.copy(sourceProfileId = next.id, pick = prefs.pick?.takeIf { it.sourceProfileId == next.id }))
+                },
+            )
+            LinkRow(
+                "Photos montrées",
+                "Toute la galerie (ses dossiers montrés), ou un seul album ou dossier",
+                value = prefs.pick?.name ?: "Toute la galerie",
+                onClick = onPickPhotos,
+            )
+        }
+        val slides = ScreensaverPrefs.SlideChoices
+        LinkRow(
+            "Durée par photo",
+            "OK pour changer · passage en fondu",
+            value = "${prefs.slideSeconds} s",
+            onClick = { save(prefs.copy(slideSeconds = slides[(slides.indexOf(prefs.slideSeconds) + 1) % slides.size])) },
+        )
+        ToggleRow(
+            "Ordre aléatoire",
+            if (prefs.shuffle) "Mélangées à chaque mise en veille" else "Des plus récentes aux plus anciennes",
+            checked = prefs.shuffle,
+            onChange = { save(prefs.copy(shuffle = it)) },
+        )
+        if (prefs.mode == ScreensaverMode.PhotosInfo) {
+            SettingsGroupTitle("Par-dessus les photos")
+            ToggleRow("Heure", "Avec la date et la météo de Home Assistant", checked = prefs.showClock, onChange = { save(prefs.copy(showClock = it)) })
+            ToggleRow("État du serveur", "Le point vert, orange ou rouge, et les mesures du Pi", checked = prefs.showServer, onChange = { save(prefs.copy(showServer = it)) })
+            ToggleRow("Nom de l'album et date", "En haut, discret", checked = prefs.showCaption, onChange = { save(prefs.copy(showCaption = it)) })
+        }
+        ToggleRow(
+            "La nuit, heure seule",
+            "De 23 h à 7 h : fond noir et heure, pour ne pas éclairer la pièce",
+            checked = prefs.night,
+            onChange = { save(prefs.copy(night = it)) },
+        )
+        Text(
+            "Avec le profil Enfant, seul l'album choisi pour lui est montré ; avec le profil Invité, aucune photo de la famille.",
+            style = MaterialTheme.typography.bodyMedium,
+            color = LuneAttenuee,
+        )
+    }
+
+    SettingsGroupTitle("Android")
     LinkRow(
         "Nimbe comme écran de veille",
         when (active) {
@@ -666,8 +791,6 @@ private fun ScreensaverPage(links: SettingsLinks, onPreview: () -> Unit) {
         },
         onClick = links.screensaverSettings,
     )
-    SettingsGroupTitle("Bientôt")
-    SettingRow("Photos", "Tes albums Nextcloud en plein écran, avec l'heure par-dessus · arrive avec la Galerie", onClick = {})
 }
 
 /** L'écran de veille dans Nimbe, comme Android l'affichera : n'importe quelle touche le ferme. */
