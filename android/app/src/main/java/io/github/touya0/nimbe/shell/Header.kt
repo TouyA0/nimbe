@@ -58,12 +58,11 @@ import java.time.format.DateTimeFormatter
 import kotlinx.coroutines.delay
 
 /**
- * [needsInternet] : onglet barré pendant une coupure d'internet (Films et Galerie viennent du Pi).
+ * [needsInternet] : onglet barré pendant une coupure d'internet (la Musique vient de Spotify).
  * [needsJellyfin] : onglet barré quand Jellyfin ne répond plus.
  */
 enum class Tab(val key: String, val label: String, val needsInternet: Boolean = false, val needsJellyfin: Boolean = false) {
     Home(TabKeys.HOME, "Accueil"),
-    Tv("tv", "TV", needsInternet = true),
     Movies("movies", "Films", needsJellyfin = true),
     Series("series", "Séries", needsJellyfin = true),
     Music("music", "Musique", needsInternet = true),

@@ -774,7 +774,6 @@ private fun NimbeShell(
                             )
                         },
                     )
-                    Tab.Tv -> ComingSoonScreen("TV en direct", "Les chaînes et le guide des programmes arrivent avec la gateway du Pi.")
                     Tab.Movies -> FilmsScreen(
                         sort = filmSort,
                         onSortChange = { filmSort = it },

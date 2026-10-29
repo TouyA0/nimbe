@@ -51,11 +51,24 @@ class LayoutRulesTest {
     }
 
     @Test
+    fun `l'ancien onglet TV disparaît des profils enregistrés`() {
+        val saved = ProfileLayout(
+            homeRows = emptyList(),
+            tabs = listOf("home", "tv", "movies", "series", "music", "gallery", "apps").map { LayoutItem(it, true) },
+            startTab = "tv",
+            customized = true,
+        )
+        val layout = LayoutRules.normalize(saved)
+        assertEquals(TabKeys.defaults, ids(layout.tabs))
+        assertEquals("home", layout.startTab)
+    }
+
+    @Test
     fun `déplacer sans passer devant l'Accueil`() {
         val tabs = TabKeys.defaults.map { LayoutItem(it, true) }
-        assertEquals(tabs, LayoutRules.move(tabs, "tv", -1))
+        assertEquals(tabs, LayoutRules.move(tabs, "movies", -1))
         assertEquals(tabs, LayoutRules.move(tabs, "home", 1))
-        assertEquals(listOf("home", "movies", "tv"), ids(LayoutRules.move(tabs, "tv", 1)).take(3))
+        assertEquals(listOf("home", "series", "movies"), ids(LayoutRules.move(tabs, "movies", 1)).take(3))
         assertEquals(tabs, LayoutRules.move(tabs, "apps", 1))
     }
 
@@ -72,7 +85,7 @@ class LayoutRulesTest {
     fun `onglets qu'on ne peut pas masquer`() {
         assertNotNull(LayoutRules.hideTabProblem("home"))
         assertNotNull(LayoutRules.hideTabProblem("apps"))
-        assertNull(LayoutRules.hideTabProblem("tv"))
+        assertNull(LayoutRules.hideTabProblem("movies"))
     }
 
     @Test

@@ -24,7 +24,7 @@ enum class HomeRow(val key: String, val label: String) {
 object TabKeys {
     const val HOME = "home"
     const val APPS = "apps"
-    val defaults = listOf(HOME, "tv", "movies", "series", "music", "gallery", APPS)
+    val defaults = listOf(HOME, "movies", "series", "music", "gallery", APPS)
 
     /** Toujours affichés : l'Accueil (c'est l'écran du stick) et Applis (« Toutes les applis » y mène). */
     val alwaysVisible = setOf(HOME, APPS)
