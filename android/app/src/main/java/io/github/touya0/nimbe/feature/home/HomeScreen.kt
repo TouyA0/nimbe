@@ -117,7 +117,7 @@ fun HomeScreen(
                     else -> Column {
                         Text("Bienvenue sur Nimbe", style = MaterialTheme.typography.displaySmall)
                         Text(
-                            "Tes films, ta TV, ta musique et tes photos arriveront ici au fil des versions.",
+                            "Tes films, tes séries et tes photos arriveront ici au fil des versions.",
                             style = MaterialTheme.typography.bodyLarge,
                             color = LuneAttenuee,
                         )
@@ -290,7 +290,7 @@ private fun OfflineBanner(connectivity: ConnectivityStatus, onNetworkSettings: (
                 "Vérifie le Wi-Fi ou le câble du stick. Tes applis restent accessibles, " +
                     "mais la plupart ont besoin du réseau."
             } else {
-                "Les applis du réseau de la maison restent disponibles. La TV, la musique et les plateformes " +
+                "Les applis du réseau de la maison restent disponibles. La TV et les plateformes " +
                     "comme Netflix ou YouTube reviendront avec la connexion."
             },
             style = MaterialTheme.typography.bodyLarge,

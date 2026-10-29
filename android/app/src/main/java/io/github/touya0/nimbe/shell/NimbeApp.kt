@@ -107,7 +107,6 @@ import io.github.touya0.nimbe.feature.apps.appMenu
 import io.github.touya0.nimbe.feature.apps.lockedAppMenu
 import io.github.touya0.nimbe.feature.apps.hiddenAppsMenu
 import io.github.touya0.nimbe.feature.apps.rememberInstalledApps
-import io.github.touya0.nimbe.feature.home.ComingSoonScreen
 import io.github.touya0.nimbe.feature.home.HomeScreen
 import io.github.touya0.nimbe.feature.home.HomeWelcome
 import io.github.touya0.nimbe.feature.layout.HomeEditScreen
@@ -693,7 +692,6 @@ private fun NimbeShell(
                 selected = tab,
                 onSelect = { tab = it },
                 requesters = requesters,
-                connectivity = connectivity,
                 jellyfinDown = LocalJellyfin.current?.down == true,
                 status = status,
                 onStatus = { statusOpen = true },
@@ -786,7 +784,6 @@ private fun NimbeShell(
                         restoreFocusId = restoreFocusId,
                         onRestored = { restoreFocusId = null },
                     )
-                    Tab.Music -> ComingSoonScreen("Musique", "Spotify arrive bientôt.")
                     Tab.Gallery -> GalleryScreen(
                         gallery,
                         profilesState.active,

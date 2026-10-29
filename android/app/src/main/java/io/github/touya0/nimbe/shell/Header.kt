@@ -37,7 +37,6 @@ import androidx.tv.material3.ClickableSurfaceDefaults
 import androidx.tv.material3.MaterialTheme
 import androidx.tv.material3.Surface
 import androidx.tv.material3.Text
-import io.github.touya0.nimbe.core.network.ConnectivityStatus
 import io.github.touya0.nimbe.data.layout.TabKeys
 import io.github.touya0.nimbe.data.profiles.Profile
 import io.github.touya0.nimbe.feature.profiles.profileColor
@@ -58,14 +57,12 @@ import java.time.format.DateTimeFormatter
 import kotlinx.coroutines.delay
 
 /**
- * [needsInternet] : onglet barré pendant une coupure d'internet (la Musique vient de Spotify).
  * [needsJellyfin] : onglet barré quand Jellyfin ne répond plus.
  */
-enum class Tab(val key: String, val label: String, val needsInternet: Boolean = false, val needsJellyfin: Boolean = false) {
+enum class Tab(val key: String, val label: String, val needsJellyfin: Boolean = false) {
     Home(TabKeys.HOME, "Accueil"),
     Movies("movies", "Films", needsJellyfin = true),
     Series("series", "Séries", needsJellyfin = true),
-    Music("music", "Musique", needsInternet = true),
     Gallery("gallery", "Galerie"),
     Apps(TabKeys.APPS, "Applis"),
     ;
@@ -86,7 +83,6 @@ fun Header(
     selected: Tab,
     onSelect: (Tab) -> Unit,
     requesters: Map<Tab, FocusRequester>,
-    connectivity: ConnectivityStatus,
     jellyfinDown: Boolean,
     status: ServerVerdict,
     onStatus: () -> Unit,
@@ -108,7 +104,7 @@ fun Header(
                     tab = tab,
                     selected = tab == selected,
                     onSelect = { onSelect(tab) },
-                    struck = (tab.needsInternet && connectivity.offline) || (tab.needsJellyfin && jellyfinDown),
+                    struck = tab.needsJellyfin && jellyfinDown,
                     modifier = Modifier.focusRequester(requesters.getValue(tab)),
                 )
             }

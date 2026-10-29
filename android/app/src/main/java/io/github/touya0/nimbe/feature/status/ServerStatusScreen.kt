@@ -299,12 +299,12 @@ private fun Banner(
             "Sans réseau, Nimbe ne peut joindre ni le Pi ni Home Assistant. Vérifie le Wi-Fi ou le câble du stick."
         ServerLevel.PiUnreachable -> "Ton Raspberry Pi ne répond pas" to
             ("Jellyfin ne répond pas" + since(jellyfin.health.since) + (if (connection is HaConnection.Off) "" else ", Home Assistant non plus") +
-                ". Films et Séries sont en pause ; la TV, la musique et tes applis marchent normalement.")
+                ". Films et Séries sont en pause ; la TV et tes applis marchent normalement.")
         ServerLevel.ServiceDown -> (verdict.down.singleOrNull()?.let { "$it ne répond pas" } ?: "${verdict.down.size} services ne répondent pas") to
             ("Le Raspberry Pi est allumé : Home Assistant répond. En panne : ${verdict.down.joinToString(", ")}. " +
                 "Vérifie que le conteneur tourne sur le Pi.")
         ServerLevel.NoInternet -> "La box n'a plus internet" to
-            "Ce qui est chez toi (Jellyfin, Home Assistant) marche toujours. La TV et la musique reviendront avec la connexion."
+            "Ce qui est chez toi (Jellyfin, Home Assistant) marche toujours. La TV et les applis en ligne reviendront avec la connexion."
         ServerLevel.Unknown -> when {
             connection is HaConnection.Lost && connection.refused -> "Home Assistant refuse le token de cette TV" to
                 (directly(jellyfinAnswers) + "Les valeurs ci-dessous sont les dernières reçues.")

@@ -90,10 +90,9 @@ class ProfileRulesTest {
     }
 
     @Test
-    fun `l'invité n'a ni reprise, ni musique, ni galerie`() {
+    fun `l'invité n'a ni reprise, ni galerie`() {
         val layout = LayoutRules.normalize(GuestMode.Layout)
         assertFalse(HomeRow.Continue in layout.visibleRows)
-        assertFalse("music" in layout.visibleTabs)
         assertFalse("gallery" in layout.visibleTabs)
         assertTrue("movies" in layout.visibleTabs)
         assertTrue(invite.isGuest)
@@ -109,7 +108,7 @@ class ProfileRulesTest {
     }
 
     @Test
-    fun `accueil de l'enfant, sans reprise, sans TV, musique ni galerie`() {
+    fun `accueil de l'enfant, sans reprise ni galerie`() {
         val layout = LayoutRules.normalize(ChildMode.layout(null))
         assertEquals(listOf(HomeRow.Apps, HomeRow.Latest), layout.visibleRows)
         assertEquals(listOf("home", "movies", "series", "apps"), layout.visibleTabs)

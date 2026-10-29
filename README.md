@@ -1,7 +1,7 @@
 # Nimbe
 
 **L'accueil de la maison.** Un launcher Android TV maison, rapide et sans pub, qui réunit au même endroit
-les films et séries Jellyfin, les photos Nextcloud, la TV en direct, la musique Spotify et l'état du
+les films et séries Jellyfin, les photos Nextcloud, la TV en direct et l'état du
 serveur Raspberry Pi suivi par Home Assistant.
 
 > 🚧 Projet en cours de construction : phase 0 (faisabilité).
@@ -11,7 +11,7 @@ serveur Raspberry Pi suivi par Home Assistant.
 - **Local d'abord** : ce qui peut rester sur le réseau de la maison y reste.
 - **Rien d'irréversible** : on désactive, on ne désinstalle pas ; l'accueil d'origine reste le secours.
 - **Aucun mot de passe sur la TV** : uniquement des jetons révocables (Quick Connect, Login Flow v2, OAuth).
-- **Dégradation gracieuse** : si le serveur tombe, la TV en direct, les applis et Spotify marchent toujours.
+- **Dégradation gracieuse** : si le serveur tombe, la TV en direct et les applis marchent toujours.
 - **Léger** : pensé pour un petit stick avec peu de mémoire.
 
 ## Organisation du dépôt
@@ -19,7 +19,7 @@ serveur Raspberry Pi suivi par Home Assistant.
 | Dossier | Contenu | Techno |
 |---|---|---|
 | [`android/`](android/) | Le launcher | Kotlin, Jetpack Compose for TV |
-| [`gateway/`](gateway/) | `nimbe-gateway`, petit service sur le Pi (guide TV, OAuth Spotify, sauvegardes) | Go, Docker |
+| [`gateway/`](gateway/) | `nimbe-gateway`, petit service sur le Pi (sauvegardes) | Go, Docker |
 | [`debloat/`](debloat/) | Outil réversible pour alléger le stick via ADB | Go |
 | [`deploy/`](deploy/) | `docker-compose` du Pi, Caddyfile, automatisations Home Assistant d'exemple | |
 | [`docs/`](docs/) | Décisions techniques, captures | |

@@ -39,19 +39,19 @@ class LayoutRulesTest {
         val saved = ProfileLayout(
             homeRows = emptyList(),
             tabs = listOf(LayoutItem("movies", true), LayoutItem("home", false), LayoutItem("apps", false)),
-            startTab = "music",
+            startTab = "gallery",
             customized = true,
         )
         val layout = LayoutRules.normalize(saved)
         assertEquals("home", layout.tabs.first().id)
         assertTrue(layout.tabs.first { it.id == "home" }.visible)
         assertTrue(layout.tabs.first { it.id == "apps" }.visible)
-        // Musique, ajouté par la réconciliation, est masqué : on ne démarre pas sur un onglet caché.
+        // Galerie, ajoutée par la réconciliation, est masquée : on ne démarre pas sur un onglet caché.
         assertEquals("home", layout.startTab)
     }
 
     @Test
-    fun `l'ancien onglet TV disparaît des profils enregistrés`() {
+    fun `les anciens onglets TV et Musique disparaissent des profils enregistrés`() {
         val saved = ProfileLayout(
             homeRows = emptyList(),
             tabs = listOf("home", "tv", "movies", "series", "music", "gallery", "apps").map { LayoutItem(it, true) },
@@ -92,7 +92,7 @@ class LayoutRulesTest {
     fun `aller-retour JSON`() {
         val layout = ProfileLayout(
             homeRows = listOf(LayoutItem("apps", true), LayoutItem("continue", false), LayoutItem("latest", true)),
-            tabs = TabKeys.defaults.map { LayoutItem(it, it != "music") },
+            tabs = TabKeys.defaults.map { LayoutItem(it, it != "gallery") },
             startTab = "movies",
             customized = true,
         )

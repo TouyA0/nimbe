@@ -7,7 +7,7 @@ import io.github.touya0.nimbe.data.layout.TabKeys
 
 /**
  * Profil Invité : la TV et les films de la maison, rien de personnel. Rien n'est enregistré (ni reprise
- * de lecture envoyée à Jellyfin, ni applis récentes), pas de galerie ni de musique, pas de réglages,
+ * de lecture envoyée à Jellyfin, ni applis récentes), pas de galerie, pas de réglages,
  * et les applis des comptes de la famille sont masquées.
  */
 object GuestMode {
@@ -38,7 +38,7 @@ object GuestMode {
             // Pas de galerie pour l'invité.
             LayoutItem(HomeRow.Memories.key, visible = false),
         ),
-        tabs = TabKeys.defaults.map { LayoutItem(it, visible = it !in setOf("music", "gallery")) },
+        tabs = TabKeys.defaults.map { LayoutItem(it, visible = it != "gallery") },
     )
 
     fun hiddenApps(profile: Profile): Set<String> = profile.hiddenApps ?: FamilyAccountApps

@@ -49,7 +49,7 @@ private val Bandeau = Color(0xFF8A5A12)
 
 /**
  * Mode sans échec : seules les applis et les options de réparation restent actives.
- * Les modules (Jellyfin, Galerie, Musique…) seront mis en pause ici quand ils existeront.
+ * Les modules (Jellyfin, Galerie…) seront mis en pause ici quand ils existeront.
  */
 @Composable
 fun SafeModeScreen(

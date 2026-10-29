@@ -11,7 +11,7 @@ data class Revocation(val service: String, val onServer: Boolean, val ifNot: Str
 /**
  * Coupe l'accès de cette TV à chaque service relié : révoque le jeton côté serveur quand il répond,
  * et l'oublie sur la TV dans tous les cas. Profils, PIN parent et réglages restent.
- * Nextcloud : chaque galerie reliée (une par profil adulte). Spotify s'ajoutera ici quand il sera relié.
+ * Nextcloud : chaque galerie reliée (une par profil adulte).
  */
 suspend fun revokeAll(jellyfin: JellyfinAccount, homeAssistant: HomeAssistantAccount, nextcloud: NextcloudAccounts): List<Revocation> = buildList {
     if (jellyfin.link.first() != null) {

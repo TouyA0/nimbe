@@ -19,7 +19,7 @@ object ChildMode {
 
     /**
      * Mise en page fixe : films et séries, les applis autorisées. Pas de « Continuer à regarder »
-     * (c'est la reprise de toute la maison), ni TV, ni musique. La Galerie n'apparaît que si un parent
+     * (c'est la reprise de toute la maison). La Galerie n'apparaît que si un parent
      * a choisi un album pour l'enfant ([Profile.gallery]).
      */
     fun layout(profile: Profile?): ProfileLayout =

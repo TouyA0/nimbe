@@ -15,7 +15,7 @@ private val Context.vaultStore by preferencesDataStore(name = "vault")
 
 /**
  * Coffre des secrets de la TV : jetons Jellyfin, mot de passe d'application Nextcloud, jeton
- * Home Assistant, jetons Spotify. Chiffrés avec une clé AES de l'Android Keystore, qui ne quitte
+ * Home Assistant. Chiffrés avec une clé AES de l'Android Keystore, qui ne quitte
  * jamais le stick. La sauvegarde Android est désactivée : un secret ne part pas dans le cloud.
  *
  * On n'utilise pas EncryptedSharedPreferences, dépréciée par Google.
