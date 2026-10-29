@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Android 12 et plus : rien ne part, ni dans la sauvegarde en ligne de Google, ni vers un nouvel appareil.
+     allowBackup="false" ne couvre plus le transfert d'appareil à appareil. Les jetons ne seraient de toute
+     façon pas lisibles ailleurs (clé du Keystore), mais profils, PIN et réglages restent sur ce stick. -->
+<data-extraction-rules>
+    <cloud-backup>
+        <exclude domain="root" />
+        <exclude domain="file" />
+        <exclude domain="database" />
+        <exclude domain="sharedpref" />
+        <exclude domain="external" />
+    </cloud-backup>
+    <device-transfer>
+        <exclude domain="root" />
+        <exclude domain="file" />
+        <exclude domain="database" />
+        <exclude domain="sharedpref" />
+        <exclude domain="external" />
+    </device-transfer>
+</data-extraction-rules>

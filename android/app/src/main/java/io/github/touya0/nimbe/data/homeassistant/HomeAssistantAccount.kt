@@ -61,15 +61,18 @@ class HomeAssistantAccount(context: Context, private val vault: SecretVault) {
         }
     }
 
-    /** Révoque le jeton dans Home Assistant si le Pi répond, puis l'oublie (même si le Pi est coupé). */
-    suspend fun disconnect() {
-        auth()?.let { current ->
-            HomeAssistantApi.refreshTokenId(current.token)?.let { id ->
-                runCatching { api.session(current.server, current.token) { deleteRefreshToken(id) } }
-            }
-        }
+    /**
+     * Révoque le jeton dans Home Assistant si le Pi répond, puis l'oublie (même si le Pi est coupé).
+     * Rend false si Home Assistant n'a pas pu le révoquer : il faudra le supprimer dans le profil du compte.
+     */
+    suspend fun disconnect(): Boolean {
+        val revoked = auth()?.let { current ->
+            val id = HomeAssistantApi.refreshTokenId(current.token) ?: return@let false
+            runCatching { api.session(current.server, current.token) { deleteRefreshToken(id) } }.isSuccess
+        } ?: true
         vault.remove(TOKEN)
         store.edit { prefs -> listOf(SERVER_URL, USER_NAME, SENSORS).forEach { prefs.remove(it) }; prefs.remove(IS_ADMIN) }
+        return revoked
     }
 
     private companion object {

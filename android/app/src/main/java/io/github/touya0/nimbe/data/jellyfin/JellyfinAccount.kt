@@ -73,15 +73,20 @@ class JellyfinAccount(
     }
 
     /** Révoque le jeton sur le serveur si possible, puis oublie le compte et ses contenus enregistrés (même si le Pi est coupé). */
-    suspend fun disconnect() {
+    /**
+     * Ferme la session sur le serveur s'il répond, puis oublie le jeton, même Pi coupé.
+     * Rend false si le serveur n'a pas pu révoquer : il faudra retirer l'appareil dans Jellyfin.
+     */
+    suspend fun disconnect(): Boolean {
         val url = link.first()?.serverUrl
         val token = token()
-        if (url != null && token != null) runCatching { api.logout(url, token) }
+        val revoked = if (url != null && token != null) runCatching { api.logout(url, token) }.isSuccess else true
         vault.remove(TOKEN)
         store.edit { prefs ->
             listOf(SERVER_URL, SERVER_ID, SERVER_NAME, USER_ID, USER_NAME).forEach { prefs.remove(it) }
         }
         onDisconnected()
+        return revoked
     }
 
     private suspend fun clientInfo(): ClientInfo = ClientInfo(

@@ -286,7 +286,17 @@ fun SettingsScreen(
                     homeAssistantLink,
                     onConnectHomeAssistant = { homeAssistantConnectOpen = true },
                 )
-                SettingsSection.Security -> SecurityPage(parentPin, security, profilesState, onChange = { pinChange = it })
+                SettingsSection.Security -> SecurityPage(
+                    parentPin,
+                    security,
+                    profilesState,
+                    onChange = { pinChange = it },
+                    linkedServices = listOfNotNull(
+                        jellyfinLink?.link?.let { "Jellyfin (${it.userName})" },
+                        homeAssistantLink?.link?.let { "Home Assistant (${it.userName})" },
+                    ),
+                    onRevokeAll = { revokeAll(jellyfin, homeAssistant) },
+                )
                 SettingsSection.Updates -> UpdatesPage(updateState, updates, onOpenUpdate)
                 SettingsSection.About -> AboutPage(about, links, onCacheCleared = { aboutVersion++ }, onRestartSetup = onRestartSetup)
             }
@@ -428,7 +438,15 @@ private fun ProfilesPage(
 }
 
 @Composable
-private fun SecurityPage(store: ParentPinStore, settings: SecuritySettings?, profiles: ProfilesState, onChange: (PinChange) -> Unit) {
+private fun SecurityPage(
+    store: ParentPinStore,
+    settings: SecuritySettings?,
+    profiles: ProfilesState,
+    onChange: (PinChange) -> Unit,
+    /** Services reliés, pour dire ce que la révocation va couper. */
+    linkedServices: List<String>,
+    onRevokeAll: suspend () -> List<Revocation>,
+) {
     val scope = rememberCoroutineScope()
     PageTitle("Confidentialité et sécurité", "Qui peut changer les réglages de la TV. Pour toute la TV.")
     if (settings == null) return
@@ -460,6 +478,50 @@ private fun SecurityPage(store: ParentPinStore, settings: SecuritySettings?, pro
         onClick = {},
         trailing = { Value(PinLockout.formatWait(PinLockout.FIRST_LOCK_MS)) },
     )
+    RevokeSection(linkedServices, onRevokeAll)
+}
+
+/**
+ * « Révoquer tous les accès » : pour une TV perdue, volée ou donnée. Deux appuis (on ne peut pas annuler),
+ * puis le résultat service par service, avec ce qu'il reste à faire sur le serveur s'il ne répondait pas.
+ */
+@Composable
+private fun RevokeSection(linkedServices: List<String>, onRevokeAll: suspend () -> List<Revocation>) {
+    val scope = rememberCoroutineScope()
+    var confirm by remember { mutableStateOf(false) }
+    var running by remember { mutableStateOf(false) }
+    var report by remember { mutableStateOf<List<Revocation>?>(null) }
+    SettingsGroupTitle("Accès aux services")
+    SettingRow(
+        title = if (confirm) "Confirmer : tout couper" else "Révoquer tous les accès",
+        detail = when {
+            running -> "Révocation en cours…"
+            confirm -> "OK encore une fois pour couper ${linkedServices.joinToString(" et ")}. Il faudra tout reconnecter."
+            linkedServices.isEmpty() -> "Aucun service relié à cette TV"
+            else -> "Coupe l'accès de cette TV à ${linkedServices.joinToString(" et ")}, côté serveur quand il répond. " +
+                "Profils, PIN et réglages restent."
+        },
+        onClick = {
+            when {
+                running || linkedServices.isEmpty() -> Unit
+                !confirm -> confirm = true
+                else -> scope.launch {
+                    running = true
+                    report = onRevokeAll()
+                    running = false
+                    confirm = false
+                }
+            }
+        },
+        trailing = { Text(if (confirm) "Confirmer" else "Révoquer", style = MaterialTheme.typography.titleSmall, color = Alerte) },
+    )
+    report?.let { results ->
+        SettingRow(
+            title = if (results.all { it.onServer }) "Tous les accès sont révoqués" else "Accès coupés sur la TV",
+            detail = results.joinToString("\n") { it.summary() }.ifEmpty { "Rien n'était relié" },
+            onClick = {},
+        )
+    }
 }
 
 @Composable
