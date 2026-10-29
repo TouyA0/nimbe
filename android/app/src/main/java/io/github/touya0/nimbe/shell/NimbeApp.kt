@@ -19,6 +19,8 @@ import io.github.touya0.nimbe.feature.films.FilmsScreen
 import io.github.touya0.nimbe.feature.media.JellyfinUi
 import io.github.touya0.nimbe.feature.media.LocalJellyfin
 import io.github.touya0.nimbe.feature.media.MediaDestination
+import io.github.touya0.nimbe.data.layout.LayoutStore
+import io.github.touya0.nimbe.data.layout.ProfileLayout
 import io.github.touya0.nimbe.data.profiles.ProfilesState
 import io.github.touya0.nimbe.data.profiles.ProfilesStore
 import io.github.touya0.nimbe.data.security.ParentPinStore
@@ -83,6 +85,7 @@ import io.github.touya0.nimbe.feature.apps.hiddenAppsMenu
 import io.github.touya0.nimbe.feature.apps.rememberInstalledApps
 import io.github.touya0.nimbe.feature.home.ComingSoonScreen
 import io.github.touya0.nimbe.feature.home.HomeScreen
+import io.github.touya0.nimbe.feature.layout.HomeEditScreen
 import io.github.touya0.nimbe.feature.settings.SettingsLinks
 import io.github.touya0.nimbe.feature.settings.SettingsScreen
 import io.github.touya0.nimbe.feature.settings.SettingsSection
@@ -112,6 +115,7 @@ fun NimbeApp(
     homeAssistantMonitor: HomeAssistantMonitor,
     profiles: ProfilesStore,
     parentPin: ParentPinStore,
+    layouts: LayoutStore,
     homePresses: Flow<Unit>,
     screenOn: Flow<Unit>,
 ) {
@@ -203,7 +207,7 @@ fun NimbeApp(
         } else {
             NimbeShell(
                 repository, prefs, launcher, connectivityMonitor, launches, updates, jellyfin, homeAssistant, ha,
-                homeAssistantMonitor::history, profiles, state, parentPin, homePresses, screenOn,
+                homeAssistantMonitor::history, profiles, state, parentPin, layouts, homePresses, screenOn,
             )
         }
     }
@@ -224,6 +228,7 @@ private fun NimbeShell(
     profiles: ProfilesStore,
     profilesState: ProfilesState,
     parentPin: ParentPinStore,
+    layouts: LayoutStore,
     homePresses: Flow<Unit>,
     screenOn: Flow<Unit>,
 ) {
@@ -268,6 +273,26 @@ private fun NimbeShell(
     val dockPackages = dock.orEmpty().map { it.packageName }
 
     val scope = rememberCoroutineScope()
+
+    // Mise en page du profil actif : celle par défaut le temps de la lire.
+    val activeId = profilesState.active?.id.orEmpty()
+    val savedLayout by remember(activeId) { layouts.layout(activeId) }.collectAsStateWithLifecycle(initialValue = null)
+    val layout = savedLayout ?: ProfileLayout.Default
+    val visibleTabs = layout.visibleTabs.mapNotNull(Tab::fromKey)
+    fun saveLayout(changed: ProfileLayout) {
+        scope.launch { layouts.save(activeId, changed) }
+    }
+    // Changer de profil ouvre son onglet de démarrage ; un onglet qui vient d'être masqué rend la main à l'Accueil.
+    var startedFor by rememberSaveable { mutableStateOf<String?>(null) }
+    LaunchedEffect(activeId, savedLayout != null) {
+        val loaded = savedLayout ?: return@LaunchedEffect
+        if (startedFor != activeId) {
+            startedFor = activeId
+            focusTab(Tab.fromKey(loaded.startTab) ?: Tab.Home)
+        }
+    }
+    LaunchedEffect(visibleTabs) { if (tab !in visibleTabs) focusTab(Tab.Home) }
+    var homeEditOpen by rememberSaveable { mutableStateOf(false) }
     val menu = remember { MenuState() }
     // Quand une action fait disparaître la tuile qui a le focus, on pose le focus sur l'onglet courant
     // avant d'enregistrer : sinon Android le donne au premier élément venu, l'onglet Accueil.
@@ -303,6 +328,7 @@ private fun NimbeShell(
             settingsPinOpen = false
             statusOpen = false
             whoOpen = false
+            homeEditOpen = false
             returnToSettingsButton = false
             focusTab(Tab.Home)
         }
@@ -335,6 +361,16 @@ private fun NimbeShell(
                 openSettings(SettingsSection.Profiles)
             },
             onClose = { whoOpen = false },
+        )
+        return
+    }
+
+    if (homeEditOpen) {
+        HomeEditScreen(
+            layout = layout,
+            profileName = profilesState.active?.name.orEmpty(),
+            onChange = ::saveLayout,
+            onClose = { homeEditOpen = false },
         )
         return
     }
@@ -384,6 +420,17 @@ private fun NimbeShell(
             profiles = profiles,
             profilesState = profilesState,
             parentPin = parentPin,
+            layout = layout,
+            onLayoutChange = ::saveLayout,
+            onLayoutReset = { scope.launch { layouts.remove(activeId) } },
+            onProfileDeleted = { id -> scope.launch { layouts.remove(id) } },
+            onEditHome = {
+                settingsOpen = false
+                returnToSettingsButton = false
+                // On modifie l'accueil : c'est lui qu'on retrouve en sortant.
+                tab = Tab.Home
+                homeEditOpen = true
+            },
             section = settingsSection,
             onSectionChange = { settingsSection = it },
             screensaverPreview = { ScreensaverContent(status, ha) },
@@ -497,6 +544,7 @@ private fun NimbeShell(
     MenuHost(menu) {
         Column(Modifier.fillMaxSize().background(Nuit)) {
             Header(
+                tabs = visibleTabs,
                 selected = tab,
                 onSelect = { tab = it },
                 requesters = requesters,
@@ -527,6 +575,7 @@ private fun NimbeShell(
             ) {
                 when (tab) {
                     Tab.Home -> HomeScreen(
+                        rows = layout.visibleRows,
                         dock = dock,
                         onOpen = launcher::open,
                         onMenu = { app, back -> menu.open(appMenu(app, dockPackages, actions, back)) },

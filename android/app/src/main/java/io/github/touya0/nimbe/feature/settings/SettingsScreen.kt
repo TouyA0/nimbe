@@ -50,6 +50,9 @@ import io.github.touya0.nimbe.data.homeassistant.HomeAssistantAccount
 import io.github.touya0.nimbe.data.homeassistant.HomeAssistantLink
 import io.github.touya0.nimbe.data.jellyfin.JellyfinAccount
 import io.github.touya0.nimbe.data.jellyfin.JellyfinLink
+import io.github.touya0.nimbe.data.layout.LayoutRules
+import io.github.touya0.nimbe.data.layout.ProfileLayout
+import io.github.touya0.nimbe.data.layout.TabKeys
 import io.github.touya0.nimbe.data.profiles.ProfileKind
 import io.github.touya0.nimbe.data.profiles.ProfilesState
 import io.github.touya0.nimbe.data.profiles.ProfilesStore
@@ -60,6 +63,10 @@ import io.github.touya0.nimbe.data.security.SecuritySettings
 import io.github.touya0.nimbe.feature.homeassistant.HomeAssistantColor
 import io.github.touya0.nimbe.feature.homeassistant.HomeAssistantConnectController
 import io.github.touya0.nimbe.feature.homeassistant.HomeAssistantConnectScreen
+import io.github.touya0.nimbe.feature.layout.HomePreview
+import io.github.touya0.nimbe.feature.layout.LayoutEditor
+import io.github.touya0.nimbe.feature.layout.homeRowLabel
+import io.github.touya0.nimbe.feature.layout.tabLabel
 import io.github.touya0.nimbe.feature.onboarding.JellyfinConnectScreen
 import io.github.touya0.nimbe.feature.screensaver.ScreensaverSetting
 import io.github.touya0.nimbe.feature.onboarding.ServiceInitial
@@ -95,6 +102,8 @@ import kotlinx.coroutines.launch
 
 /** Les rubriques déjà construites ; les autres de la maquette arriveront avec leurs fonctions. */
 enum class SettingsSection(val label: String) {
+    Home("Accueil"),
+    Tabs("Onglets"),
     Profiles("Profils"),
     Display("Affichage et accessibilité"),
     Screensaver("Écran de veille"),
@@ -124,6 +133,13 @@ fun SettingsScreen(
     profiles: ProfilesStore,
     profilesState: ProfilesState,
     parentPin: ParentPinStore,
+    /** Mise en page du profil actif (Accueil, Onglets), enregistrée à chaque changement. */
+    layout: ProfileLayout,
+    onLayoutChange: (ProfileLayout) -> Unit,
+    onLayoutReset: () -> Unit,
+    onProfileDeleted: (String) -> Unit,
+    /** Ouvre le mode « Modifier l'accueil » sur l'accueil lui-même. */
+    onEditHome: () -> Unit,
     /** Rubrique affichée, gardée par l'appelant pour ouvrir les réglages au bon endroit (« Gérer les profils »). */
     section: SettingsSection,
     onSectionChange: (SettingsSection) -> Unit,
@@ -213,7 +229,9 @@ fun SettingsScreen(
             verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
             when (section) {
-                SettingsSection.Profiles -> ProfilesPage(profiles, profilesState)
+                SettingsSection.Home -> HomeLayoutPage(layout, profilesState.active?.name.orEmpty(), onLayoutChange, onLayoutReset, onEditHome)
+                SettingsSection.Tabs -> TabsPage(layout, profilesState.active?.name.orEmpty(), onLayoutChange, onLayoutReset)
+                SettingsSection.Profiles -> ProfilesPage(profiles, profilesState, onProfileDeleted)
                 SettingsSection.Display -> DisplayPage(display, onDisplayChange, about, links)
                 SettingsSection.Screensaver -> ScreensaverPage(links, onPreview = { previewOpen = true })
                 SettingsSection.Servers -> ServersPage(
@@ -233,7 +251,54 @@ fun SettingsScreen(
 }
 
 @Composable
-private fun ProfilesPage(store: ProfilesStore, state: ProfilesState) {
+private fun HomeLayoutPage(
+    layout: ProfileLayout,
+    profileName: String,
+    onChange: (ProfileLayout) -> Unit,
+    onReset: () -> Unit,
+    onEditHome: () -> Unit,
+) {
+    PageTitle("Accueil", "Les rangées de l'accueil et leur ordre. Pour le profil $profileName.")
+    Row(horizontalArrangement = Arrangement.spacedBy(32.dp)) {
+        LayoutEditor(
+            items = layout.homeRows,
+            label = ::homeRowLabel,
+            onChange = { onChange(layout.copy(homeRows = it)) },
+            modifier = Modifier.weight(1f),
+        )
+        HomePreview(layout)
+    }
+    SettingsGroupTitle("Autres façons")
+    LinkRow("Modifier directement sur l'accueil", "Les rangées en grand, avec l'aperçu à côté", value = "Ouvrir", onClick = onEditHome)
+    LinkRow("Rétablir par défaut", "Toutes les rangées, dans l'ordre d'origine", value = "Rétablir", onClick = onReset)
+}
+
+@Composable
+private fun TabsPage(layout: ProfileLayout, profileName: String, onChange: (ProfileLayout) -> Unit, onReset: () -> Unit) {
+    PageTitle("Onglets", "Les onglets de l'en-tête et leur ordre. Pour le profil $profileName.")
+    LayoutEditor(
+        items = layout.tabs,
+        label = ::tabLabel,
+        onChange = { onChange(layout.copy(tabs = it)) },
+        hideProblem = LayoutRules::hideTabProblem,
+        fixed = { it == TabKeys.HOME },
+    )
+    SettingsGroupTitle("Au démarrage")
+    LinkRow(
+        "Onglet au démarrage",
+        "Celui qui s'ouvre quand ce profil est choisi · OK pour changer",
+        value = tabLabel(layout.startTab),
+        onClick = {
+            val visible = layout.visibleTabs
+            val next = visible[(visible.indexOf(layout.startTab) + 1).mod(visible.size)]
+            onChange(layout.copy(startTab = next))
+        },
+    )
+    LinkRow("Rétablir par défaut", "Tous les onglets, dans l'ordre d'origine, Accueil au démarrage", value = "Rétablir", onClick = onReset)
+}
+
+@Composable
+private fun ProfilesPage(store: ProfilesStore, state: ProfilesState, onDeleted: (String) -> Unit) {
     val scope = rememberCoroutineScope()
     PageTitle(
         "Profils",
@@ -242,7 +307,10 @@ private fun ProfilesPage(store: ProfilesStore, state: ProfilesState) {
     ProfilesManager(
         profiles = state.profiles,
         onSave = { scope.launch { store.save(it) } },
-        onDelete = { scope.launch { store.delete(it.id) } },
+        onDelete = {
+            scope.launch { store.delete(it.id) }
+            onDeleted(it.id)
+        },
     ) {
         SettingsGroupTitle("Pour toute la TV")
         LinkRow(

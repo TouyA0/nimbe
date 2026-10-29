@@ -15,6 +15,7 @@ import io.github.touya0.nimbe.data.homeassistant.HomeAssistantAccount
 import io.github.touya0.nimbe.data.homeassistant.HomeAssistantMonitor
 import io.github.touya0.nimbe.data.jellyfin.JellyfinAccount
 import io.github.touya0.nimbe.data.jellyfin.JellyfinLibrary
+import io.github.touya0.nimbe.data.layout.LayoutStore
 import io.github.touya0.nimbe.data.profiles.ProfilesStore
 import io.github.touya0.nimbe.data.security.ParentPinStore
 import io.github.touya0.nimbe.update.UpdateScheduler
@@ -45,6 +46,9 @@ class NimbeApplication : Application(), SingletonImageLoader.Factory {
 
     /** PIN parent facultatif, pour toute la TV. */
     val parentPin: ParentPinStore by lazy { ParentPinStore(this, vault) }
+
+    /** Rangées de l'accueil et onglets de chaque profil. */
+    val layouts: LayoutStore by lazy { LayoutStore(this) }
 
     /** Profils de la TV et profil actif. */
     val profiles: ProfilesStore by lazy { ProfilesStore(this) }

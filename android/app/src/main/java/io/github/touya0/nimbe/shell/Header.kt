@@ -38,6 +38,7 @@ import androidx.tv.material3.MaterialTheme
 import androidx.tv.material3.Surface
 import androidx.tv.material3.Text
 import io.github.touya0.nimbe.core.network.ConnectivityStatus
+import io.github.touya0.nimbe.data.layout.TabKeys
 import io.github.touya0.nimbe.data.profiles.Profile
 import io.github.touya0.nimbe.feature.profiles.profileColor
 import io.github.touya0.nimbe.feature.status.ServerLevel
@@ -60,14 +61,19 @@ import kotlinx.coroutines.delay
  * [needsInternet] : onglet barré pendant une coupure d'internet (Films et Galerie viennent du Pi).
  * [needsJellyfin] : onglet barré quand Jellyfin ne répond plus.
  */
-enum class Tab(val label: String, val needsInternet: Boolean = false, val needsJellyfin: Boolean = false) {
-    Home("Accueil"),
-    Tv("TV", needsInternet = true),
-    Movies("Films", needsJellyfin = true),
-    Series("Séries", needsJellyfin = true),
-    Music("Musique", needsInternet = true),
-    Gallery("Galerie"),
-    Apps("Applis"),
+enum class Tab(val key: String, val label: String, val needsInternet: Boolean = false, val needsJellyfin: Boolean = false) {
+    Home(TabKeys.HOME, "Accueil"),
+    Tv("tv", "TV", needsInternet = true),
+    Movies("movies", "Films", needsJellyfin = true),
+    Series("series", "Séries", needsJellyfin = true),
+    Music("music", "Musique", needsInternet = true),
+    Gallery("gallery", "Galerie"),
+    Apps(TabKeys.APPS, "Applis"),
+    ;
+
+    companion object {
+        fun fromKey(key: String): Tab? = entries.firstOrNull { it.key == key }
+    }
 }
 
 /**
@@ -76,6 +82,8 @@ enum class Tab(val label: String, val needsInternet: Boolean = false, val needsJ
  */
 @Composable
 fun Header(
+    /** Onglets affichés pour le profil actif, dans son ordre. */
+    tabs: List<Tab>,
     selected: Tab,
     onSelect: (Tab) -> Unit,
     requesters: Map<Tab, FocusRequester>,
@@ -95,7 +103,7 @@ fun Header(
     ) {
         // En remontant depuis le contenu, le focus revient sur l'onglet quitté.
         Row(Modifier.focusRestorer(), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-            Tab.entries.forEach { tab ->
+            tabs.forEach { tab ->
                 TabPill(
                     tab = tab,
                     selected = tab == selected,
@@ -146,7 +154,7 @@ private fun TabPill(tab: Tab, selected: Boolean, onSelect: () -> Unit, struck: B
             text = tab.label,
             style = MaterialTheme.typography.titleMedium,
             textDecoration = if (struck) TextDecoration.LineThrough else null,
-            modifier = Modifier.padding(horizontal = 14.dp, vertical = 6.dp),
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
         )
     }
 }
@@ -272,5 +280,6 @@ private fun Clock() {
             delay(60_000L - System.currentTimeMillis() % 60_000L)
         }
     }
-    Text(now.format(ClockFormat), style = ClockStyle, color = Lune)
+    // Jamais sur deux lignes, même quand l'en-tête est plein.
+    Text(now.format(ClockFormat), style = ClockStyle, color = Lune, maxLines = 1, softWrap = false)
 }

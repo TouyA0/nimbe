@@ -91,6 +91,7 @@ class MainActivity : ComponentActivity() {
                         homeAssistantMonitor = (application as NimbeApplication).homeAssistantMonitor,
                         profiles = (application as NimbeApplication).profiles,
                         parentPin = (application as NimbeApplication).parentPin,
+                        layouts = (application as NimbeApplication).layouts,
                         homePresses = homePresses,
                         screenOn = screenOn,
                     )
