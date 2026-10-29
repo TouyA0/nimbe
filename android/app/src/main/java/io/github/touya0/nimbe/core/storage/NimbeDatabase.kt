@@ -12,21 +12,25 @@ import androidx.room.Query
 import androidx.room.Room
 import androidx.room.RoomDatabase
 import androidx.room.Transaction
+import io.github.touya0.nimbe.data.nextcloud.GalleryDao
+import io.github.touya0.nimbe.data.nextcloud.GalleryItem
+import io.github.touya0.nimbe.data.nextcloud.GallerySync
 import kotlinx.coroutines.flow.Flow
 
 /**
- * Base locale du launcher (Room) : lancements d'applis, et dernières réponses de Jellyfin
- * pour tenir quand le Pi est coupé. Chaque version ajoute sa migration, testée sur le schéma exporté.
+ * Base locale du launcher (Room) : lancements d'applis, dernières réponses de Jellyfin et index
+ * des galeries Nextcloud, pour tenir quand le Pi est coupé. Chaque version ajoute sa migration, testée sur le schéma exporté.
  */
 @Database(
-    entities = [AppLaunch::class, CachedResponse::class],
-    version = 2,
+    entities = [AppLaunch::class, CachedResponse::class, GalleryItem::class, GallerySync::class],
+    version = 3,
     exportSchema = true,
-    autoMigrations = [AutoMigration(from = 1, to = 2)],
+    autoMigrations = [AutoMigration(from = 1, to = 2), AutoMigration(from = 2, to = 3)],
 )
 abstract class NimbeDatabase : RoomDatabase() {
     abstract fun appLaunches(): AppLaunchDao
     abstract fun cachedResponses(): CachedResponseDao
+    abstract fun gallery(): GalleryDao
 
     companion object {
         fun create(context: Context): NimbeDatabase =

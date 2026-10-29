@@ -11,13 +11,23 @@ import io.github.touya0.nimbe.core.storage.SecretVault
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
+import org.json.JSONArray
 import org.json.JSONException
 import org.json.JSONObject
 
 private val Context.nextcloudStore by preferencesDataStore(name = "nextcloud")
 
-/** La galerie reliée à un profil. Rien de secret ici : le mot de passe d'application est dans le coffre. */
-data class NextcloudLink(val serverUrl: String, val loginName: String, val userId: String, val displayName: String)
+/**
+ * La galerie reliée à un profil. Rien de secret ici : le mot de passe d'application est dans le coffre.
+ * [folders] : dossiers montrés, chemins depuis la racine du compte (« Photos/Vacances ») ; vide : tout le compte.
+ */
+data class NextcloudLink(
+    val serverUrl: String,
+    val loginName: String,
+    val userId: String,
+    val displayName: String,
+    val folders: List<String> = emptyList(),
+)
 
 /** Lecture et écriture d'un lien, sans Android, pour les tests. Un lien illisible est ignoré. */
 object NextcloudLinkCodec {
@@ -26,11 +36,13 @@ object NextcloudLinkCodec {
         .put("login", link.loginName)
         .put("user", link.userId)
         .put("name", link.displayName)
+        .put("folders", JSONArray(link.folders))
         .toString()
 
     fun decode(text: String): NextcloudLink? = try {
         val json = JSONObject(text)
-        NextcloudLink(json.getString("server"), json.getString("login"), json.getString("user"), json.optString("name"))
+        val folders = json.optJSONArray("folders")?.let { array -> List(array.length()) { array.getString(it) } }.orEmpty()
+        NextcloudLink(json.getString("server"), json.getString("login"), json.getString("user"), json.optString("name"), folders)
     } catch (_: JSONException) {
         null
     }
@@ -41,7 +53,12 @@ object NextcloudLinkCodec {
  * Liens dans DataStore (clé « link.<profil> »), mots de passe d'application dans le coffre chiffré.
  * L'adresse du serveur, la même pour toute la maison, est retenue pour pré-remplir le profil suivant.
  */
-class NextcloudAccounts(context: Context, private val vault: SecretVault) {
+class NextcloudAccounts(
+    context: Context,
+    private val vault: SecretVault,
+    /** Après la déconnexion d'un profil : son index de galerie ne doit pas rester sur la TV. */
+    private val onDisconnected: suspend (profileId: String) -> Unit = {},
+) {
 
     private val appContext = context.applicationContext
     private val store = appContext.nextcloudStore
@@ -72,11 +89,21 @@ class NextcloudAccounts(context: Context, private val vault: SecretVault) {
     /** Relier à nouveau un profil remplace l'ancien accès, qu'on révoque d'abord pour ne pas le laisser traîner. */
     suspend fun save(profileId: String, auth: NextcloudAuth, user: NextcloudUser) {
         auth(profileId)?.takeIf { it.appPassword != auth.appPassword }?.let { old -> runCatching { api.revoke(old) } }
+        // Le même compte relié à nouveau garde ses dossiers ; un autre compte repart de tout le compte.
+        val folders = links.first()[profileId]?.takeIf { it.userId == user.id && it.serverUrl == auth.server }?.folders.orEmpty()
         // Le mot de passe d'abord : un lien enregistré sans lui ferait croire à une connexion.
         vault.put(secret(profileId), auth.appPassword)
         store.edit {
-            it[link(profileId)] = NextcloudLinkCodec.encode(NextcloudLink(auth.server, auth.loginName, user.id, user.displayName))
+            it[link(profileId)] = NextcloudLinkCodec.encode(NextcloudLink(auth.server, auth.loginName, user.id, user.displayName, folders))
             it[LAST_SERVER] = auth.server
+        }
+    }
+
+    /** Dossiers montrés par la galerie du profil (vide : tout le compte). Sans effet si le profil n'est pas relié. */
+    suspend fun setFolders(profileId: String, folders: List<String>) {
+        store.edit { prefs ->
+            val current = prefs[link(profileId)]?.let(NextcloudLinkCodec::decode) ?: return@edit
+            prefs[link(profileId)] = NextcloudLinkCodec.encode(current.copy(folders = NextcloudFolders.normalize(folders)))
         }
     }
 
@@ -88,6 +115,7 @@ class NextcloudAccounts(context: Context, private val vault: SecretVault) {
         val revoked = auth(profileId)?.let { runCatching { api.revoke(it) }.isSuccess } ?: true
         vault.remove(secret(profileId))
         store.edit { it.remove(link(profileId)) }
+        onDisconnected(profileId)
         return revoked
     }
 

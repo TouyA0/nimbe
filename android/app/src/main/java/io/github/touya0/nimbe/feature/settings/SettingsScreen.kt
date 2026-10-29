@@ -53,6 +53,8 @@ import io.github.touya0.nimbe.data.jellyfin.JellyfinLink
 import io.github.touya0.nimbe.data.layout.LayoutRules
 import io.github.touya0.nimbe.data.nextcloud.NextcloudAccounts
 import io.github.touya0.nimbe.data.nextcloud.NextcloudException
+import io.github.touya0.nimbe.data.nextcloud.NextcloudFolders
+import io.github.touya0.nimbe.data.nextcloud.NextcloudGallery
 import io.github.touya0.nimbe.data.nextcloud.NextcloudLink
 import io.github.touya0.nimbe.data.layout.ProfileLayout
 import io.github.touya0.nimbe.data.layout.TabKeys
@@ -143,6 +145,7 @@ fun SettingsScreen(
     homeAssistant: HomeAssistantAccount,
     /** Galeries Nextcloud, une par profil adulte. */
     nextcloud: NextcloudAccounts,
+    gallery: NextcloudGallery,
     profiles: ProfilesStore,
     profilesState: ProfilesState,
     parentPin: ParentPinStore,
@@ -237,6 +240,18 @@ fun SettingsScreen(
         )
         return
     }
+    // Dossiers montrés par la galerie d'un profil : en plein écran, par-dessus « Serveurs et comptes ».
+    var galleryFoldersFor by rememberSaveable { mutableStateOf<String?>(null) }
+    profilesState.profiles.firstOrNull { it.id == galleryFoldersFor }?.let { profile ->
+        GalleryFoldersScreen(
+            gallery,
+            profileId = profile.id,
+            profileName = profile.name,
+            initial = nextcloudLinks?.get(profile.id)?.folders.orEmpty(),
+            onClose = { galleryFoldersFor = null },
+        )
+        return
+    }
     var homeAssistantConnectOpen by rememberSaveable { mutableStateOf(false) }
     val homeAssistantLink by remember(homeAssistant) { homeAssistant.link.map { HaLinked(it) } }
         .collectAsStateWithLifecycle(initialValue = null)
@@ -310,6 +325,7 @@ fun SettingsScreen(
                     nextcloudLinks,
                     adults = profilesState.profiles.filter { it.kind == ProfileKind.Adult },
                     onConnectNextcloud = { nextcloudConnectFor = it },
+                    onGalleryFolders = { galleryFoldersFor = it },
                 )
                 SettingsSection.Security -> SecurityPage(
                     parentPin,
@@ -656,6 +672,7 @@ private fun ServersPage(
     nextcloudLinks: Map<String, NextcloudLink>?,
     adults: List<Profile>,
     onConnectNextcloud: (String) -> Unit,
+    onGalleryFolders: (String) -> Unit,
 ) {
     PageTitle("Serveurs et comptes", "Chaque accès est un jeton révocable. Aucun mot de passe n'est enregistré sur la TV.")
     SettingsGroupTitle("Sur ton réseau")
@@ -675,13 +692,19 @@ private fun ServersPage(
         nextcloudLinks == null -> Text("Chargement…", style = MaterialTheme.typography.bodyLarge, color = LuneAttenuee)
         adults.isEmpty() -> Text("Crée d'abord un profil adulte dans Profils.", style = MaterialTheme.typography.bodyLarge, color = LuneAttenuee)
         else -> adults.forEach { profile ->
-            NextcloudRows(nextcloud, profile, nextcloudLinks[profile.id], onConnect = { onConnectNextcloud(profile.id) })
+            NextcloudRows(
+                nextcloud,
+                profile,
+                nextcloudLinks[profile.id],
+                onConnect = { onConnectNextcloud(profile.id) },
+                onFolders = { onGalleryFolders(profile.id) },
+            )
         }
     }
 }
 
 @Composable
-private fun NextcloudRows(nextcloud: NextcloudAccounts, profile: Profile, link: NextcloudLink?, onConnect: () -> Unit) {
+private fun NextcloudRows(nextcloud: NextcloudAccounts, profile: Profile, link: NextcloudLink?, onConnect: () -> Unit, onFolders: () -> Unit) {
     val scope = rememberCoroutineScope()
     val row = remember { FocusRequester() }
     // Après « Déconnecter », la ligne disparaît : le focus revient sur la galerie du profil.
@@ -731,6 +754,12 @@ private fun NextcloudRows(nextcloud: NextcloudAccounts, profile: Profile, link: 
             }
             Value(if (state == NextcloudCheck.Lost) "Relier" else "Changer")
         },
+    )
+    LinkRow(
+        title = "Dossiers montrés",
+        detail = "Ce que la galerie de ${profile.name} affiche sur la TV",
+        value = NextcloudFolders.label(link.folders),
+        onClick = onFolders,
     )
     var confirm by remember { mutableStateOf(false) }
     LinkRow(

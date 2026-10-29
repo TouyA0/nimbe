@@ -6,6 +6,8 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
+import io.github.touya0.nimbe.data.nextcloud.GalleryCounts
+import io.github.touya0.nimbe.data.nextcloud.GalleryItem
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Rule
@@ -62,6 +64,35 @@ class StorageInstrumentedTest {
         assertEquals("{\"Items\":[]}", cache.get("srv|u|/Items?")?.json)
         cache.deleteOlderThan(11)
         assertNull(cache.get("srv|u|/Items?"))
+        db.close()
+        context.deleteDatabase(name)
+    }
+
+    /** Une TV en version 2 garde son cache Jellyfin et gagne l'index des galeries, remplacé d'un coup par profil. */
+    @Test
+    fun migrationDe2Vers3EtGalerie() = runBlocking<Unit> {
+        val name = "migration-test-3.db"
+        context.deleteDatabase(name)
+        helper.createDatabase(name, 2).apply {
+            execSQL("INSERT INTO cached_responses (`key`, json, savedAt) VALUES ('k', '{}', 5)")
+            close()
+        }
+        helper.runMigrationsAndValidate(name, 3, true).close()
+
+        val db = Room.databaseBuilder(context, NimbeDatabase::class.java, name).build()
+        assertEquals("{}", db.cachedResponses().get("k")?.json)
+        val gallery = db.gallery()
+        fun item(profile: String, id: Long, takenAt: Long, mime: String = "image/jpeg") =
+            GalleryItem(profile, id, "Photos/$id.jpg", mime, takenAt, 1, 0, 0, true)
+        gallery.replace("a", listOf(item("a", 1, 10), item("a", 2, 30, "video/mp4"), item("a", 3, 20)), syncedAt = 100)
+        gallery.replace("b", listOf(item("b", 1, 10)), syncedAt = 100)
+        assertEquals(listOf(2L, 3L, 1L), gallery.page("a", 0, 10).map { it.fileId })
+        assertEquals(GalleryCounts(photos = 2, videos = 1), gallery.counts("a").first())
+        gallery.replace("a", listOf(item("a", 3, 20)), syncedAt = 200)
+        assertEquals(listOf(3L), gallery.page("a", 0, 10).map { it.fileId })
+        gallery.forget("a")
+        assertNull(gallery.syncedAt("a").first())
+        assertEquals(1, gallery.page("b", 0, 10).size)
         db.close()
         context.deleteDatabase(name)
     }

@@ -89,8 +89,8 @@ fun ToggleRow(title: String, detail: String, checked: Boolean, onChange: (Boolea
 
 /** Ligne qui mène ailleurs (réglages Android, action) : valeur actuelle puis « › ». */
 @Composable
-fun LinkRow(title: String, detail: String?, value: String, onClick: () -> Unit) {
-    SettingRow(title = title, detail = detail, onClick = onClick, trailing = {
+fun LinkRow(title: String, detail: String?, value: String, onClick: () -> Unit, modifier: Modifier = Modifier) {
+    SettingRow(title = title, detail = detail, onClick = onClick, modifier = modifier, trailing = {
         Text(value, style = MaterialTheme.typography.titleSmall)
         Text("›", style = MaterialTheme.typography.titleMedium, color = LuneAttenuee)
     })

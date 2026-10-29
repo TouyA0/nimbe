@@ -80,6 +80,8 @@ import io.github.touya0.nimbe.core.storage.LauncherPrefs
 import io.github.touya0.nimbe.crashguard.StockLauncher
 import io.github.touya0.nimbe.data.jellyfin.JellyfinAccount
 import io.github.touya0.nimbe.data.nextcloud.NextcloudAccounts
+import io.github.touya0.nimbe.data.nextcloud.NextcloudGallery
+import io.github.touya0.nimbe.feature.gallery.GalleryScreen
 import io.github.touya0.nimbe.data.homeassistant.HaConnection
 import io.github.touya0.nimbe.data.homeassistant.HaLive
 import io.github.touya0.nimbe.data.homeassistant.HistoryPoint
@@ -132,6 +134,7 @@ fun NimbeApp(
     homeAssistant: HomeAssistantAccount,
     homeAssistantMonitor: HomeAssistantMonitor,
     nextcloud: NextcloudAccounts,
+    gallery: NextcloudGallery,
     profiles: ProfilesStore,
     parentPin: ParentPinStore,
     layouts: LayoutStore,
@@ -226,7 +229,7 @@ fun NimbeApp(
             JellyfinConnectScreen(jellyfin, linked?.link?.serverUrl, onClose = { jellyfinConnectOpen = false })
         } else {
             NimbeShell(
-                repository, prefs, launcher, connectivityMonitor, launches, updates, jellyfin, homeAssistant, nextcloud, ha,
+                repository, prefs, launcher, connectivityMonitor, launches, updates, jellyfin, homeAssistant, nextcloud, gallery, ha,
                 homeAssistantMonitor::history, profiles, state, parentPin, layouts, screenTime, homePresses, screenOn,
             )
         }
@@ -244,6 +247,7 @@ private fun NimbeShell(
     jellyfin: JellyfinAccount,
     homeAssistant: HomeAssistantAccount,
     nextcloud: NextcloudAccounts,
+    gallery: NextcloudGallery,
     ha: HaLive,
     loadHistory: suspend (String) -> List<HistoryPoint>,
     profiles: ProfilesStore,
@@ -517,6 +521,7 @@ private fun NimbeShell(
             jellyfin = jellyfin,
             homeAssistant = homeAssistant,
             nextcloud = nextcloud,
+            gallery = gallery,
             profiles = profiles,
             profilesState = profilesState,
             parentPin = parentPin,
@@ -751,7 +756,7 @@ private fun NimbeShell(
                         onRestored = { restoreFocusId = null },
                     )
                     Tab.Music -> ComingSoonScreen("Musique", "Spotify arrive bientôt.")
-                    Tab.Gallery -> ComingSoonScreen("Galerie", "Tes photos Nextcloud arrivent bientôt.")
+                    Tab.Gallery -> GalleryScreen(gallery, profilesState.active, onOpenSettings = { openSettings(SettingsSection.Servers) })
                 }
             }
         }

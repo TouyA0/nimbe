@@ -3,6 +3,10 @@ package io.github.touya0.nimbe.data.nextcloud
 import io.github.touya0.nimbe.data.jellyfin.ServerAddress
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import okhttp3.MediaType.Companion.toMediaType
+import okhttp3.OkHttpClient
+import okhttp3.Request
+import okhttp3.RequestBody.Companion.toRequestBody
 import org.json.JSONException
 import org.json.JSONObject
 import java.io.IOException
@@ -11,6 +15,7 @@ import java.net.URI
 import java.net.URL
 import java.net.URLEncoder
 import java.util.Base64
+import java.util.concurrent.TimeUnit
 
 data class NextcloudStatus(val version: String, val productName: String)
 
@@ -95,6 +100,69 @@ class NextcloudApi(private val userAgent: () -> String) {
         }
     }
 
+    /**
+     * Une page de photos et vidéos du compte, des plus récemment modifiées aux plus anciennes.
+     * Rend aussi le nombre de réponses lues (écartées comprises) : moins que [limit], c'était la dernière page.
+     * WebDAV SEARCH passe par OkHttp : HttpURLConnection refuse les méthodes qu'il ne connaît pas.
+     */
+    suspend fun searchMedia(auth: NextcloudAuth, userId: String, folder: String?, offset: Int, limit: Int): Pair<List<GalleryFile>, Int> {
+        var read = 0
+        val files = dav(auth, "SEARCH", "${auth.server}/remote.php/dav/", WebDav.searchBody(userId, folder, offset, limit)) {
+            WebDav.parseSearch(it) { count -> read = count }
+        }
+        return files to read
+    }
+
+    /** Sous-dossiers de [folder] (null : racine du compte), pour choisir ce que montre la galerie. */
+    suspend fun folders(auth: NextcloudAuth, userId: String, folder: String?): List<String> =
+        dav(auth, "PROPFIND", "${auth.server}/remote.php/dav${WebDav.filesPath(userId, folder)}/", WebDav.FOLDERS_BODY, depth = "1") {
+            WebDav.parseFolders(it, folder)
+        }
+
+    /** Requête WebDAV dont la réponse XML est lue au fil de l'eau par [parse]. */
+    private suspend fun <T> dav(
+        auth: NextcloudAuth,
+        method: String,
+        url: String,
+        body: String,
+        depth: String? = null,
+        parse: (java.io.InputStream) -> T,
+    ): T =
+        withContext(Dispatchers.IO) {
+            val request = Request.Builder()
+                .url(url)
+                .method(method, body.toRequestBody(XML))
+                .header("Authorization", basic(auth))
+                .header("User-Agent", userAgent())
+                .apply { depth?.let { header("Depth", it) } }
+                .build()
+            val response = try {
+                http.newCall(request).execute()
+            } catch (_: IOException) {
+                throw unreachable()
+            }
+            response.use {
+                when (it.code) {
+                    in 200..299 -> Unit
+                    HttpURLConnection.HTTP_UNAUTHORIZED ->
+                        throw NextcloudException(NextcloudException.Kind.Unauthorized, "Accès refusé par Nextcloud")
+                    HttpURLConnection.HTTP_UNAVAILABLE ->
+                        throw NextcloudException(NextcloudException.Kind.Maintenance, "Nextcloud est en maintenance, réessaie dans un moment")
+                    HttpURLConnection.HTTP_NOT_FOUND ->
+                        throw NextcloudException(NextcloudException.Kind.NotFound, "Ce dossier n'existe plus sur Nextcloud")
+                    else -> throw NextcloudException(NextcloudException.Kind.Server, "Nextcloud a répondu ${it.code}")
+                }
+                try {
+                    parse(it.body!!.byteStream())
+                } catch (_: IOException) {
+                    throw unreachable()
+                } catch (_: Exception) {
+                    // SAXException, réponse coupée ou qui n'est pas du WebDAV.
+                    throw notNextcloud()
+                }
+            }
+        }
+
     /** Supprime le mot de passe d'application sur le serveur : la TV disparaît des appareils du compte. */
     suspend fun revoke(auth: NextcloudAuth) {
         call("DELETE", "${auth.server}/ocs/v2.php/core/apppassword?format=json", auth)
@@ -145,7 +213,19 @@ class NextcloudApi(private val userAgent: () -> String) {
             }
         }
 
+    private val http = OkHttpClient.Builder()
+        .connectTimeout(5, TimeUnit.SECONDS)
+        .readTimeout(30, TimeUnit.SECONDS)
+        .followRedirects(false)
+        .build()
+
     companion object {
+        private val XML = "application/xml; charset=utf-8".toMediaType()
+
+        /** Aperçu d'un fichier calculé par le serveur ; [crop] : rempli et recadré à [width]×[height], sinon contenu dedans. */
+        fun previewUrl(server: String, fileId: Long, width: Int, height: Int, crop: Boolean): String =
+            "$server/index.php/core/preview?fileId=$fileId&x=$width&y=$height&a=${if (crop) 0 else 1}&forceIcon=0"
+
         fun basic(auth: NextcloudAuth): String =
             "Basic " + Base64.getEncoder().encodeToString("${auth.loginName}:${auth.appPassword}".toByteArray(Charsets.UTF_8))
 
