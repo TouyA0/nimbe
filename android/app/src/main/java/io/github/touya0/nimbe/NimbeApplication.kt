@@ -16,6 +16,7 @@ import io.github.touya0.nimbe.data.homeassistant.HomeAssistantMonitor
 import io.github.touya0.nimbe.data.jellyfin.JellyfinAccount
 import io.github.touya0.nimbe.data.jellyfin.JellyfinLibrary
 import io.github.touya0.nimbe.data.profiles.ProfilesStore
+import io.github.touya0.nimbe.data.security.ParentPinStore
 import io.github.touya0.nimbe.update.UpdateScheduler
 import io.github.touya0.nimbe.update.Updater
 import kotlinx.coroutines.CoroutineScope
@@ -41,6 +42,9 @@ class NimbeApplication : Application(), SingletonImageLoader.Factory {
 
     /** État du Pi en direct, partagé par l'en-tête, l'écran « État du serveur » et bientôt l'écran de veille. */
     val homeAssistantMonitor: HomeAssistantMonitor by lazy { HomeAssistantMonitor(homeAssistant, scope) }
+
+    /** PIN parent facultatif, pour toute la TV. */
+    val parentPin: ParentPinStore by lazy { ParentPinStore(this, vault) }
 
     /** Profils de la TV et profil actif. */
     val profiles: ProfilesStore by lazy { ProfilesStore(this) }

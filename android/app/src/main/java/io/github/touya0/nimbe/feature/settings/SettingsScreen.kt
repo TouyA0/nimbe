@@ -50,9 +50,13 @@ import io.github.touya0.nimbe.data.homeassistant.HomeAssistantAccount
 import io.github.touya0.nimbe.data.homeassistant.HomeAssistantLink
 import io.github.touya0.nimbe.data.jellyfin.JellyfinAccount
 import io.github.touya0.nimbe.data.jellyfin.JellyfinLink
+import io.github.touya0.nimbe.data.profiles.ProfileKind
 import io.github.touya0.nimbe.data.profiles.ProfilesState
 import io.github.touya0.nimbe.data.profiles.ProfilesStore
 import io.github.touya0.nimbe.data.profiles.StartChoice
+import io.github.touya0.nimbe.data.security.ParentPinStore
+import io.github.touya0.nimbe.data.security.PinLockout
+import io.github.touya0.nimbe.data.security.SecuritySettings
 import io.github.touya0.nimbe.feature.homeassistant.HomeAssistantColor
 import io.github.touya0.nimbe.feature.homeassistant.HomeAssistantConnectController
 import io.github.touya0.nimbe.feature.homeassistant.HomeAssistantConnectScreen
@@ -60,6 +64,8 @@ import io.github.touya0.nimbe.feature.onboarding.JellyfinConnectScreen
 import io.github.touya0.nimbe.feature.screensaver.ScreensaverSetting
 import io.github.touya0.nimbe.feature.onboarding.ServiceInitial
 import io.github.touya0.nimbe.feature.profiles.ProfilesManager
+import io.github.touya0.nimbe.feature.security.PinChange
+import io.github.touya0.nimbe.feature.security.PinChangeScreen
 import io.github.touya0.nimbe.ui.components.focusRing
 import io.github.touya0.nimbe.ui.theme.Alerte
 import io.github.touya0.nimbe.ui.theme.EnLigne
@@ -93,6 +99,7 @@ enum class SettingsSection(val label: String) {
     Display("Affichage et accessibilité"),
     Screensaver("Écran de veille"),
     Servers("Serveurs et comptes"),
+    Security("Confidentialité et sécurité"),
     Updates("Mises à jour"),
     About("À propos et diagnostic"),
 }
@@ -116,6 +123,7 @@ fun SettingsScreen(
     homeAssistant: HomeAssistantAccount,
     profiles: ProfilesStore,
     profilesState: ProfilesState,
+    parentPin: ParentPinStore,
     /** Rubrique affichée, gardée par l'appelant pour ouvrir les réglages au bon endroit (« Gérer les profils »). */
     section: SettingsSection,
     onSectionChange: (SettingsSection) -> Unit,
@@ -136,6 +144,13 @@ fun SettingsScreen(
         JellyfinConnectScreen(jellyfin, jellyfinLink?.link?.serverUrl, onClose = { jellyfinConnectOpen = false })
         return
     }
+    // Créer, changer ou retirer le PIN parent : en plein écran, par-dessus la rubrique.
+    var pinChange by remember { mutableStateOf<PinChange?>(null) }
+    pinChange?.let { change ->
+        PinChangeScreen(parentPin, change, onDone = { pinChange = null }, onCancel = { pinChange = null })
+        return
+    }
+    val security by parentPin.settings.collectAsStateWithLifecycle(initialValue = null)
     var previewOpen by remember { mutableStateOf(false) }
     if (previewOpen) {
         ScreensaverPreview(screensaverPreview, onClose = { previewOpen = false })
@@ -209,6 +224,7 @@ fun SettingsScreen(
                     homeAssistantLink,
                     onConnectHomeAssistant = { homeAssistantConnectOpen = true },
                 )
+                SettingsSection.Security -> SecurityPage(parentPin, security, profilesState, onChange = { pinChange = it })
                 SettingsSection.Updates -> UpdatesPage(updateState, updates, onOpenUpdate)
                 SettingsSection.About -> AboutPage(about, links, onCacheCleared = { aboutVersion++ }, onRestartSetup = onRestartSetup)
             }
@@ -239,6 +255,41 @@ private fun ProfilesPage(store: ProfilesStore, state: ProfilesState) {
             },
         )
     }
+}
+
+@Composable
+private fun SecurityPage(store: ParentPinStore, settings: SecuritySettings?, profiles: ProfilesState, onChange: (PinChange) -> Unit) {
+    val scope = rememberCoroutineScope()
+    PageTitle("Confidentialité et sécurité", "Qui peut changer les réglages de la TV. Pour toute la TV.")
+    if (settings == null) return
+    SettingsGroupTitle("Verrouillage")
+    // Un profil Enfant sans PIN parent n'est protégé par rien : on le dit en premier.
+    if (!settings.pinSet && profiles.profiles.any { it.kind == ProfileKind.Child }) {
+        SettingRow(
+            title = "Un profil Enfant existe sans PIN parent",
+            detail = "Sans PIN, rien n'empêche d'en sortir ni d'ouvrir les réglages · OK pour en créer un",
+            onClick = { onChange(PinChange.Create) },
+            trailing = { Text("À créer", style = MaterialTheme.typography.titleSmall, color = Focus) },
+        )
+    }
+    LinkRow(
+        "Code PIN parent",
+        "Quatre chiffres, pour les réglages et la sortie du profil Enfant",
+        value = if (settings.pinSet) "Défini · changer" else "Créer",
+        onClick = { onChange(if (settings.pinSet) PinChange.Change else PinChange.Create) },
+    )
+    if (settings.pinSet) {
+        ToggleRow("Protéger les réglages", "Le PIN parent est demandé en entrant ici", settings.protectSettings) {
+            scope.launch { store.setProtectSettings(it) }
+        }
+        LinkRow("Retirer le PIN parent", "Le code actuel est demandé", value = "Retirer", onClick = { onChange(PinChange.Remove) })
+    }
+    SettingRow(
+        title = "Après ${PinLockout.MAX_FAILURES} codes faux",
+        detail = "Saisie bloquée, puis le délai double à chaque nouveau blocage",
+        onClick = {},
+        trailing = { Value(PinLockout.formatWait(PinLockout.FIRST_LOCK_MS)) },
+    )
 }
 
 @Composable

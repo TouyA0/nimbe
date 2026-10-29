@@ -21,9 +21,11 @@ import io.github.touya0.nimbe.feature.media.LocalJellyfin
 import io.github.touya0.nimbe.feature.media.MediaDestination
 import io.github.touya0.nimbe.data.profiles.ProfilesState
 import io.github.touya0.nimbe.data.profiles.ProfilesStore
+import io.github.touya0.nimbe.data.security.ParentPinStore
 import io.github.touya0.nimbe.feature.onboarding.FirstLaunchScreen
 import io.github.touya0.nimbe.feature.onboarding.SetupStep
 import io.github.touya0.nimbe.feature.profiles.WhoIsWatchingScreen
+import io.github.touya0.nimbe.feature.security.PinPrompt
 import io.github.touya0.nimbe.feature.onboarding.JellyfinConnectScreen
 import io.github.touya0.nimbe.feature.series.SeriesDetailScreen
 import io.github.touya0.nimbe.feature.series.SeriesScreen
@@ -109,6 +111,7 @@ fun NimbeApp(
     homeAssistant: HomeAssistantAccount,
     homeAssistantMonitor: HomeAssistantMonitor,
     profiles: ProfilesStore,
+    parentPin: ParentPinStore,
     homePresses: Flow<Unit>,
     screenOn: Flow<Unit>,
 ) {
@@ -200,7 +203,7 @@ fun NimbeApp(
         } else {
             NimbeShell(
                 repository, prefs, launcher, connectivityMonitor, launches, updates, jellyfin, homeAssistant, ha,
-                homeAssistantMonitor::history, profiles, state, homePresses, screenOn,
+                homeAssistantMonitor::history, profiles, state, parentPin, homePresses, screenOn,
             )
         }
     }
@@ -220,11 +223,20 @@ private fun NimbeShell(
     loadHistory: suspend (String) -> List<HistoryPoint>,
     profiles: ProfilesStore,
     profilesState: ProfilesState,
+    parentPin: ParentPinStore,
     homePresses: Flow<Unit>,
     screenOn: Flow<Unit>,
 ) {
     var settingsOpen by rememberSaveable { mutableStateOf(false) }
     var settingsSection by rememberSaveable { mutableStateOf(SettingsSection.Display) }
+    // Réglages protégés : le PIN parent est demandé avant de les ouvrir, une fois par visite.
+    val security by parentPin.settings.collectAsStateWithLifecycle(initialValue = null)
+    var settingsPinOpen by rememberSaveable { mutableStateOf(false) }
+    fun openSettings(section: SettingsSection) {
+        settingsSection = section
+        // Tant que le réglage n'est pas lu, on le considère protégé : jamais d'ouverture sans le PIN par erreur.
+        if (security?.settingsLocked != false) settingsPinOpen = true else settingsOpen = true
+    }
     // « Qui regarde ? » au démarrage de Nimbe et quand la TV s'allume, si la TV est réglée pour demander.
     var whoOpen by rememberSaveable { mutableStateOf(profilesState.asksOnStart) }
     val currentProfiles by rememberUpdatedState(profilesState)
@@ -288,6 +300,7 @@ private fun NimbeShell(
     LaunchedEffect(homePresses) {
         homePresses.collect {
             settingsOpen = false
+            settingsPinOpen = false
             statusOpen = false
             whoOpen = false
             returnToSettingsButton = false
@@ -319,8 +332,7 @@ private fun NimbeShell(
             },
             onManage = {
                 whoOpen = false
-                settingsSection = SettingsSection.Profiles
-                settingsOpen = true
+                openSettings(SettingsSection.Profiles)
             },
             onClose = { whoOpen = false },
         )
@@ -341,6 +353,20 @@ private fun NimbeShell(
         return
     }
 
+    if (settingsPinOpen) {
+        PinPrompt(
+            parentPin,
+            title = "Réglages protégés",
+            subtitle = "Saisis le PIN parent pour ouvrir les réglages.",
+            onSuccess = {
+                settingsPinOpen = false
+                settingsOpen = true
+            },
+            onCancel = { settingsPinOpen = false },
+        )
+        return
+    }
+
     if (settingsOpen) {
         SettingsScreen(
             display = display,
@@ -357,6 +383,7 @@ private fun NimbeShell(
             homeAssistant = homeAssistant,
             profiles = profiles,
             profilesState = profilesState,
+            parentPin = parentPin,
             section = settingsSection,
             onSectionChange = { settingsSection = it },
             screensaverPreview = { ScreensaverContent(status, ha) },
@@ -479,8 +506,7 @@ private fun NimbeShell(
                 onStatus = { statusOpen = true },
                 onSettings = {
                     returnToSettingsButton = true
-                    settingsSection = SettingsSection.Display
-                    settingsOpen = true
+                    openSettings(SettingsSection.Display)
                 },
                 settingsRequester = settingsRequester,
                 profile = profilesState.active,
