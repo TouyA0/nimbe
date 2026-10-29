@@ -36,12 +36,15 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.tv.material3.MaterialTheme
 import androidx.tv.material3.Text
+import io.github.touya0.nimbe.core.storage.LauncherPrefs
 import io.github.touya0.nimbe.data.homeassistant.HomeAssistantAccount
 import io.github.touya0.nimbe.data.jellyfin.JellyfinAccount
 import io.github.touya0.nimbe.data.profiles.ProfileKind
 import io.github.touya0.nimbe.data.profiles.ProfileRules
 import io.github.touya0.nimbe.data.profiles.ProfilesState
 import io.github.touya0.nimbe.data.profiles.ProfilesStore
+import io.github.touya0.nimbe.feature.apps.AppLauncher
+import io.github.touya0.nimbe.feature.apps.AppsRepository
 import io.github.touya0.nimbe.feature.homeassistant.HomeAssistantColor
 import io.github.touya0.nimbe.feature.homeassistant.HomeAssistantConnectScreen
 import io.github.touya0.nimbe.feature.profiles.ProfilesManager
@@ -54,6 +57,7 @@ import io.github.touya0.nimbe.ui.theme.LuneAttenuee
 import io.github.touya0.nimbe.ui.theme.Nuit
 import io.github.touya0.nimbe.ui.theme.Panneau
 import io.github.touya0.nimbe.ui.theme.PanneauClair
+import io.github.touya0.nimbe.update.UpdateController
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 
@@ -75,9 +79,6 @@ enum class SetupStep(val label: String, val summary: String) {
  */
 class SetupChrome(val stepBar: @Composable () -> Unit, val onBack: () -> Unit, val onSkip: () -> Unit)
 
-/** Les étapes déjà construites ; après la dernière, le premier lancement se termine. */
-private val BuiltSteps = listOf(SetupStep.Server, SetupStep.HomeAssistant, SetupStep.Jellyfin, SetupStep.Profiles)
-
 /** Enveloppe pour distinguer « pas encore lu » (null) de « pas relié ». */
 private class Loaded<T>(val value: T?)
 
@@ -93,6 +94,10 @@ fun FirstLaunchScreen(
     homeAssistant: HomeAssistantAccount,
     profiles: ProfilesStore,
     profilesState: ProfilesState,
+    apps: AppsRepository,
+    prefs: LauncherPrefs,
+    launcher: AppLauncher,
+    updates: UpdateController,
     onFinish: () -> Unit,
     startAt: SetupStep = SetupStep.Server,
 ) {
@@ -109,11 +114,10 @@ fun FirstLaunchScreen(
     var relink by remember(step) { mutableStateOf(false) }
 
     fun next() {
-        val index = BuiltSteps.indexOf(step)
-        if (index == BuiltSteps.lastIndex) onFinish() else step = BuiltSteps[index + 1]
+        if (step == SetupStep.entries.last()) onFinish() else step = SetupStep.entries[step.ordinal + 1]
     }
     fun back() {
-        BuiltSteps.getOrNull(BuiltSteps.indexOf(step) - 1)?.let { step = it }
+        SetupStep.entries.getOrNull(step.ordinal - 1)?.let { step = it }
     }
     // Retour depuis « Relier à nouveau » ramène au résumé du service, pas à l'étape d'avant.
     val chrome = SetupChrome(stepBar = { StepBar(step) }, onBack = { if (relink) relink = false else back() }, onSkip = ::next)
@@ -180,7 +184,9 @@ fun FirstLaunchScreen(
         SetupStep.Profiles -> SetupFrame(step) {
             ProfilesStepContent(profiles, profilesState, onContinue = ::next, onBack = ::back)
         }
-        SetupStep.Apps -> Unit
+        SetupStep.Apps -> SetupFrame(step) {
+            AppsStepContent(apps, prefs, launcher, updates, onFinish = ::next, onBack = ::back)
+        }
     }
 }
 

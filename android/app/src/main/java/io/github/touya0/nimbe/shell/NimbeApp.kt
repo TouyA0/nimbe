@@ -180,6 +180,10 @@ fun NimbeApp(
             homeAssistant,
             profiles,
             state,
+            repository,
+            prefs,
+            launcher,
+            updates,
             onFinish = {
                 retryScope.launch {
                     prefs.setSetupDone(true)
