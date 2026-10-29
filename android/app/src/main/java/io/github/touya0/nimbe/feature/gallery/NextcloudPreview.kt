@@ -47,12 +47,18 @@ fun NextcloudPreview(
     crop: Boolean = true,
     /** Sans aperçu, le nom du fichier ; pas sur une couverture, où il se mêlerait au titre. */
     showNameWithoutPreview: Boolean = true,
+    /** Ce qui remplace l'aperçu manquant, à la place du nom du fichier (la grille montre « Vidéo » ou une date). */
+    fallback: (@Composable () -> Unit)? = null,
 ) {
     val context = LocalPlatformContext.current
     val request = remember(auth, item.fileId, width, height, crop) { previewRequest(context, auth, item, width, height, crop) }
     var failed by remember(request) { mutableStateOf(!item.hasPreview) }
     if (failed) {
         Box(modifier.background(PanneauClair), contentAlignment = Alignment.Center) {
+            if (fallback != null) {
+                fallback()
+                return@Box
+            }
             if (!showNameWithoutPreview) return@Box
             Text(
                 WebDav.displayName(item.path),

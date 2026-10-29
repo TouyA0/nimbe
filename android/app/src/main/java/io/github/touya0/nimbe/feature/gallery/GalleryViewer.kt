@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
@@ -23,6 +24,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -57,6 +59,7 @@ import io.github.touya0.nimbe.data.nextcloud.GalleryItem
 import io.github.touya0.nimbe.data.nextcloud.NextcloudApi
 import io.github.touya0.nimbe.data.nextcloud.NextcloudAuth
 import io.github.touya0.nimbe.ui.theme.Alerte
+import io.github.touya0.nimbe.ui.theme.Focus
 import io.github.touya0.nimbe.ui.theme.Lune
 import io.github.touya0.nimbe.ui.theme.LuneAttenuee
 import io.github.touya0.nimbe.ui.theme.Nuit
@@ -70,6 +73,8 @@ data class GalleryViewerRequest(
     val index: Int,
     /** Rythme du diaporama, réglé par profil (Réglages → Galerie). */
     val slideMs: Long = SLIDE_MS,
+    /** « ▶ Diaporama » d'un dossier ou d'un souvenir : le diaporama démarre tout de suite. */
+    val startSlideshow: Boolean = false,
 )
 
 /**
@@ -83,7 +88,7 @@ fun GalleryViewer(request: GalleryViewerRequest, onClose: (GalleryItem) -> Unit)
     val items = request.items
     var index by remember { mutableIntStateOf(request.index.coerceIn(items.indices)) }
     val item = items[index]
-    var slideshow by remember { mutableStateOf(false) }
+    var slideshow by remember { mutableStateOf(request.startSlideshow) }
     // Infos par-dessus : visibles au début et après chaque touche, puis masquées pour laisser la photo.
     var touches by remember { mutableIntStateOf(0) }
     var overlay by remember { mutableStateOf(true) }
@@ -158,6 +163,7 @@ fun GalleryViewer(request: GalleryViewerRequest, onClose: (GalleryItem) -> Unit)
                     playing = videoPlaying,
                     onPlayingChange = { videoPlaying = it },
                     onEnded = { if (slideshow) go(1) },
+                    showProgress = overlay || !videoPlaying,
                 )
             } else {
                 NextcloudPreview(
@@ -168,6 +174,8 @@ fun GalleryViewer(request: GalleryViewerRequest, onClose: (GalleryItem) -> Unit)
                     contentScale = ContentScale.Fit,
                     crop = false,
                     modifier = Modifier.fillMaxSize(),
+                    // Sans aperçu (vidéo pas encore préparée) : fond uni, le bandeau « OK pour lire » suffit.
+                    fallback = {},
                 )
             }
         }
@@ -229,7 +237,15 @@ private fun ViewerOverlay(item: GalleryItem, index: Int, total: Int, slideshow: 
  */
 @OptIn(UnstableApi::class)
 @Composable
-private fun GalleryVideo(url: String, authorization: String, playing: Boolean, onPlayingChange: (Boolean) -> Unit, onEnded: () -> Unit) {
+private fun GalleryVideo(
+    url: String,
+    authorization: String,
+    playing: Boolean,
+    onPlayingChange: (Boolean) -> Unit,
+    onEnded: () -> Unit,
+    /** Barre de progression et durée, affichées avec les infos par-dessus. */
+    showProgress: Boolean = true,
+) {
     val context = LocalContext.current
     var error by remember(url) { mutableStateOf<String?>(null) }
     val player = remember(url) {
@@ -269,6 +285,33 @@ private fun GalleryVideo(url: String, authorization: String, playing: Boolean, o
     LaunchedEffect(playing) { player.playWhenReady = playing }
     Box(Modifier.fillMaxSize()) {
         ContentFrame(player = player, modifier = Modifier.fillMaxSize(), contentScale = ContentScale.Fit)
+        // Où en est la vidéo, relu deux fois par seconde : « 0:42 / 1:15 » et une barre ambre.
+        val progress by produceState(0L to 0L, player) {
+            while (true) {
+                value = player.currentPosition.coerceAtLeast(0) to player.duration.coerceAtLeast(0)
+                delay(500)
+            }
+        }
+        val (position, duration) = progress
+        if (showProgress && duration > 0) {
+            Column(
+                Modifier
+                    .align(Alignment.BottomCenter)
+                    .fillMaxWidth()
+                    .padding(start = 56.dp, end = 56.dp, bottom = 84.dp),
+                verticalArrangement = Arrangement.spacedBy(6.dp),
+            ) {
+                Text("${GalleryText.duration(position)} / ${GalleryText.duration(duration)}", style = MaterialTheme.typography.labelLarge, color = Lune)
+                Box(Modifier.fillMaxWidth().height(4.dp).background(Lune.copy(alpha = 0.25f), RoundedCornerShape(2.dp))) {
+                    Box(
+                        Modifier
+                            .fillMaxWidth((position.toFloat() / duration).coerceIn(0f, 1f))
+                            .height(4.dp)
+                            .background(Focus, RoundedCornerShape(2.dp)),
+                    )
+                }
+            }
+        }
         error?.let {
             Text(
                 it,

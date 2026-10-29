@@ -52,6 +52,22 @@ object GalleryText {
         else -> "erreur $code"
     }
 
+    /** « 1:15 », « 1:02:03 » : durée d'une vidéo. */
+    fun duration(ms: Long): String {
+        val total = ms / 1000
+        val hours = total / 3600
+        val minutes = total % 3600 / 60
+        val seconds = total % 60
+        return if (hours > 0) "%d:%02d:%02d".format(hours, minutes, seconds) else "%d:%02d".format(minutes, seconds)
+    }
+
+    /** « SOUVENIRS › 02 - ENFANCE » : les dossiers parents d'un dossier ouvert, depuis le dossier de départ. */
+    fun breadcrumb(root: String, path: String): String {
+        val relative = if (root.isNotEmpty() && path.startsWith("$root/")) path.removePrefix("$root/") else path
+        val parents = relative.split('/').dropLast(1).filter { it.isNotEmpty() }
+        return (listOf("DOSSIERS") + parents.map { it.uppercase() }).joinToString(" › ")
+    }
+
     /** « Octobre 2025 ». */
     fun month(month: java.time.YearMonth): String = "${MONTHS[month.monthValue - 1]} ${month.year}"
 

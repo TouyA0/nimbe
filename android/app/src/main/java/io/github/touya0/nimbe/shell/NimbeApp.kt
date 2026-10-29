@@ -388,9 +388,14 @@ private fun NimbeShell(
     // État de l'onglet Galerie (rubrique, album ouvert, positions), un par profil : il survit au plein écran.
     val galleryNav = remember(activeId) { GalleryNav() }
     galleryNav.holdFocus = { runCatching { requesters.getValue(Tab.Gallery).requestFocus() } }
-    // Retour : referme d'abord l'album ou le souvenir ouvert dans la Galerie, sinon revient à l'Accueil.
+    // Retour dans la Galerie : remonte d'un dossier ou referme l'album ouvert, puis remonte en haut de la grille,
+    // et seulement ensuite revient à l'Accueil.
     BackHandler {
-        if (tab == Tab.Gallery && galleryNav.open != null) galleryNav.close() else focusTab(Tab.Home)
+        when {
+            tab == Tab.Gallery && galleryNav.open != null -> galleryNav.close()
+            tab == Tab.Gallery && galleryNav.backToTop() -> Unit
+            else -> focusTab(Tab.Home)
+        }
     }
     // Accueil, depuis n'importe où dans Nimbe : réglages fermés, focus sur l'onglet Accueil.
     LaunchedEffect(homePresses) {
