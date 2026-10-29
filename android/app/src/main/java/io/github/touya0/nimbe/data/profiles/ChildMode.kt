@@ -19,9 +19,13 @@ object ChildMode {
 
     /**
      * Mise en page fixe : films et séries, les applis autorisées. Pas de « Continuer à regarder »
-     * (c'est la reprise de toute la maison), ni TV, ni musique, ni galerie.
+     * (c'est la reprise de toute la maison), ni TV, ni musique. La Galerie n'apparaît que si un parent
+     * a choisi un album pour l'enfant ([Profile.gallery]).
      */
-    val Layout = ProfileLayout(
+    fun layout(profile: Profile?): ProfileLayout =
+        if (profile?.gallery == null) Layout else Layout.copy(tabs = Layout.tabs.map { if (it.id == "gallery") it.copy(visible = true) else it })
+
+    private val Layout = ProfileLayout(
         homeRows = listOf(
             LayoutItem(HomeRow.Apps.key, visible = true),
             LayoutItem(HomeRow.Latest.key, visible = true),

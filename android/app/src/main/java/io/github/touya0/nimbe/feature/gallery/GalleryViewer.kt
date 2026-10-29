@@ -63,11 +63,18 @@ import io.github.touya0.nimbe.ui.theme.Nuit
 import kotlinx.coroutines.delay
 
 /** Ouvrir la visionneuse : la liste affichée par la grille, et la photo choisie. */
-data class GalleryViewerRequest(val auth: NextcloudAuth, val userId: String, val items: List<GalleryItem>, val index: Int)
+data class GalleryViewerRequest(
+    val auth: NextcloudAuth,
+    val userId: String,
+    val items: List<GalleryItem>,
+    val index: Int,
+    /** Rythme du diaporama, réglé par profil (Réglages → Galerie). */
+    val slideMs: Long = SLIDE_MS,
+)
 
 /**
  * Photo ou vidéo en plein écran. Gauche et droite : précédente ou suivante. OK : lance ou arrête le
- * diaporama (photo suivante toutes les [SLIDE_MS], en fondu), ou lit et met en pause une vidéo.
+ * diaporama (photo suivante au rythme réglé, en fondu), ou lit et met en pause une vidéo.
  * Haut, bas : réaffichent les infos. Retour : quitte, [onClose] reçoit l'élément regardé en dernier
  * pour que la grille le retrouve.
  */
@@ -104,7 +111,7 @@ fun GalleryViewer(request: GalleryViewerRequest, onClose: (GalleryItem) -> Unit)
     // Diaporama : une photo toutes les 8 s ; une vidéo passe à la suite quand elle se termine.
     LaunchedEffect(slideshow, index) {
         if (slideshow && !item.isVideo) {
-            delay(SLIDE_MS)
+            delay(request.slideMs)
             go(1)
         }
     }

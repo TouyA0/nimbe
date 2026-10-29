@@ -33,6 +33,8 @@ class NextcloudGallery(
     private val cache: CachedResponseDao,
     /** Pour les synchronisations qui doivent survivre à l'écran qui les lance. */
     private val scope: CoroutineScope,
+    /** Réglages de galerie de chaque profil. */
+    val prefs: GalleryPrefsStore,
 ) {
 
     private val states = ConcurrentHashMap<String, MutableStateFlow<GallerySyncState>>()
@@ -115,6 +117,23 @@ class NextcloudGallery(
         cache.put(CachedResponse(albumKey(profileId, album), AlbumCodec.encodeFiles(files), System.currentTimeMillis()))
         return sorted(profileId, files)
     }
+
+    /**
+     * Photos d'un dossier du compte de [profileId], lues directement sur le serveur (pas dans l'index, qui ne
+     * couvre que ses dossiers montrés) : c'est ce que voit un enfant à qui un parent a choisi ce dossier.
+     */
+    suspend fun cachedFolderItems(profileId: String, folder: String): List<GalleryItem>? =
+        cache.get(folderKey(profileId, folder))?.json?.let(AlbumCodec::decodeFiles)?.let { sorted(profileId, it) }
+
+    suspend fun refreshFolderItems(profileId: String, folder: String): List<GalleryItem> {
+        val auth = accounts.auth(profileId) ?: throw NextcloudException(NextcloudException.Kind.Unauthorized, "La galerie de ce parent n'est plus reliée")
+        val userId = accounts.links.first()[profileId]?.userId ?: return emptyList()
+        val files = fetchAll(auth, userId, listOf(folder))
+        cache.put(CachedResponse(folderKey(profileId, folder), AlbumCodec.encodeFiles(files), System.currentTimeMillis()))
+        return sorted(profileId, files)
+    }
+
+    private fun folderKey(profileId: String, folder: String) = cachePrefix(profileId) + "folder|" + folder
 
     private fun sorted(profileId: String, files: List<GalleryFile>) =
         files.map { it.toItem(profileId) }.sortedWith(compareByDescending<GalleryItem> { it.takenAt }.thenByDescending { it.fileId })

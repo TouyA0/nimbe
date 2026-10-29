@@ -23,6 +23,7 @@ import io.github.touya0.nimbe.ui.components.bleed
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.flowOn
+import kotlinx.coroutines.flow.map
 import java.time.LocalDate
 
 /**
@@ -35,11 +36,17 @@ fun GalleryHomeRow(gallery: NextcloudGallery, profile: Profile?, onOpen: (Galler
     if (profile == null || profile.kind != ProfileKind.Adult) return
     val today = remember { LocalDate.now() }
     val memories by remember(profile.id) {
-        gallery.all(profile.id).combine(gallery.link(profile.id)) { items, link ->
-            if (link == null) emptyList()
-            else GalleryMemories.onThisDay(items, today) + listOfNotNull(GalleryMemories.thisMonth(items, today))
+        combine(gallery.all(profile.id), gallery.link(profile.id), gallery.prefs.prefs(profile.id)) { items, link, prefs ->
+            // Souvenirs coupés dans les réglages de la galerie : pas de rangée du tout.
+            if (link == null || !prefs.memories) {
+                emptyList()
+            } else {
+                val shown = prefs.filter(items)
+                GalleryMemories.onThisDay(shown, today) + listOfNotNull(GalleryMemories.thisMonth(shown, today))
+            }
         }.flowOn(Dispatchers.Default)
     }.collectAsStateWithLifecycle(initialValue = emptyList())
+    val slideSeconds by remember(profile.id) { gallery.prefs.prefs(profile.id).map { it.slideSeconds } }.collectAsStateWithLifecycle(initialValue = 8)
     val userId by remember(profile.id) { gallery.link(profile.id) }.collectAsStateWithLifecycle(initialValue = null)
     val auth by produceState<NextcloudAuth?>(null, profile.id, userId) { value = gallery.auth(profile.id) }
     val current = auth ?: return
@@ -61,7 +68,7 @@ fun GalleryHomeRow(gallery: NextcloudGallery, profile: Profile?, onOpen: (Galler
                     title = memory.title,
                     detail = GalleryText.monthCounts(memory.photos, memory.videos),
                     width = 300,
-                    onClick = { onOpen(GalleryViewerRequest(current, id, memory.items, 0)) },
+                    onClick = { onOpen(GalleryViewerRequest(current, id, memory.items, 0, slideMs = slideSeconds * 1000L)) },
                 )
             }
         }

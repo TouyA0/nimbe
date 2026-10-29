@@ -21,6 +21,7 @@ enum class ProfileKind(val key: String, val label: String, val summary: String) 
  * [hiddenApps] : pour l'invité, les applis masquées (null : celles des comptes de la famille, par défaut).
  * [allowedApps] : pour l'enfant, les seules applis permises (null : celles pour enfants, par défaut).
  * [limits] : pour l'enfant, temps d'écran quotidien et couvre-feu.
+ * [gallery] : pour l'enfant, le seul album ou dossier de photos qu'il voit (null : pas de galerie).
  */
 data class Profile(
     val id: String,
@@ -30,9 +31,21 @@ data class Profile(
     val hiddenApps: Set<String>? = null,
     val allowedApps: Set<String>? = null,
     val limits: ChildLimits = ChildLimits(),
+    val gallery: ChildGallery? = null,
 ) {
     val initial: String get() = name.trim().firstOrNull()?.uppercase() ?: "?"
 }
+
+/**
+ * Galerie d'un profil Enfant : un album ([albumPath], adresse WebDAV d'album) ou un dossier ([folder])
+ * de la galerie Nextcloud d'un adulte ([sourceProfileId]), choisi par un parent. L'enfant ne voit rien d'autre.
+ */
+data class ChildGallery(
+    val sourceProfileId: String,
+    val name: String,
+    val albumPath: String? = null,
+    val folder: String? = null,
+)
 
 /** Ce que Nimbe fait quand la TV s'allume. */
 enum class StartChoice(val key: String, val label: String) {
@@ -108,6 +121,15 @@ object ProfileCodec {
 
     private fun packages(array: JSONArray): Set<String> = (0 until array.length()).mapNotNull { array.optString(it).ifEmpty { null } }.toSet()
 
+    /** Un album ou un dossier, pas les deux, et une source : sinon la galerie de l'enfant est ignorée. */
+    private fun childGallery(json: JSONObject): ChildGallery? {
+        val source = json.optString("source").ifEmpty { return null }
+        val album = json.optString("album").ifEmpty { null }
+        val folder = json.optString("folder").ifEmpty { null }
+        if ((album == null) == (folder == null)) return null
+        return ChildGallery(source, json.optString("name"), album, folder)
+    }
+
     fun encode(profiles: List<Profile>): String = JSONArray().apply {
         profiles.forEach { profile ->
             put(
@@ -119,7 +141,19 @@ object ProfileCodec {
                     .apply { profile.hiddenApps?.let { put("hiddenApps", JSONArray(it.sorted())) } }
                     .apply { profile.allowedApps?.let { put("allowedApps", JSONArray(it.sorted())) } }
                     .apply { profile.limits.dailyMinutes?.let { put("dailyMinutes", it) } }
-                    .apply { profile.limits.curfew?.let { put("curfewStart", it.start).put("curfewEnd", it.end) } },
+                    .apply { profile.limits.curfew?.let { put("curfewStart", it.start).put("curfewEnd", it.end) } }
+                    .apply {
+                        profile.gallery?.let { gallery ->
+                            put(
+                                "gallery",
+                                JSONObject()
+                                    .put("source", gallery.sourceProfileId)
+                                    .put("name", gallery.name)
+                                    .apply { gallery.albumPath?.let { put("album", it) } }
+                                    .apply { gallery.folder?.let { put("folder", it) } },
+                            )
+                        }
+                    },
             )
         }
     }.toString()
@@ -148,6 +182,7 @@ object ProfileCodec {
                         null
                     },
                 ),
+                gallery = item.optJSONObject("gallery")?.let(::childGallery),
             )
         }
     }

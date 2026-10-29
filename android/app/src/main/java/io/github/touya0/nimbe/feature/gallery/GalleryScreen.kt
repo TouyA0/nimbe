@@ -47,6 +47,7 @@ import androidx.tv.material3.MaterialTheme
 import androidx.tv.material3.Surface
 import androidx.tv.material3.Text
 import io.github.touya0.nimbe.data.nextcloud.GalleryItem
+import io.github.touya0.nimbe.data.nextcloud.GalleryPrefs
 import io.github.touya0.nimbe.data.nextcloud.NextcloudAlbum
 import io.github.touya0.nimbe.data.nextcloud.NextcloudAuth
 import io.github.touya0.nimbe.data.nextcloud.NextcloudException
@@ -66,7 +67,7 @@ import io.github.touya0.nimbe.ui.theme.NimbeFocus
 import io.github.touya0.nimbe.ui.theme.Nuit
 import io.github.touya0.nimbe.ui.theme.PanneauClair
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.flow.flowOn
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import java.time.LocalDate
@@ -84,6 +85,10 @@ fun GalleryScreen(
     nav: GalleryNav,
     onOpen: (GalleryViewerRequest) -> Unit,
 ) {
+    if (profile?.kind == ProfileKind.Child) {
+        ChildGalleryContent(gallery, profile, nav, onOpen)
+        return
+    }
     if (profile == null || profile.kind != ProfileKind.Adult) {
         StateMessage("Pas de galerie dans ce profil", "Les photos Nextcloud sont personnelles : chaque adulte relie la sienne.")
         return
@@ -110,19 +115,18 @@ private fun GalleryContent(gallery: NextcloudGallery, profile: Profile, auth: Ne
     val scope = rememberCoroutineScope()
     LaunchedEffect(profile.id) { gallery.sync(profile.id) }
     val state by remember(profile.id) { gallery.state(profile.id) }.collectAsStateWithLifecycle()
-    val counts by remember(profile.id) { gallery.counts(profile.id) }.collectAsStateWithLifecycle(initialValue = null)
     val syncedAt by remember(profile.id) { gallery.syncedAt(profile.id) }.collectAsStateWithLifecycle(initialValue = null)
-    // Tout l'index, rangé hors du fil de l'interface : quelques milliers de photos, à chaque synchronisation.
-    val all by remember(profile.id) { gallery.all(profile.id) }.collectAsStateWithLifecycle(initialValue = emptyList())
-    val timeline by remember(profile.id) {
-        gallery.all(profile.id).map { GalleryTimeline.group(it) }.flowOn(Dispatchers.Default)
-    }.collectAsStateWithLifecycle(initialValue = emptyList())
+    val prefs by remember(profile.id) { gallery.prefs.prefs(profile.id) }.collectAsStateWithLifecycle(initialValue = GalleryPrefs())
+    // Tout l'index, filtré selon les réglages (vidéos, captures d'écran), puis rangé par mois hors du fil de l'interface.
+    val index by remember(profile.id) { gallery.all(profile.id) }.collectAsStateWithLifecycle(initialValue = emptyList())
+    val all = remember(index, prefs) { prefs.filter(index) }
+    val timeline by produceState(emptyList<MonthSection>(), all) { value = withContext(Dispatchers.Default) { GalleryTimeline.group(all) } }
     val userId by remember(profile.id) { gallery.link(profile.id).map { it?.userId } }.collectAsStateWithLifecycle(initialValue = null)
     val retry = { scope.launch { gallery.sync(profile.id, force = true) }; Unit }
 
     fun view(items: List<GalleryItem>, item: GalleryItem) {
         val id = userId ?: return
-        onOpen(GalleryViewerRequest(auth, id, items, items.indexOf(item)))
+        onOpen(GalleryViewerRequest(auth, id, items, items.indexOf(item), slideMs = prefs.slideSeconds * 1000L))
     }
 
     // Jamais synchronisée : rien à montrer tant que la première lecture n'a pas abouti.
@@ -141,9 +145,12 @@ private fun GalleryContent(gallery: NextcloudGallery, profile: Profile, auth: Ne
     }
 
     Column(Modifier.fillMaxSize()) {
-        GalleryHeader(profile, counts?.photos ?: 0, counts?.videos ?: 0, syncedAt, state.syncing, state.error, nav, retry)
-        when (nav.section) {
-            GallerySection.ForYou -> ForYouPage(gallery, profile.id, auth, all, nav)
+        val sections = GallerySection.entries.filter { it != GallerySection.Videos || prefs.showVideos }
+        // Vidéos masquées dans les réglages alors qu'on était sur cette rubrique : retour à la chronologie.
+        val section = nav.section.takeIf { it in sections } ?: GallerySection.Timeline
+        GalleryHeader(profile, all.count { !it.isVideo }, all.count { it.isVideo }, syncedAt, state.syncing, state.error, sections, section, nav, retry)
+        when (section) {
+            GallerySection.ForYou -> ForYouPage(gallery, profile.id, auth, all, prefs.memories, nav)
             GallerySection.Timeline -> PhotoGrid(auth, timeline, nav.timeline, nav, empty = "Aucune photo pour l'instant", onView = ::view)
             GallerySection.Videos -> {
                 val videos = remember(timeline) {
@@ -165,6 +172,8 @@ private fun GalleryHeader(
     syncedAt: Long?,
     syncing: Boolean,
     error: String?,
+    sections: List<GallerySection>,
+    selected: GallerySection,
     nav: GalleryNav,
     onSync: () -> Unit,
 ) {
@@ -177,8 +186,8 @@ private fun GalleryHeader(
                 overflow = TextOverflow.Ellipsis,
                 modifier = Modifier.weight(1f),
             )
-            GallerySection.entries.forEach { section ->
-                FilterPill(section.label, selected = section == nav.section, onClick = { nav.section = section })
+            sections.forEach { section ->
+                FilterPill(section.label, selected = section == selected, onClick = { nav.section = section })
             }
             Spacer(Modifier.width(6.dp))
             PillButton("Synchroniser", onClick = onSync)
@@ -193,10 +202,12 @@ private fun GalleryHeader(
 
 /** « Pour toi » : souvenirs des années passées, ce mois-ci, ajouts récents, puis les albums (ou les dossiers). */
 @Composable
-private fun ForYouPage(gallery: NextcloudGallery, profileId: String, auth: NextcloudAuth, all: List<GalleryItem>, nav: GalleryNav) {
+private fun ForYouPage(gallery: NextcloudGallery, profileId: String, auth: NextcloudAuth, all: List<GalleryItem>, onThisDay: Boolean, nav: GalleryNav) {
     val today = remember { LocalDate.now() }
-    val memories = remember(all) {
-        GalleryMemories.onThisDay(all, today) + listOfNotNull(GalleryMemories.thisMonth(all, today), GalleryMemories.recentlyAdded(all))
+    // « Il y a N ans » peut être coupé dans les réglages ; ce mois-ci et les ajouts récents restent.
+    val memories = remember(all, onThisDay) {
+        (if (onThisDay) GalleryMemories.onThisDay(all, today) else emptyList()) +
+            listOfNotNull(GalleryMemories.thisMonth(all, today), GalleryMemories.recentlyAdded(all))
     }
     val albums = rememberAlbums(gallery, profileId, shared = false)
     val folders = remember(all) { GalleryMemories.folders(all) }
@@ -380,6 +391,57 @@ private fun OpenedScreen(
             items == null && error == null -> StateMessage("Chargement…", null)
             items == null -> StateMessage("Nextcloud injoignable", error, action = "Réessayer", onAction = { attempt++ })
             else -> PhotoGrid(auth, sections, nav.opened, nav, empty = "Cet album est vide", onView = onView)
+        }
+    }
+}
+
+/**
+ * Galerie d'un profil Enfant : seulement l'album ou le dossier choisi par un parent, lu avec la galerie
+ * Nextcloud de ce parent. Pas de rubriques, pas de réglages : une grille et le plein écran.
+ */
+@Composable
+private fun ChildGalleryContent(gallery: NextcloudGallery, child: Profile, nav: GalleryNav, onOpen: (GalleryViewerRequest) -> Unit) {
+    val choice = child.gallery
+    if (choice == null) {
+        StateMessage("Pas encore de photos", "Un parent peut choisir un album pour toi dans les réglages.")
+        return
+    }
+    val source = choice.sourceProfileId
+    val link by remember(source) { gallery.link(source) }.collectAsStateWithLifecycle(initialValue = null)
+    val auth by produceState<NextcloudAuth?>(null, source, link) { value = gallery.auth(source) }
+    var attempt by remember { mutableIntStateOf(0) }
+    val load by produceState<Pair<List<GalleryItem>?, String?>>(Pair(null, null), choice, attempt) {
+        val album = choice.albumPath?.let { NextcloudAlbum(choice.name, it, 0, null) }
+        val cached = if (album != null) gallery.cachedAlbumItems(source, album) else gallery.cachedFolderItems(source, choice.folder.orEmpty())
+        value = cached to null
+        value = try {
+            (if (album != null) gallery.refreshAlbumItems(source, album) else gallery.refreshFolderItems(source, choice.folder.orEmpty())) to null
+        } catch (e: NextcloudException) {
+            cached to e.message
+        }
+    }
+    val (items, error) = load
+    val sections = remember(items) { items?.let { GalleryTimeline.group(it) }.orEmpty() }
+    val current = auth
+    val userId = link?.userId
+    Column(Modifier.fillMaxSize()) {
+        Column(Modifier.padding(start = 56.dp, end = 56.dp, top = 16.dp, bottom = 8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            Text("LES PHOTOS DE LA FAMILLE", style = MaterialTheme.typography.labelMedium, color = Focus)
+            Text(choice.name, style = MaterialTheme.typography.headlineMedium)
+            items?.let { list ->
+                Text(GalleryText.monthCounts(list.count { !it.isVideo }, list.count { it.isVideo }), style = MaterialTheme.typography.bodyMedium, color = LuneAttenuee)
+            }
+        }
+        when {
+            current == null || userId == null -> StateMessage(
+                "Les photos ne sont pas disponibles",
+                "Demande à un parent de vérifier la galerie dans les réglages.",
+            )
+            items == null && error == null -> StateMessage("Chargement…", null)
+            items == null -> StateMessage("Les photos ne répondent pas", error, action = "Réessayer", onAction = { attempt++ })
+            else -> PhotoGrid(current, sections, nav.timeline, nav, empty = "Cet album est vide pour l'instant", onView = { list, item ->
+                onOpen(GalleryViewerRequest(current, userId, list, list.indexOf(item)))
+            })
         }
     }
 }

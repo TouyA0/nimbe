@@ -326,7 +326,7 @@ private fun NimbeShell(
     val savedLayout by remember(activeId) { layouts.layout(activeId) }.collectAsStateWithLifecycle(initialValue = null)
     val layout = when {
         guest -> LayoutRules.normalize(GuestMode.Layout)
-        child -> LayoutRules.normalize(ChildMode.Layout)
+        child -> LayoutRules.normalize(ChildMode.layout(active))
         else -> savedLayout ?: ProfileLayout.Default
     }
     val visibleTabs = layout.visibleTabs.mapNotNull(Tab::fromKey)
@@ -544,6 +544,7 @@ private fun NimbeShell(
                     screenTime.remove(id)
                     // Sa galerie aussi : un accès sans profil ne doit pas rester ouvert sur le serveur.
                     nextcloud.disconnect(id)
+                    gallery.prefs.remove(id)
                 }
             },
             installedApps = apps,

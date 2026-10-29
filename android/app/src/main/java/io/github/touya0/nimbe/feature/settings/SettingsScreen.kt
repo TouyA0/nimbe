@@ -117,6 +117,7 @@ import kotlinx.coroutines.launch
 enum class SettingsSection(val label: String) {
     Home("Accueil"),
     Tabs("Onglets"),
+    Gallery("Galerie"),
     Profiles("Profils"),
     Display("Affichage et accessibilité"),
     Screensaver("Écran de veille"),
@@ -252,6 +253,21 @@ fun SettingsScreen(
         )
         return
     }
+    // Album ou dossier montré à un enfant : en plein écran, par-dessus Profils.
+    var childGalleryFor by rememberSaveable { mutableStateOf<String?>(null) }
+    // En dehors de l'écran de choix : l'enregistrement continue une fois l'écran refermé.
+    val childGalleryScope = rememberCoroutineScope()
+    profilesState.profiles.firstOrNull { it.id == childGalleryFor }?.let { child ->
+        ChildGalleryScreen(
+            gallery,
+            child = child,
+            adults = profilesState.profiles.filter { it.kind == ProfileKind.Adult },
+            links = nextcloudLinks.orEmpty(),
+            onSave = { choice -> childGalleryScope.launch { profiles.save(child.copy(gallery = choice)) } },
+            onClose = { childGalleryFor = null },
+        )
+        return
+    }
     var homeAssistantConnectOpen by rememberSaveable { mutableStateOf(false) }
     val homeAssistantLink by remember(homeAssistant) { homeAssistant.link.map { HaLinked(it) } }
         .collectAsStateWithLifecycle(initialValue = null)
@@ -311,7 +327,21 @@ fun SettingsScreen(
             when (section) {
                 SettingsSection.Home -> HomeLayoutPage(layout, profilesState.active?.name.orEmpty(), onLayoutChange, onLayoutReset, onEditHome)
                 SettingsSection.Tabs -> TabsPage(layout, profilesState.active?.name.orEmpty(), onLayoutChange, onLayoutReset)
-                SettingsSection.Profiles -> ProfilesPage(profiles, profilesState, installedApps, onProfileDeleted, onAppChoice = { appChoiceFor = it })
+                SettingsSection.Gallery -> GalleryPage(
+                    gallery,
+                    profilesState.active,
+                    nextcloudLinks,
+                    onConnect = { profilesState.active?.let { nextcloudConnectFor = it.id } },
+                    onFolders = { profilesState.active?.let { galleryFoldersFor = it.id } },
+                )
+                SettingsSection.Profiles -> ProfilesPage(
+                    profiles,
+                    profilesState,
+                    installedApps,
+                    onProfileDeleted,
+                    onAppChoice = { appChoiceFor = it },
+                    onChildGallery = { childGalleryFor = it },
+                )
                 SettingsSection.Display -> DisplayPage(display, onDisplayChange, about, links)
                 SettingsSection.Screensaver -> ScreensaverPage(links, onPreview = { previewOpen = true })
                 SettingsSection.Servers -> ServersPage(
@@ -400,6 +430,7 @@ private fun ProfilesPage(
     onDeleted: (String) -> Unit,
     /** Ouvre le choix des applis d'un profil Invité ou Enfant. */
     onAppChoice: (String) -> Unit,
+    onChildGallery: (String) -> Unit,
 ) {
     val scope = rememberCoroutineScope()
     PageTitle(
@@ -438,6 +469,12 @@ private fun ProfilesPage(
                 value = if (allowed == 0) "Aucune" else "$allowed autorisée(s)",
                 onClick = { onAppChoice(child.id) },
             )
+            LinkRow(
+                "Galerie",
+                "Un album ou un dossier de ta galerie Nextcloud, et rien d'autre",
+                value = child.gallery?.name ?: "Aucune",
+                onClick = { onChildGallery(child.id) },
+            )
             // OK fait défiler les choix : rien à saisir à la télécommande.
             LinkRow(
                 "Temps d'écran",
@@ -461,7 +498,9 @@ private fun ProfilesPage(
             )
             SettingRow(
                 "Ce que voit ${child.name}",
-                "Films et séries de Jellyfin, ses applis autorisées. Pas de réglages ; changer de profil demande le PIN parent.",
+                "Films et séries de Jellyfin, ses applis autorisées" +
+                    (child.gallery?.let { ", les photos de « ${it.name} »" } ?: "") +
+                    ". Pas de réglages ; changer de profil demande le PIN parent.",
                 onClick = {},
             )
         }
@@ -1033,7 +1072,7 @@ private fun checkDetail(state: UpdateState, result: CheckResult?, progress: Upda
 }
 
 @Composable
-private fun PageTitle(title: String, subtitle: String) {
+internal fun PageTitle(title: String, subtitle: String) {
     Text(title, style = MaterialTheme.typography.displaySmall)
     Text(subtitle, style = MaterialTheme.typography.bodyMedium, color = LuneAttenuee, modifier = Modifier.padding(bottom = 8.dp))
 }

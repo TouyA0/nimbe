@@ -19,6 +19,7 @@ import io.github.touya0.nimbe.data.jellyfin.JellyfinAccount
 import io.github.touya0.nimbe.data.jellyfin.JellyfinLibrary
 import io.github.touya0.nimbe.data.layout.LayoutStore
 import io.github.touya0.nimbe.data.nextcloud.NextcloudAccounts
+import io.github.touya0.nimbe.data.nextcloud.GalleryPrefsStore
 import io.github.touya0.nimbe.data.nextcloud.NextcloudGallery
 import io.github.touya0.nimbe.data.profiles.ProfilesStore
 import io.github.touya0.nimbe.data.profiles.ScreenTimeStore
@@ -52,8 +53,11 @@ class NimbeApplication : Application(), SingletonImageLoader.Factory {
     /** Galeries Nextcloud, une par profil adulte. */
     val nextcloud: NextcloudAccounts by lazy { NextcloudAccounts(this, vault, onDisconnected = { gallery.forget(it) }) }
 
+    /** Réglages de galerie de chaque profil (vidéos, captures, souvenirs, rythme du diaporama). */
+    val galleryPrefs: GalleryPrefsStore by lazy { GalleryPrefsStore(this) }
+
     /** Index des photos et vidéos de chaque galerie, lu par l'onglet Galerie et l'écran de veille. */
-    val gallery: NextcloudGallery by lazy { NextcloudGallery(nextcloud, database.gallery(), database.cachedResponses(), scope) }
+    val gallery: NextcloudGallery by lazy { NextcloudGallery(nextcloud, database.gallery(), database.cachedResponses(), scope, galleryPrefs) }
 
     /** État du Pi en direct, partagé par l'en-tête, l'écran « État du serveur » et bientôt l'écran de veille. */
     val homeAssistantMonitor: HomeAssistantMonitor by lazy { HomeAssistantMonitor(homeAssistant, scope) }

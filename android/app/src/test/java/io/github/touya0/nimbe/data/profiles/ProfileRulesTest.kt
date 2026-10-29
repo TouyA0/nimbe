@@ -110,7 +110,7 @@ class ProfileRulesTest {
 
     @Test
     fun `accueil de l'enfant, sans reprise, sans TV, musique ni galerie`() {
-        val layout = LayoutRules.normalize(ChildMode.Layout)
+        val layout = LayoutRules.normalize(ChildMode.layout(null))
         assertEquals(listOf(HomeRow.Apps, HomeRow.Latest), layout.visibleRows)
         assertEquals(listOf("home", "movies", "series", "apps"), layout.visibleTabs)
         assertTrue(enfant.isRestricted)
@@ -133,5 +133,17 @@ class ProfileRulesTest {
         val child = enfant.copy(limits = ChildLimits(dailyMinutes = 120, curfew = Curfew(20 * 60, 7 * 60 + 30)))
         assertEquals(listOf(child), ProfileCodec.decode(ProfileCodec.encode(listOf(child))))
         assertEquals(ChildLimits(), ProfileCodec.decode(ProfileCodec.encode(listOf(enfant))).single().limits)
+    }
+
+    @Test
+    fun `galerie de l'enfant, relue et visible seulement si choisie`() {
+        val child = Profile("e", "Enfant", 1, ProfileKind.Child, gallery = ChildGallery("q", "Souvenirs", folder = "Photos/Souvenirs"))
+        assertEquals(child, ProfileCodec.decode(ProfileCodec.encode(listOf(child))).single())
+        // Album et dossier à la fois : choix incohérent, ignoré.
+        val broken = """[{"id":"e","name":"Enfant","color":1,"kind":"child","gallery":{"source":"q","name":"x","album":"a","folder":"b"}}]"""
+        assertEquals(null, ProfileCodec.decode(broken).single().gallery)
+        fun galleryVisible(profile: Profile?) = LayoutRules.normalize(ChildMode.layout(profile)).visibleTabs.contains("gallery")
+        assertEquals(false, galleryVisible(child.copy(gallery = null)))
+        assertEquals(true, galleryVisible(child))
     }
 }
