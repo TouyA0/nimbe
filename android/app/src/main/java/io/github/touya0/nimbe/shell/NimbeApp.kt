@@ -121,6 +121,25 @@ import io.github.touya0.nimbe.update.UpdateController
 import io.github.touya0.nimbe.update.UpdateScreen
 import io.github.touya0.nimbe.update.UpdateState
 import kotlinx.coroutines.launch
+import android.widget.Toast
+import androidx.compose.runtime.produceState
+import io.github.touya0.nimbe.data.jellyfin.JellyfinException
+import io.github.touya0.nimbe.data.streaming.StreamingCatalog
+import io.github.touya0.nimbe.data.streaming.StreamingException
+import io.github.touya0.nimbe.data.streaming.StreamingHistoryDao
+import io.github.touya0.nimbe.data.streaming.StreamingOpen
+import io.github.touya0.nimbe.data.streaming.StreamingRules
+import io.github.touya0.nimbe.data.streaming.StreamingService
+import io.github.touya0.nimbe.data.streaming.StreamingTitle
+import io.github.touya0.nimbe.feature.media.CatalogState
+import io.github.touya0.nimbe.feature.streaming.LaunchResult
+import io.github.touya0.nimbe.feature.streaming.LocalStreaming
+import io.github.touya0.nimbe.feature.streaming.StreamingDetailScreen
+import io.github.touya0.nimbe.feature.streaming.StreamingLauncher
+import io.github.touya0.nimbe.feature.streaming.StreamingUi
+import io.github.touya0.nimbe.ui.components.MenuOption
+import io.github.touya0.nimbe.ui.components.MenuRequest
+import kotlinx.coroutines.flow.flowOf
 
 /** Enveloppe pour distinguer « compte pas encore lu » (null) de « pas connecté ». */
 private data class Linked(val link: JellyfinLink?)
@@ -143,6 +162,8 @@ fun NimbeApp(
     parentPin: ParentPinStore,
     layouts: LayoutStore,
     screenTime: ScreenTimeStore,
+    streaming: StreamingCatalog,
+    streamingHistory: StreamingHistoryDao,
     homePresses: Flow<Unit>,
     screenOn: Flow<Unit>,
 ) {
@@ -234,7 +255,8 @@ fun NimbeApp(
         } else {
             NimbeShell(
                 repository, prefs, launcher, connectivityMonitor, launches, updates, jellyfin, homeAssistant, nextcloud, gallery, ha,
-                homeAssistantMonitor::history, profiles, state, parentPin, layouts, screenTime, homePresses, screenOn,
+                homeAssistantMonitor::history, profiles, state, parentPin, layouts, screenTime, streaming, streamingHistory,
+                library, homePresses, screenOn,
             )
         }
     }
@@ -259,6 +281,9 @@ private fun NimbeShell(
     parentPin: ParentPinStore,
     layouts: LayoutStore,
     screenTime: ScreenTimeStore,
+    streaming: StreamingCatalog,
+    streamingHistory: StreamingHistoryDao,
+    library: JellyfinLibrary,
     homePresses: Flow<Unit>,
     screenOn: Flow<Unit>,
 ) {
@@ -522,6 +547,7 @@ private fun NimbeShell(
     }
 
     if (settingsOpen) {
+        val streamingSettingChoice by prefs.streamingServices.collectAsStateWithLifecycle(initialValue = null)
         SettingsScreen(
             display = display,
             onDisplayChange = { scope.launch { prefs.setDisplay(it) } },
@@ -550,6 +576,7 @@ private fun NimbeShell(
                     // Sa galerie aussi : un accès sans profil ne doit pas rester ouvert sur le serveur.
                     nextcloud.disconnect(id)
                     gallery.prefs.remove(id)
+                    streamingHistory.forgetProfile(id)
                 }
             },
             installedApps = apps,
@@ -571,6 +598,8 @@ private fun NimbeShell(
                 settingsOpen = false
                 scope.launch { prefs.setSetupDone(false) }
             },
+            streamingChoice = streamingSettingChoice,
+            onStreamingChange = { scope.launch { prefs.setStreamingServices(it) } },
             onClose = { settingsOpen = false },
         )
         return
@@ -584,6 +613,94 @@ private fun NimbeShell(
         restoreFocusId = item.id
         destination = target
     }
+
+    // Plateformes de streaming : celles que la maison a choisies (ou dont l'appli est installée),
+    // filtrées pour l'invité et l'enfant comme leurs applis.
+    val streamingChoice by prefs.streamingServices.collectAsStateWithLifecycle(initialValue = null)
+    val installedPackages = remember(apps) { apps.orEmpty().map { it.packageName }.toSet() }
+    val streamingServices = remember(streamingChoice, installedPackages, active) {
+        streamingChoice?.let { StreamingRules.visible(it.codes, installedPackages, active) }.orEmpty()
+    }
+    // L'invité n'a pas d'historique ; l'enfant garde le sien.
+    val opened by remember(activeId, guest) {
+        if (guest) flowOf(emptyList()) else streamingHistory.recent(activeId, since = System.currentTimeMillis() - HISTORY_MS, limit = 20)
+    }.collectAsStateWithLifecycle(initialValue = emptyList())
+    // Films et séries Jellyfin par identifiant TMDB, pour reconnaître un titre présent des deux côtés.
+    val tmdbIndex by produceState(emptyMap<String, MediaItem>(), jellyfinUi?.link, jellyfinUi?.health?.recoveries) {
+        val auth = library.auth() ?: return@produceState
+        value = try {
+            library.tmdbIndex(auth)
+        } catch (_: JellyfinException) {
+            value
+        }
+    }
+    var streamingDestination by remember { mutableStateOf<StreamingTitle?>(null) }
+    val streamingLauncher = remember(context) { StreamingLauncher(context) }
+    val filmsCatalog = remember(activeId) { CatalogState() }
+    val seriesCatalog = remember(activeId) { CatalogState() }
+    fun openStreaming(title: StreamingTitle) {
+        restoreFocusId = title.id
+        streamingDestination = title
+    }
+    // Ouvre le titre dans l'appli de la plateforme et le note pour « Continuer à regarder » (sauf pour l'invité).
+    fun launchStreaming(title: StreamingTitle, service: StreamingService, page: Boolean) {
+        val offer = title.offer(service)
+        if (offer == null) {
+            Toast.makeText(context, "${title.title} n'est plus proposé par ${service.label}", Toast.LENGTH_LONG).show()
+            return
+        }
+        when (streamingLauncher.launch(offer, page)) {
+            LaunchResult.Title -> Unit
+            LaunchResult.AppOnly -> Toast.makeText(context, "${service.label} s'ouvre sur son accueil : cherche « ${title.title} »", Toast.LENGTH_LONG).show()
+            LaunchResult.Failed -> {
+                Toast.makeText(context, "Impossible d'ouvrir ${service.label}", Toast.LENGTH_LONG).show()
+                return
+            }
+        }
+        if (!guest) scope.launch { streamingHistory.record(StreamingOpen.of(activeId, title, service, System.currentTimeMillis())) }
+    }
+    // Options d'un titre de « Continuer à regarder » : le relancer (la fiche est rechargée pour avoir son lien), voir sa fiche, le retirer.
+    fun streamingMenu(open: StreamingOpen, back: FocusRequester) {
+        val service = open.streamingService ?: return
+        menu.open(
+            MenuRequest(
+                subject = open.title,
+                options = listOf(
+                    MenuOption("▶", "Reprendre sur ${service.label}", "Ouvre le titre dans l'appli, qui garde ta progression") {
+                        scope.launch {
+                            val full = try {
+                                streaming.detail(open.titleId, listOf(service))
+                            } catch (_: StreamingException) {
+                                null
+                            }
+                            if (full == null) {
+                                Toast.makeText(context, "Impossible de joindre JustWatch pour retrouver ce titre", Toast.LENGTH_LONG).show()
+                            } else {
+                                launchStreaming(full, service, page = false)
+                            }
+                        }
+                    },
+                    MenuOption("ℹ", "Voir la fiche", "Résumé, distribution, autres plateformes") { openStreaming(open.toTitle()) },
+                    MenuOption("✕", "Retirer de « Continuer à regarder »", "Le titre reste sur ${service.label}") {
+                        leaveTile()
+                        scope.launch { streamingHistory.forget(open.profileId, open.titleId) }
+                    },
+                ),
+                returnFocus = back,
+            ),
+        )
+    }
+    val streamingUi = StreamingUi(
+        catalog = streaming,
+        services = streamingServices,
+        kids = StreamingRules.kidsOnly(active),
+        history = opened,
+        jellyfinIndex = tmdbIndex,
+        onOpenTitle = ::openStreaming,
+        onLaunch = ::launchStreaming,
+        onMenu = ::streamingMenu,
+        onOpenSettings = if (restricted) null else { { openSettings(SettingsSection.Streaming) } },
+    )
     // Photo en plein écran, par-dessus les onglets. La grille garde sa position (un état par profil)
     // et, au retour, la photo regardée en dernier reprend le focus.
     var galleryViewer by remember { mutableStateOf<GalleryViewerRequest?>(null) }
@@ -599,6 +716,7 @@ private fun NimbeShell(
             playing = null
             askResume = null
             destination = null
+            streamingDestination = null
             galleryViewer = null
             restoreFocusId = null
             untouchedEpisodes = 0
@@ -656,13 +774,31 @@ private fun NimbeShell(
         })
         return
     }
+    streamingDestination?.let { title ->
+        CompositionLocalProvider(LocalStreaming provides streamingUi) {
+            StreamingDetailScreen(
+                initial = title,
+                onOpenJellyfin = { item ->
+                    streamingDestination = null
+                    openItem(item)
+                },
+                onClose = { streamingDestination = null },
+            )
+        }
+        return
+    }
+    // Les fiches Jellyfin proposent aussi le même titre sur les plateformes du profil.
     when (val target = destination) {
         is MediaDestination.Movie -> {
-            FilmDetailScreen(target.item, onPlay = onPlay, onClose = { destination = null })
+            CompositionLocalProvider(LocalStreaming provides streamingUi) {
+                FilmDetailScreen(target.item, onPlay = onPlay, onClose = { destination = null })
+            }
             return
         }
         is MediaDestination.Series -> {
-            SeriesDetailScreen(target, onPlay = onPlay, onRequestPlay = ::requestPlay, onClose = { destination = null })
+            CompositionLocalProvider(LocalStreaming provides streamingUi) {
+                SeriesDetailScreen(target, onPlay = onPlay, onRequestPlay = ::requestPlay, onClose = { destination = null })
+            }
             return
         }
         null -> Unit
@@ -685,7 +821,7 @@ private fun NimbeShell(
         }
     }
 
-    MenuHost(menu) {
+    CompositionLocalProvider(LocalStreaming provides streamingUi) { MenuHost(menu) {
         Column(Modifier.fillMaxSize().background(Nuit)) {
             Header(
                 tabs = visibleTabs,
@@ -775,12 +911,16 @@ private fun NimbeShell(
                     Tab.Movies -> FilmsScreen(
                         sort = filmSort,
                         onSortChange = { filmSort = it },
+                        state = filmsCatalog,
                         onOpenItem = ::openItem,
+                        onPlayItem = ::requestPlay,
                         restoreFocusId = restoreFocusId,
                         onRestored = { restoreFocusId = null },
                     )
                     Tab.Series -> SeriesScreen(
+                        state = seriesCatalog,
                         onOpenItem = ::openItem,
+                        onPlayItem = ::requestPlay,
                         restoreFocusId = restoreFocusId,
                         onRestored = { restoreFocusId = null },
                     )
@@ -794,8 +934,11 @@ private fun NimbeShell(
                 }
             }
         }
-    }
+    } }
 }
+
+/** Les titres ouverts sur les plateformes restent un mois dans « Continuer à regarder ». */
+private const val HISTORY_MS = StreamingRules.HISTORY_DAYS * 24 * 60 * 60 * 1000
 
 /** Recalcul du temps d'écran restant du profil Enfant. */
 private const val SCREEN_TIME_TICK_MS = 15_000L

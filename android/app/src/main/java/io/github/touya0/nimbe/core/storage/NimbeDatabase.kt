@@ -15,22 +15,25 @@ import androidx.room.Transaction
 import io.github.touya0.nimbe.data.nextcloud.GalleryDao
 import io.github.touya0.nimbe.data.nextcloud.GalleryItem
 import io.github.touya0.nimbe.data.nextcloud.GallerySync
+import io.github.touya0.nimbe.data.streaming.StreamingHistoryDao
+import io.github.touya0.nimbe.data.streaming.StreamingOpen
 import kotlinx.coroutines.flow.Flow
 
 /**
- * Base locale du launcher (Room) : lancements d'applis, dernières réponses de Jellyfin et index
- * des galeries Nextcloud, pour tenir quand le Pi est coupé. Chaque version ajoute sa migration, testée sur le schéma exporté.
+ * Base locale du launcher (Room) : lancements d'applis, dernières réponses de Jellyfin et des plateformes,
+ * titres ouverts sur les plateformes et index des galeries Nextcloud, pour tenir quand le Pi est coupé. Chaque version ajoute sa migration, testée sur le schéma exporté.
  */
 @Database(
-    entities = [AppLaunch::class, CachedResponse::class, GalleryItem::class, GallerySync::class],
-    version = 3,
+    entities = [AppLaunch::class, CachedResponse::class, GalleryItem::class, GallerySync::class, StreamingOpen::class],
+    version = 4,
     exportSchema = true,
-    autoMigrations = [AutoMigration(from = 1, to = 2), AutoMigration(from = 2, to = 3)],
+    autoMigrations = [AutoMigration(from = 1, to = 2), AutoMigration(from = 2, to = 3), AutoMigration(from = 3, to = 4)],
 )
 abstract class NimbeDatabase : RoomDatabase() {
     abstract fun appLaunches(): AppLaunchDao
     abstract fun cachedResponses(): CachedResponseDao
     abstract fun gallery(): GalleryDao
+    abstract fun streamingHistory(): StreamingHistoryDao
 
     companion object {
         fun create(context: Context): NimbeDatabase =

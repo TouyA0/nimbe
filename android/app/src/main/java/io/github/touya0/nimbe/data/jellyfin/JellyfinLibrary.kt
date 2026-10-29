@@ -76,8 +76,9 @@ class JellyfinLibrary(private val account: JellyfinAccount, private val cache: C
         page(auth, "/Items/Latest", mapOf("includeItemTypes" to "Movie,Episode", "groupItems" to true, "limit" to 16)).items
     }
 
-    suspend fun movies(auth: JellyfinAuth, sort: MovieSort, startIndex: Int, limit: Int): ItemPage =
-        remember(auth, "movies:$sort:$startIndex:$limit") {
+    /** [genres] : noms de genres Jellyfin acceptés (l'un ou l'autre) ; null pour tous. */
+    suspend fun movies(auth: JellyfinAuth, sort: MovieSort, startIndex: Int, limit: Int, genres: List<String>? = null): ItemPage =
+        remember(auth, "movies:$sort:${genres?.joinToString("|")}:$startIndex:$limit") {
             val order = when (sort) {
                 MovieSort.Recent, MovieSort.Unwatched -> mapOf("sortBy" to "DateCreated,SortName", "sortOrder" to "Descending")
                 MovieSort.Alphabetical -> mapOf("sortBy" to "SortName", "sortOrder" to "Ascending")
@@ -89,6 +90,7 @@ class JellyfinLibrary(private val account: JellyfinAccount, private val cache: C
                     "includeItemTypes" to "Movie",
                     "recursive" to true,
                     "filters" to if (sort == MovieSort.Unwatched) "IsUnplayed" else null,
+                    "genres" to genres?.joinToString("|"),
                     "startIndex" to startIndex,
                     "limit" to limit,
                     "enableTotalRecordCount" to true,
@@ -96,20 +98,42 @@ class JellyfinLibrary(private val account: JellyfinAccount, private val cache: C
             )
         }
 
-    suspend fun series(auth: JellyfinAuth, startIndex: Int, limit: Int): ItemPage = remember(auth, "series:$startIndex:$limit") {
-        page(
+    suspend fun series(auth: JellyfinAuth, startIndex: Int, limit: Int, genres: List<String>? = null): ItemPage =
+        remember(auth, "series:${genres?.joinToString("|")}:$startIndex:$limit") {
+            page(
+                auth,
+                "/Items",
+                mapOf(
+                    "includeItemTypes" to "Series",
+                    "genres" to genres?.joinToString("|"),
+                    "recursive" to true,
+                    "sortBy" to "DatePlayed,DateLastContentAdded,SortName",
+                    "sortOrder" to "Descending",
+                    "startIndex" to startIndex,
+                    "limit" to limit,
+                    "enableTotalRecordCount" to true,
+                ),
+            )
+        }
+
+    /**
+     * Films et séries de la bibliothèque par identifiant TMDB (« Movie:603 », « Series:1399 ») :
+     * un titre d'une plateforme déjà présent sur Jellyfin s'ouvre alors sur Jellyfin. Réponse légère, sans images.
+     */
+    suspend fun tmdbIndex(auth: JellyfinAuth): Map<String, MediaItem> = remember(auth, "tmdb-index") {
+        val response = fetch(
             auth,
             "/Items",
             mapOf(
-                "includeItemTypes" to "Series",
+                "userId" to auth.userId,
+                "includeItemTypes" to "Movie,Series",
                 "recursive" to true,
-                "sortBy" to "DatePlayed,DateLastContentAdded,SortName",
-                "sortOrder" to "Descending",
-                "startIndex" to startIndex,
-                "limit" to limit,
-                "enableTotalRecordCount" to true,
+                "fields" to "ProviderIds",
+                "enableImages" to false,
+                "enableUserData" to false,
             ),
         )
+        JellyfinJson.page(response).items.mapNotNull { item -> item.tmdbId?.let { "${item.kind.name}:$it" to item } }.toMap()
     }
 
     suspend fun seasons(auth: JellyfinAuth, seriesId: String): List<MediaItem> = remember(auth, "seasons:$seriesId") {
@@ -208,7 +232,7 @@ class JellyfinLibrary(private val account: JellyfinAccount, private val cache: C
     }
 
     companion object {
-        private const val FIELDS = "Overview,Genres,DateCreated,ChildCount,PrimaryImageAspectRatio"
+        private const val FIELDS = "Overview,Genres,DateCreated,ChildCount,PrimaryImageAspectRatio,ProviderIds"
 
         /** Clé d'enregistrement : serveur, utilisateur, route et paramètres triés (l'ordre ne compte pas). */
         fun cacheKey(auth: JellyfinAuth, path: String, params: Map<String, Any?>): String {

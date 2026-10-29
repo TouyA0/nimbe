@@ -25,6 +25,9 @@ import io.github.touya0.nimbe.data.profiles.ProfilesStore
 import io.github.touya0.nimbe.data.profiles.ScreenTimeStore
 import io.github.touya0.nimbe.data.profiles.ScreenTimeTracker
 import io.github.touya0.nimbe.data.security.ParentPinStore
+import io.github.touya0.nimbe.data.streaming.JustWatchApi
+import io.github.touya0.nimbe.data.streaming.StreamingCatalog
+import io.github.touya0.nimbe.data.streaming.StreamingRules
 import io.github.touya0.nimbe.feature.screensaver.ScreensaverStore
 import io.github.touya0.nimbe.update.UpdateScheduler
 import io.github.touya0.nimbe.update.Updater
@@ -80,6 +83,9 @@ class NimbeApplication : Application(), SingletonImageLoader.Factory {
 
     val library: JellyfinLibrary by lazy { JellyfinLibrary(jellyfin, database.cachedResponses()) }
 
+    /** Catalogue des plateformes de streaming (JustWatch), gardé dans la base pour les coupures d'internet. */
+    val streaming: StreamingCatalog by lazy { StreamingCatalog(JustWatchApi(), database.cachedResponses()) }
+
     /** Travaux courts qui ne doivent pas retarder l'affichage. */
     val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
 
@@ -92,6 +98,8 @@ class NimbeApplication : Application(), SingletonImageLoader.Factory {
         scope.launch { runCatching { Updater(this@NimbeApplication).reconcile() } }
         // Les contenus enregistrés de plus d'un mois ne servent plus : on les retire.
         scope.launch { database.cachedResponses().deleteOlderThan(System.currentTimeMillis() - CACHE_MAX_AGE_MS) }
+        // Les titres ouverts sur les plateformes quittent « Continuer à regarder » au bout d'un mois.
+        scope.launch { database.streamingHistory().deleteOlderThan(System.currentTimeMillis() - StreamingRules.HISTORY_DAYS * DAY_MS) }
         // Le temps d'écran se compte aussi pendant les autres applis : le suivi vit avec le processus.
         ScreenTimeTracker(this, profiles, screenTime, scope, bringToFront = ::bringNimbeToFront).start()
     }
@@ -132,6 +140,7 @@ class NimbeApplication : Application(), SingletonImageLoader.Factory {
     companion object {
         private const val IMAGE_DISK_CACHE_BYTES = 1024L * 1024 * 1024
         private const val CACHE_MAX_AGE_MS = 30L * 24 * 60 * 60 * 1000
+        private const val DAY_MS = 24L * 60 * 60 * 1000
 
         /**
          * Paquet de Nimbe et de son code. La version de développement s'installe sous BASE_PACKAGE.debug :

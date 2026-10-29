@@ -13,6 +13,9 @@ import kotlinx.coroutines.flow.map
 
 private val Context.dataStore by preferencesDataStore(name = "launcher")
 
+/** [codes] vaut null tant que personne n'a choisi ses abonnements : aucune plateforme n'apparaît. */
+data class StreamingChoice(val codes: Set<String>?)
+
 /** [packages] vaut null tant que l'utilisateur n'a jamais personnalisé son dock. */
 data class DockSetting(val packages: List<String>?)
 
@@ -56,6 +59,13 @@ class LauncherPrefs(context: Context) {
         }
     }
 
+    /** Plateformes auxquelles la maison est abonnée (codes JustWatch) ; null tant que personne n'a choisi. */
+    val streamingServices: Flow<StreamingChoice> = store.data.map { prefs -> StreamingChoice(prefs[STREAMING]) }
+
+    suspend fun setStreamingServices(codes: Set<String>?) {
+        store.edit { if (codes == null) it.remove(STREAMING) else it[STREAMING] = codes }
+    }
+
     suspend fun setDock(packages: List<String>) {
         store.edit { it[DOCK] = packages.joinToString(",") }
     }
@@ -72,5 +82,6 @@ class LauncherPrefs(context: Context) {
         val REDUCE_MOTION = booleanPreferencesKey("reduce_motion")
         val KEY_HINTS = booleanPreferencesKey("key_hints")
         val SETUP_DONE = booleanPreferencesKey("setup_done")
+        val STREAMING = stringSetPreferencesKey("streaming_services")
     }
 }

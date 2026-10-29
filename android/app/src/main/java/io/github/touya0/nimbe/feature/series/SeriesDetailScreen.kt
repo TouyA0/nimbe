@@ -42,6 +42,9 @@ import io.github.touya0.nimbe.feature.media.SourceBadge
 import io.github.touya0.nimbe.feature.media.WideCard
 import io.github.touya0.nimbe.feature.media.rememberJellyfin
 import io.github.touya0.nimbe.feature.media.titleStyle
+import io.github.touya0.nimbe.data.streaming.TitleKind
+import io.github.touya0.nimbe.feature.streaming.AlsoOnButtons
+import io.github.touya0.nimbe.feature.streaming.rememberAlsoOn
 import io.github.touya0.nimbe.ui.components.PillButton
 import io.github.touya0.nimbe.ui.components.bleed
 import io.github.touya0.nimbe.ui.theme.Focus
@@ -107,13 +110,18 @@ fun SeriesDetailScreen(
                     series.overview?.let {
                         Text(it, style = MaterialTheme.typography.bodyMedium, color = LuneAttenuee, maxLines = 3, overflow = TextOverflow.Ellipsis, modifier = Modifier.width(540.dp))
                     }
-                    if (next != null) {
-                        val code = next.episodeCode ?: next.name
-                        PillButton(
-                            text = if (next.resumable) "▶  Reprendre $code" else "▶  Regarder $code",
-                            onClick = { onPlay(next, false) },
-                            modifier = Modifier.padding(top = 4.dp).focusRequester(playRequester),
-                        )
+                    val alsoOn = rememberAlsoOn(series, TitleKind.Show)
+                    Row(Modifier.padding(top = 4.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        if (next != null) {
+                            val code = next.episodeCode ?: next.name
+                            PillButton(
+                                text = if (next.resumable) "▶  Reprendre $code" else "▶  Regarder $code",
+                                onClick = { onPlay(next, false) },
+                                modifier = Modifier.focusRequester(playRequester),
+                            )
+                        }
+                        // La même série sur une plateforme du profil.
+                        AlsoOnButtons(alsoOn)
                     }
                 }
 

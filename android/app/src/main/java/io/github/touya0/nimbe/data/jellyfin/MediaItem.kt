@@ -55,6 +55,8 @@ data class MediaItem(
     val backdrop: ImageRef? = null,
     val thumb: ImageRef? = null,
     val seriesPrimary: ImageRef? = null,
+    /** Identifiant TMDB (film ou série), pour retrouver le même titre sur les plateformes de streaming. */
+    val tmdbId: String? = null,
 ) {
     /** Part déjà vue, entre 0 et 1 ; 0 si rien n'a été commencé. */
     val progress: Float
@@ -141,6 +143,7 @@ object JellyfinJson {
             thumb = imageTags?.text("Thumb")?.let { ImageRef(id, it, ImageType.Thumb) }
                 ?: ref(json.text("ParentThumbItemId"), json.text("ParentThumbImageTag"), ImageType.Thumb),
             seriesPrimary = ref(json.text("SeriesId"), json.text("SeriesPrimaryImageTag")),
+            tmdbId = json.optJSONObject("ProviderIds")?.let { ids -> ids.text("Tmdb") ?: ids.text("tmdb") },
         )
     }
 

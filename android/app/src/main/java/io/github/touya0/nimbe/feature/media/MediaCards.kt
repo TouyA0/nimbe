@@ -26,6 +26,11 @@ import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.input.key.type
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.contentDescription
@@ -79,13 +84,17 @@ fun JellyfinImage(ref: ImageRef?, width: Dp?, height: Dp?, modifier: Modifier = 
  * (pour le bandeau du haut), et reprend le focus si [restoreFocus] (retour d'une fiche).
  */
 @Composable
-private fun MediaSurface(
+fun MediaSurface(
     onClick: () -> Unit,
     onFocus: () -> Unit,
     restoreFocus: Boolean,
     onRestored: () -> Unit,
     label: String,
     modifier: Modifier,
+    /** Grisé pendant une coupure de Jellyfin ; les cartes des plateformes passent false. */
+    dimmed: Boolean = LocalJellyfin.current?.down == true,
+    /** OK maintenu ou touche Menu : options de la carte ; reçoit de quoi lui rendre le focus. */
+    onLongClick: ((FocusRequester) -> Unit)? = null,
     content: @Composable () -> Unit,
 ) {
     var focused by remember { mutableStateOf(false) }
@@ -98,8 +107,17 @@ private fun MediaSurface(
     }
     Surface(
         onClick = onClick,
+        onLongClick = onLongClick?.let { { it(requester) } },
         modifier = modifier
             .focusRequester(requester)
+            .onPreviewKeyEvent { event ->
+                if (onLongClick != null && event.key == Key.Menu && event.type == KeyEventType.KeyUp) {
+                    onLongClick(requester)
+                    true
+                } else {
+                    false
+                }
+            }
             .onFocusChanged {
                 focused = it.isFocused
                 if (it.isFocused) onFocus()
@@ -117,8 +135,7 @@ private fun MediaSurface(
         scale = ClickableSurfaceDefaults.scale(focusedScale = 1f),
     ) {
         // Pendant une coupure, les contenus enregistrés restent visibles mais grisés.
-        val down = LocalJellyfin.current?.down == true
-        Box(Modifier.fillMaxSize().alpha(if (down) 0.4f else 1f)) { content() }
+        Box(Modifier.fillMaxSize().alpha(if (dimmed) 0.4f else 1f)) { content() }
     }
 }
 

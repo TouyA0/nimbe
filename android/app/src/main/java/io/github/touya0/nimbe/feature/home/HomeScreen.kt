@@ -39,6 +39,15 @@ import io.github.touya0.nimbe.feature.apps.ActionTile
 import io.github.touya0.nimbe.feature.apps.AppTile
 import io.github.touya0.nimbe.feature.apps.InstalledApp
 import io.github.touya0.nimbe.feature.media.Backdrop
+import io.github.touya0.nimbe.feature.media.CatalogFocus
+import io.github.touya0.nimbe.feature.media.ContinueCard
+import io.github.touya0.nimbe.feature.media.ContinueEntry
+import io.github.touya0.nimbe.feature.media.focus
+import io.github.touya0.nimbe.feature.media.id
+import io.github.touya0.nimbe.feature.streaming.LocalStreaming
+import io.github.touya0.nimbe.feature.streaming.StreamingBackdrop
+import io.github.touya0.nimbe.feature.streaming.StreamingHero
+import androidx.compose.runtime.LaunchedEffect
 import io.github.touya0.nimbe.feature.media.Hero
 import io.github.touya0.nimbe.feature.media.JellyfinUi
 import io.github.touya0.nimbe.feature.media.Load
@@ -47,7 +56,6 @@ import io.github.touya0.nimbe.feature.media.unreachableDetail
 import io.github.touya0.nimbe.feature.media.MediaText
 import io.github.touya0.nimbe.feature.media.PosterCard
 import io.github.touya0.nimbe.feature.media.ScrollToRestore
-import io.github.touya0.nimbe.feature.media.WideCard
 import io.github.touya0.nimbe.feature.media.rememberJellyfin
 import io.github.touya0.nimbe.ui.components.KeyHints
 import io.github.touya0.nimbe.ui.components.PillButton
@@ -63,12 +71,10 @@ import java.time.format.DateTimeFormatter
 /** Accueil d'un profil Invité ou Enfant, en haut de l'écran tant qu'aucune carte n'a le focus. */
 data class HomeWelcome(val kicker: String, val title: String, val text: String)
 
-/** Ce que montre le haut de l'accueil : un contenu et son accroche (« REPRENDRE », « AJOUTÉ HIER »). */
-private data class HeroPick(val item: MediaItem, val kicker: String?)
-
 /**
  * Accueil : en haut le contenu focalisé, puis les rangées choisies par le profil, dans son ordre
  * ([rows] : Continuer à regarder, Mes applis, Ajouté récemment sur Jellyfin). Sans Jellyfin, il reste les applis.
+ * « Continuer à regarder » reprend aussi les titres ouverts sur les plateformes (leur carte ouvre la fiche).
  * [dock] vaut null pendant le chargement. [restoreFocusId] : la carte à refocaliser au retour d'une fiche.
  * Une carte de « Continuer à regarder » lance la lecture ; une affiche ouvre la fiche.
  */
@@ -92,28 +98,42 @@ fun HomeScreen(
     modifier: Modifier = Modifier,
 ) {
     val jellyfin = LocalJellyfin.current
+    val streaming = LocalStreaming.current
     val continueRow = rememberJellyfin("continue") { continueWatching(it) }
     val latestRow = rememberJellyfin("latest") { latest(it) }
     // Une rangée masquée ne nourrit pas non plus le haut de l'écran.
-    val resume = if (HomeRow.Continue in rows) continueRow.value.orEmpty() else emptyList()
+    // « Continuer à regarder » mêle les reprises Jellyfin et les titres ouverts sur les plateformes.
+    val resume = if (HomeRow.Continue in rows) {
+        ContinueEntry.merge(continueRow.value.orEmpty(), streaming?.history.orEmpty(), sameAs = { streaming?.inJellyfin(it.toTitle()) })
+    } else {
+        emptyList()
+    }
     val latest = if (HomeRow.Latest in rows) latestRow.value.orEmpty() else emptyList()
 
-    var focusedPick by remember { mutableStateOf<HeroPick?>(null) }
+    var focusedPick by remember { mutableStateOf<CatalogFocus?>(null) }
     // Avant tout focus sur une carte : la reprise la plus récente, sinon le dernier ajout.
     // Un contenu qui a quitté les rangées (fini pendant la lecture, par exemple) ne reste pas en haut.
-    val hero = focusedPick?.takeIf { pick -> (resume + latest).any { it.id == pick.item.id } }
-        ?: resume.firstOrNull()?.let { HeroPick(it, "REPRENDRE LÀ OÙ TU T'ES ARRÊTÉ") }
-        ?: latest.firstOrNull()?.let { HeroPick(it, MediaText.added(it.dateCreated)) }
+    val shownIds = resume.map { it.id } + latest.map { it.id }
+    val hero = focusedPick?.takeIf { pick -> pick.id in shownIds }
+        ?: resume.firstOrNull()?.focus(streaming)
+        ?: latest.firstOrNull()?.let { CatalogFocus.Jellyfin(it, MediaText.added(it.dateCreated)) }
 
     Box(modifier.fillMaxSize()) {
-        if (!connectivity.offline && jellyfin?.down != true) Backdrop(hero?.item?.backdrop)
+        if (!connectivity.offline && jellyfin?.down != true) {
+            when (hero) {
+                is CatalogFocus.Jellyfin -> Backdrop(hero.item.backdrop)
+                is CatalogFocus.Streaming -> StreamingBackdrop(hero.title.backdrop)
+                null -> Unit
+            }
+        }
         Column(Modifier.fillMaxSize().padding(horizontal = 48.dp)) {
             Box(Modifier.height(176.dp), contentAlignment = Alignment.TopStart) {
                 when {
                     connectivity.offline -> OfflineBanner(connectivity, onNetworkSettings)
                     jellyfin?.down == true -> ServerDownBanner(jellyfin)
                     welcome != null && focusedPick == null -> Welcome(welcome)
-                    hero != null -> Hero(hero.item, hero.kicker, overviewLines = 2)
+                    hero is CatalogFocus.Jellyfin -> Hero(hero.item, hero.kicker, overviewLines = 2)
+                    hero is CatalogFocus.Streaming -> StreamingHero(hero.title, hero.kicker, overviewLines = 2)
                     else -> Column {
                         Text("Bienvenue sur Nimbe", style = MaterialTheme.typography.displaySmall)
                         Text(
@@ -134,21 +154,22 @@ fun HomeScreen(
                                 if (resume.isNotEmpty()) {
                                     RowTitle("Continuer à regarder")
                                     val state = rememberLazyListState()
-                                    ScrollToRestore(state, resume, restoreFocusId)
+                                    LaunchedEffect(restoreFocusId, resume) {
+                                        val index = resume.indexOfFirst { it.id == restoreFocusId }
+                                        if (index >= 0) state.scrollToItem(index)
+                                    }
                                     LazyRow(
                                         state = state,
                                         modifier = Modifier.bleed(48.dp),
                                         contentPadding = PaddingValues(vertical = 14.dp, horizontal = 48.dp),
                                         horizontalArrangement = Arrangement.spacedBy(16.dp),
                                     ) {
-                                        items(resume, key = { "continue:${it.id}" }) { item ->
-                                            WideCard(
-                                                item = item,
-                                                label = MediaText.cardLabel(item),
-                                                onClick = { onPlayItem(item) },
-                                                width = 196.dp,
-                                                onFocus = { focusedPick = HeroPick(item, "REPRENDRE LÀ OÙ TU T'ES ARRÊTÉ") },
-                                                restoreFocus = item.id == restoreFocusId,
+                                        items(resume, key = { "continue:${it.key}" }) { entry ->
+                                            ContinueCard(
+                                                entry = entry,
+                                                onPlayItem = onPlayItem,
+                                                onFocus = { focusedPick = it },
+                                                restoreFocusId = restoreFocusId,
                                                 onRestored = onRestored,
                                             )
                                         }
@@ -208,7 +229,7 @@ fun HomeScreen(
                                                 item = item,
                                                 onClick = { onOpenItem(item) },
                                                 width = 104.dp,
-                                                onFocus = { focusedPick = HeroPick(item, MediaText.added(item.dateCreated)) },
+                                                onFocus = { focusedPick = CatalogFocus.Jellyfin(item, MediaText.added(item.dateCreated)) },
                                                 restoreFocus = item.id == restoreFocusId && resume.none { it.id == restoreFocusId },
                                                 onRestored = onRestored,
                                             )

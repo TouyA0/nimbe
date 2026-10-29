@@ -46,6 +46,7 @@ import androidx.tv.material3.ClickableSurfaceDefaults
 import androidx.tv.material3.MaterialTheme
 import androidx.tv.material3.Surface
 import androidx.tv.material3.Text
+import io.github.touya0.nimbe.core.storage.StreamingChoice
 import io.github.touya0.nimbe.data.homeassistant.HomeAssistantAccount
 import io.github.touya0.nimbe.data.homeassistant.HomeAssistantLink
 import io.github.touya0.nimbe.data.jellyfin.JellyfinAccount
@@ -122,6 +123,7 @@ enum class SettingsSection(val label: String) {
     Home("Accueil"),
     Tabs("Onglets"),
     Gallery("Galerie"),
+    Streaming("Plateformes de streaming"),
     Profiles("Profils"),
     Display("Affichage et accessibilité"),
     Screensaver("Écran de veille"),
@@ -171,6 +173,9 @@ fun SettingsScreen(
     onOpenUpdate: () -> Unit,
     /** Rouvre l'assistant du premier lancement ; les services reliés le restent. */
     onRestartSetup: () -> Unit,
+    /** Abonnements aux plateformes de streaming ; null pendant la lecture du réglage. */
+    streamingChoice: StreamingChoice?,
+    onStreamingChange: (Set<String>?) -> Unit,
     onClose: () -> Unit,
 ) {
     val updateState by updates.state.collectAsStateWithLifecycle(initialValue = UpdateState())
@@ -375,6 +380,11 @@ fun SettingsScreen(
                     nextcloudLinks,
                     onConnect = { profilesState.active?.let { nextcloudConnectFor = it.id } },
                     onFolders = { profilesState.active?.let { galleryFoldersFor = it.id } },
+                )
+                SettingsSection.Streaming -> StreamingPage(
+                    streamingChoice,
+                    installedApps?.map { it.packageName }?.toSet(),
+                    onStreamingChange,
                 )
                 SettingsSection.Profiles -> ProfilesPage(
                     profiles,

@@ -95,6 +95,8 @@ class MainActivity : ComponentActivity() {
                         parentPin = (application as NimbeApplication).parentPin,
                         layouts = (application as NimbeApplication).layouts,
                         screenTime = (application as NimbeApplication).screenTime,
+                        streaming = (application as NimbeApplication).streaming,
+                        streamingHistory = database.streamingHistory(),
                         homePresses = homePresses,
                         screenOn = screenOn,
                     )

@@ -49,6 +49,9 @@ import io.github.touya0.nimbe.feature.media.MetaLine
 import io.github.touya0.nimbe.feature.media.SourceBadge
 import io.github.touya0.nimbe.feature.media.rememberJellyfin
 import io.github.touya0.nimbe.feature.media.titleStyle
+import io.github.touya0.nimbe.data.streaming.TitleKind
+import io.github.touya0.nimbe.feature.streaming.AlsoOnButtons
+import io.github.touya0.nimbe.feature.streaming.rememberAlsoOn
 import io.github.touya0.nimbe.ui.components.PillButton
 import io.github.touya0.nimbe.ui.components.bleed
 import io.github.touya0.nimbe.ui.components.focusRing
@@ -71,6 +74,7 @@ fun FilmDetailScreen(item: MediaItem, onPlay: (MediaItem, Boolean) -> Unit, onCl
     val loader = rememberJellyfin("detail:${item.id}", item.id) { detail(it, item.id) }
     val detail = loader.value
     val film = detail?.item ?: item
+    val alsoOn = rememberAlsoOn(film, TitleKind.Movie)
     val playRequester = remember { FocusRequester() }
     LaunchedEffect(Unit) { runCatching { playRequester.requestFocus() } }
 
@@ -101,6 +105,8 @@ fun FilmDetailScreen(item: MediaItem, onPlay: (MediaItem, Boolean) -> Unit, onCl
                             modifier = Modifier.focusRequester(playRequester),
                         )
                         if (resumable) PillButton("Depuis le début", onClick = { onPlay(film, true) })
+                        // Le même film sur une plateforme du profil : utile quand le Pi est coupé.
+                        AlsoOnButtons(alsoOn)
                     }
                 }
             }

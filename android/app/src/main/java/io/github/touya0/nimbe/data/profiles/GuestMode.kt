@@ -16,6 +16,8 @@ object GuestMode {
     val FamilyAccountApps = setOf(
         "com.netflix.ninja",
         "com.disney.disneyplus",
+        "com.wbd.stream",
+        "com.apple.atve.androidtv.appletv",
         "com.amazon.amazonvideo.livingroom",
         "com.canal.android.canal",
         "com.spotify.tv.android",

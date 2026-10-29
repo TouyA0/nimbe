@@ -138,7 +138,7 @@ fun TextSizeRow(value: TextSize, onChange: (TextSize) -> Unit) {
 }
 
 @Composable
-private fun Toggle(checked: Boolean) {
+internal fun Toggle(checked: Boolean) {
     Box(
         modifier = Modifier
             .width(44.dp)
