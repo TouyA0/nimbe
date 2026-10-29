@@ -19,10 +19,13 @@ import io.github.touya0.nimbe.feature.films.FilmsScreen
 import io.github.touya0.nimbe.feature.media.JellyfinUi
 import io.github.touya0.nimbe.feature.media.LocalJellyfin
 import io.github.touya0.nimbe.feature.media.MediaDestination
+import io.github.touya0.nimbe.data.layout.LayoutRules
 import io.github.touya0.nimbe.data.layout.LayoutStore
 import io.github.touya0.nimbe.data.layout.ProfileLayout
 import io.github.touya0.nimbe.data.profiles.ProfilesState
+import io.github.touya0.nimbe.data.profiles.GuestMode
 import io.github.touya0.nimbe.data.profiles.ProfilesStore
+import io.github.touya0.nimbe.data.profiles.isGuest
 import io.github.touya0.nimbe.data.security.ParentPinStore
 import io.github.touya0.nimbe.feature.onboarding.FirstLaunchScreen
 import io.github.touya0.nimbe.feature.onboarding.SetupStep
@@ -79,8 +82,10 @@ import io.github.touya0.nimbe.feature.apps.AppLauncher
 import io.github.touya0.nimbe.feature.apps.AppsRepository
 import io.github.touya0.nimbe.feature.apps.AppsScreen
 import io.github.touya0.nimbe.feature.apps.Dock
+import io.github.touya0.nimbe.feature.apps.InstalledApp
 import io.github.touya0.nimbe.feature.apps.Recents
 import io.github.touya0.nimbe.feature.apps.appMenu
+import io.github.touya0.nimbe.feature.apps.guestAppMenu
 import io.github.touya0.nimbe.feature.apps.hiddenAppsMenu
 import io.github.touya0.nimbe.feature.apps.rememberInstalledApps
 import io.github.touya0.nimbe.feature.home.ComingSoonScreen
@@ -265,10 +270,14 @@ private fun NimbeShell(
     // null tant que les réglages ne sont pas lus : on n'affiche pas un dock par défaut qui changerait aussitôt.
     val savedDock by prefs.dock.collectAsStateWithLifecycle(initialValue = null)
     val hidden by prefs.hidden.collectAsStateWithLifecycle(initialValue = emptySet())
-    val visibleApps = apps?.filterNot { it.packageName in hidden }
+    // Profil Invité : rien n'est enregistré, pas de réglages, et les applis des comptes de la famille sont masquées.
+    val guest = profilesState.active.isGuest
+    val shownHidden = profilesState.active?.takeIf { guest }?.let { hidden + GuestMode.hiddenApps(it) } ?: hidden
+    val openApp: (InstalledApp) -> Unit = { launcher.open(it, record = !guest) }
+    val visibleApps = apps?.filterNot { it.packageName in shownHidden }
     val recentLaunches by remember(launches) { launches.recent(limit = 20) }.collectAsStateWithLifecycle(initialValue = emptyList())
-    val recents = apps?.let { Recents.resolve(recentLaunches.map { it.packageName }, it, hidden) }.orEmpty()
-    val dock = if (apps == null || savedDock == null) null else Dock.resolve(savedDock?.packages, apps, hidden)
+    val recents = if (guest) emptyList() else apps?.let { Recents.resolve(recentLaunches.map { it.packageName }, it, hidden) }.orEmpty()
+    val dock = if (apps == null || savedDock == null) null else Dock.resolve(savedDock?.packages, apps, shownHidden)
     // Toute modification part du dock affiché, pour que le dock par défaut devienne le point de départ.
     val dockPackages = dock.orEmpty().map { it.packageName }
 
@@ -277,7 +286,7 @@ private fun NimbeShell(
     // Mise en page du profil actif : celle par défaut le temps de la lire.
     val activeId = profilesState.active?.id.orEmpty()
     val savedLayout by remember(activeId) { layouts.layout(activeId) }.collectAsStateWithLifecycle(initialValue = null)
-    val layout = savedLayout ?: ProfileLayout.Default
+    val layout = if (guest) LayoutRules.normalize(GuestMode.Layout) else savedLayout ?: ProfileLayout.Default
     val visibleTabs = layout.visibleTabs.mapNotNull(Tab::fromKey)
     fun saveLayout(changed: ProfileLayout) {
         scope.launch { layouts.save(activeId, changed) }
@@ -301,7 +310,7 @@ private fun NimbeShell(
         focusTab(tab)
     }
     val actions = AppActions(
-        open = launcher::open,
+        open = openApp,
         addToDock = { app -> scope.launch { prefs.setDock(Dock.add(dockPackages, app.packageName)) } },
         removeFromDock = { app ->
             if (tab == Tab.Home) leaveTile()
@@ -356,9 +365,11 @@ private fun NimbeShell(
                 scope.launch { profiles.setActive(profile.id) }
                 whoOpen = false
             },
-            onManage = {
-                whoOpen = false
-                openSettings(SettingsSection.Profiles)
+            onManage = if (guest) null else {
+                {
+                    whoOpen = false
+                    openSettings(SettingsSection.Profiles)
+                }
             },
             onClose = { whoOpen = false },
         )
@@ -424,6 +435,7 @@ private fun NimbeShell(
             onLayoutChange = ::saveLayout,
             onLayoutReset = { scope.launch { layouts.remove(activeId) } },
             onProfileDeleted = { id -> scope.launch { layouts.remove(id) } },
+            installedApps = apps,
             onEditHome = {
                 settingsOpen = false
                 returnToSettingsButton = false
@@ -484,6 +496,7 @@ private fun NimbeShell(
                 request = request,
                 account = jellyfin,
                 reportScope = (context.applicationContext as NimbeApplication).scope,
+                reportToServer = !guest,
                 untouchedBefore = untouchedEpisodes,
                 sleepTimer = sleepTimer,
                 onSleepTimerChange = { sleepTimer = it },
@@ -552,9 +565,11 @@ private fun NimbeShell(
                 jellyfinDown = LocalJellyfin.current?.down == true,
                 status = status,
                 onStatus = { statusOpen = true },
-                onSettings = {
-                    returnToSettingsButton = true
-                    openSettings(SettingsSection.Display)
+                onSettings = if (guest) null else {
+                    {
+                        returnToSettingsButton = true
+                        openSettings(SettingsSection.Display)
+                    }
                 },
                 settingsRequester = settingsRequester,
                 profile = profilesState.active,
@@ -576,9 +591,10 @@ private fun NimbeShell(
                 when (tab) {
                     Tab.Home -> HomeScreen(
                         rows = layout.visibleRows,
+                        guest = guest,
                         dock = dock,
-                        onOpen = launcher::open,
-                        onMenu = { app, back -> menu.open(appMenu(app, dockPackages, actions, back)) },
+                        onOpen = openApp,
+                        onMenu = { app, back -> menu.open(if (guest) guestAppMenu(app, openApp, back) else appMenu(app, dockPackages, actions, back)) },
                         onAllApps = { focusTab(Tab.Apps) },
                         connectivity = connectivity,
                         onNetworkSettings = launcher::openNetworkSettings,
@@ -590,9 +606,10 @@ private fun NimbeShell(
                     Tab.Apps -> AppsScreen(
                         apps = visibleApps,
                         recents = recents,
-                        hiddenCount = apps?.count { it.packageName in hidden } ?: 0,
-                        onOpen = launcher::open,
-                        onMenu = { app, back -> menu.open(appMenu(app, dockPackages, actions, back)) },
+                        // L'invité ne voit pas la tuile « Masquées » : il ne peut rien remettre.
+                        hiddenCount = if (guest) 0 else apps?.count { it.packageName in hidden } ?: 0,
+                        onOpen = openApp,
+                        onMenu = { app, back -> menu.open(if (guest) guestAppMenu(app, openApp, back) else appMenu(app, dockPackages, actions, back)) },
                         offline = connectivity.offline,
                         onShowHidden = { back ->
                             val hiddenApps = apps.orEmpty().filter { it.packageName in hidden }

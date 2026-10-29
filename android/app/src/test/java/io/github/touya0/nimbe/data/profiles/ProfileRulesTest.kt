@@ -1,5 +1,7 @@
 package io.github.touya0.nimbe.data.profiles
 
+import io.github.touya0.nimbe.data.layout.HomeRow
+import io.github.touya0.nimbe.data.layout.LayoutRules
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
@@ -75,5 +77,26 @@ class ProfileRulesTest {
         assertEquals(emptyList<Profile>(), ProfileCodec.decode("pas du json"))
         val mixed = """[{"id":"q","name":"Quentin","color":9,"kind":"adult"},{"id":"x","name":"X","kind":"martien"},{"name":"sans id"}]"""
         assertEquals(listOf(quentin.copy(color = 3)), ProfileCodec.decode(mixed))
+    }
+
+    @Test
+    fun `applis masquées de l'invité gardées en JSON`() {
+        val guest = invite.copy(hiddenApps = setOf("com.netflix.ninja", "org.example"))
+        assertEquals(listOf(guest), ProfileCodec.decode(ProfileCodec.encode(listOf(guest))))
+        // Sans choix enregistré, ce sont les applis des comptes de la famille.
+        assertEquals(null, ProfileCodec.decode(ProfileCodec.encode(listOf(invite))).single().hiddenApps)
+        assertEquals(GuestMode.FamilyAccountApps, GuestMode.hiddenApps(invite))
+        assertEquals(emptySet<String>(), GuestMode.hiddenApps(invite.copy(hiddenApps = emptySet())))
+    }
+
+    @Test
+    fun `l'invité n'a ni reprise, ni musique, ni galerie`() {
+        val layout = LayoutRules.normalize(GuestMode.Layout)
+        assertFalse(HomeRow.Continue in layout.visibleRows)
+        assertFalse("music" in layout.visibleTabs)
+        assertFalse("gallery" in layout.visibleTabs)
+        assertTrue("movies" in layout.visibleTabs)
+        assertTrue(invite.isGuest)
+        assertFalse(quentin.isGuest)
     }
 }

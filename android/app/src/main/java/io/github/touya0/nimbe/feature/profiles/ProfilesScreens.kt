@@ -125,7 +125,7 @@ private val FocusRoom = 16.dp
  * Retour garde le profil actuel.
  */
 @Composable
-fun WhoIsWatchingScreen(state: ProfilesState, onPick: (Profile) -> Unit, onManage: () -> Unit, onClose: () -> Unit) {
+fun WhoIsWatchingScreen(state: ProfilesState, onPick: (Profile) -> Unit, onManage: (() -> Unit)?, onClose: () -> Unit) {
     BackHandler(onBack = onClose)
     val activeFocus = remember { FocusRequester() }
     LaunchedEffect(Unit) { runCatching { activeFocus.requestFocus() } }
@@ -152,7 +152,8 @@ fun WhoIsWatchingScreen(state: ProfilesState, onPick: (Profile) -> Unit, onManag
         }
         Spacer(Modifier.height(40.dp))
         Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            PillButton("Gérer les profils", onClick = onManage)
+            // Pas depuis le profil Invité : il n'a pas accès aux réglages.
+            onManage?.let { PillButton("Gérer les profils", onClick = it) }
             PillButton("Retour à l'accueil", onClick = onClose)
         }
     }

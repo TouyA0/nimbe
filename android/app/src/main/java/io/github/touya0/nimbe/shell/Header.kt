@@ -91,7 +91,8 @@ fun Header(
     jellyfinDown: Boolean,
     status: ServerVerdict,
     onStatus: () -> Unit,
-    onSettings: () -> Unit,
+    /** null pour le profil Invité : pas de roue crantée, pas de réglages. */
+    onSettings: (() -> Unit)?,
     settingsRequester: FocusRequester,
     profile: Profile?,
     onProfile: () -> Unit,
@@ -116,7 +117,7 @@ fun Header(
         Spacer(Modifier.weight(1f))
         StatusPill(status, onStatus)
         Spacer(Modifier.width(12.dp))
-        SettingsButton(onSettings, Modifier.focusRequester(settingsRequester))
+        onSettings?.let { SettingsButton(it, Modifier.focusRequester(settingsRequester)) }
         profile?.let {
             Spacer(Modifier.width(12.dp))
             ProfileButton(it, onProfile)

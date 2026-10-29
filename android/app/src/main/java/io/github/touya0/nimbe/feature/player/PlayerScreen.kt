@@ -109,6 +109,8 @@ fun PlayerScreen(
     request: PlayRequest,
     account: JellyfinAccount,
     reportScope: CoroutineScope,
+    /** Faux pour le profil Invité : la position n'est pas envoyée à Jellyfin. */
+    reportToServer: Boolean,
     untouchedBefore: Int,
     sleepTimer: SleepTimer?,
     onSleepTimerChange: (SleepTimer?) -> Unit,
@@ -116,7 +118,7 @@ fun PlayerScreen(
     onClose: () -> Unit,
 ) {
     val context = LocalContext.current
-    val controller = remember { PlayerController(context.applicationContext, account, request, reportScope) }
+    val controller = remember { PlayerController(context.applicationContext, account, request, reportScope, reportToServer) }
     val library = LocalJellyfin.current?.library
     val scope = rememberCoroutineScope()
     var closing by remember { mutableStateOf(false) }

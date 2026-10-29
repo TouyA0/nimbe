@@ -47,6 +47,7 @@ fun tileColor(packageName: String): Color = TileColors[Math.floorMod(packageName
  * Tuile d'une appli. [onMenu] s'ouvre avec la touche Menu ou un appui long sur OK
  * (la télécommande Xiaomi n'a pas de touche Menu) ; il reçoit de quoi rendre le focus à la tuile.
  * [offline] : l'appli a besoin d'internet et il n'y en a plus ; elle reste ouvrable mais grisée.
+ * [dimmedNote] : grisée pour une autre raison, avec ce mot sous son nom (« Masquée »).
  */
 @Composable
 fun AppTile(
@@ -55,13 +56,14 @@ fun AppTile(
     modifier: Modifier = Modifier,
     onMenu: ((FocusRequester) -> Unit)? = null,
     offline: Boolean = false,
+    dimmedNote: String? = null,
 ) {
     TileSurface(
         color = tileColor(app.packageName),
         onClick = onClick,
         onMenu = onMenu,
         modifier = modifier,
-        dimmed = offline,
+        dimmed = offline || dimmedNote != null,
     ) {
         val badge = Modifier.size(36.dp).clip(RoundedCornerShape(8.dp))
         if (app.icon != null) {
@@ -79,8 +81,9 @@ fun AppTile(
                 overflow = TextOverflow.Ellipsis,
             )
             // Android ne connaît la catégorie que si l'appli la déclare : on n'affiche pas « Autres ».
-            if (offline) {
-                Text(text = "Hors ligne", style = MaterialTheme.typography.labelMedium, color = LuneAttenuee)
+            val note = dimmedNote ?: "Hors ligne".takeIf { offline }
+            if (note != null) {
+                Text(text = note, style = MaterialTheme.typography.labelMedium, color = LuneAttenuee)
             } else if (app.category != AppCategory.Other) {
                 Text(text = app.category.label, style = MaterialTheme.typography.labelMedium, color = LuneAttenuee)
             }

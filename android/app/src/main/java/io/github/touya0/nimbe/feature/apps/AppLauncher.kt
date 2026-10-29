@@ -12,7 +12,7 @@ import kotlinx.coroutines.launch
 
 /**
  * Ce qui sort du launcher vers Android : ouvrir une appli, ses infos, sa désinstallation, les réglages.
- * Chaque ouverture réussie est notée pour « Récemment utilisées ».
+ * Chaque ouverture réussie est notée pour « Récemment utilisées », sauf avec [record] à false (profil Invité).
  */
 class AppLauncher(
     private val context: Context,
@@ -21,9 +21,9 @@ class AppLauncher(
     private val scope: CoroutineScope,
 ) {
 
-    fun open(app: InstalledApp) {
+    fun open(app: InstalledApp, record: Boolean = true) {
         if (tryStart(repository.launchIntent(app.packageName))) {
-            scope.launch { launches.recordLaunch(app.packageName, System.currentTimeMillis()) }
+            if (record) scope.launch { launches.recordLaunch(app.packageName, System.currentTimeMillis()) }
         } else {
             Toast.makeText(context, "Impossible d'ouvrir ${app.label}", Toast.LENGTH_SHORT).show()
         }

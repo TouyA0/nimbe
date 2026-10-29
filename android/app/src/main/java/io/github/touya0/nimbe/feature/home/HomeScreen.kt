@@ -72,6 +72,8 @@ private data class HeroPick(val item: MediaItem, val kicker: String?)
 @Composable
 fun HomeScreen(
     rows: List<HomeRow>,
+    /** Profil Invité : le haut de l'écran l'accueille et dit ce qui est ouvert, tant qu'aucune carte n'a le focus. */
+    guest: Boolean,
     dock: List<InstalledApp>?,
     onOpen: (InstalledApp) -> Unit,
     onMenu: (InstalledApp, FocusRequester) -> Unit,
@@ -105,6 +107,7 @@ fun HomeScreen(
                 when {
                     connectivity.offline -> OfflineBanner(connectivity, onNetworkSettings)
                     jellyfin?.down == true -> ServerDownBanner(jellyfin)
+                    guest && focusedPick == null -> GuestWelcome()
                     hero != null -> Hero(hero.item, hero.kicker, overviewLines = 2)
                     else -> Column {
                         Text("Bienvenue sur Nimbe", style = MaterialTheme.typography.displaySmall)
@@ -216,6 +219,21 @@ fun HomeScreen(
 
             KeyHints("OK" to "ouvrir", "OK maintenu" to "options", modifier = Modifier.padding(vertical = 16.dp))
         }
+    }
+}
+
+@Composable
+private fun GuestWelcome() {
+    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        Text("PROFIL INVITÉ", style = MaterialTheme.typography.titleSmall, color = Focus)
+        Text("Bienvenue, fais comme chez toi", style = MaterialTheme.typography.displaySmall)
+        Text(
+            "Les films de la maison et la TV sont ouverts. Rien n'est enregistré : pas d'historique, " +
+                "pas de galerie, pas de compte personnel.",
+            style = MaterialTheme.typography.bodyLarge,
+            color = LuneAttenuee,
+            modifier = Modifier.width(620.dp),
+        )
     }
 }
 

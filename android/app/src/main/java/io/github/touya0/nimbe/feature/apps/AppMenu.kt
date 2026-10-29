@@ -34,6 +34,14 @@ fun appMenu(app: InstalledApp, dock: List<String>, actions: AppActions, returnFo
     return MenuRequest(subject = app.label, options = options, returnFocus = returnFocus)
 }
 
+/** Menu d'une appli pour l'invité : l'ouvrir, sans rien changer à « Mes applis » de la famille. */
+fun guestAppMenu(app: InstalledApp, open: (InstalledApp) -> Unit, returnFocus: FocusRequester?): MenuRequest =
+    MenuRequest(
+        subject = app.label,
+        options = listOf(MenuOption("▶", "Ouvrir", "Profil Invité : « Mes applis » ne se modifie pas") { open(app) }),
+        returnFocus = returnFocus,
+    )
+
 /** Menu des applis masquées, pour les remettre. */
 fun hiddenAppsMenu(hidden: List<InstalledApp>, unhide: (InstalledApp) -> Unit, returnFocus: FocusRequester?): MenuRequest =
     MenuRequest(

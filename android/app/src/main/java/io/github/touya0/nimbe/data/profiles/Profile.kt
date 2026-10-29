@@ -16,8 +16,11 @@ enum class ProfileKind(val key: String, val label: String, val summary: String) 
     }
 }
 
-/** [color] : indice dans la palette des profils, pour que l'avatar garde sa couleur quel que soit le thème. */
-data class Profile(val id: String, val name: String, val color: Int, val kind: ProfileKind) {
+/**
+ * [color] : indice dans la palette des profils, pour que l'avatar garde sa couleur quel que soit le thème.
+ * [hiddenApps] : pour l'invité, les applis masquées (null : celles des comptes de la famille, par défaut).
+ */
+data class Profile(val id: String, val name: String, val color: Int, val kind: ProfileKind, val hiddenApps: Set<String>? = null) {
     val initial: String get() = name.trim().firstOrNull()?.uppercase() ?: "?"
 }
 
@@ -98,7 +101,8 @@ object ProfileCodec {
                     .put("id", profile.id)
                     .put("name", profile.name)
                     .put("color", profile.color)
-                    .put("kind", profile.kind.key),
+                    .put("kind", profile.kind.key)
+                    .apply { profile.hiddenApps?.let { put("hiddenApps", JSONArray(it.sorted())) } },
             )
         }
     }.toString()
@@ -117,6 +121,7 @@ object ProfileCodec {
                 name = item.optString("name").ifEmpty { return@mapNotNull null },
                 color = item.optInt("color", 0).mod(ProfileRules.COLORS),
                 kind = ProfileKind.fromKey(item.optString("kind")) ?: return@mapNotNull null,
+                hiddenApps = item.optJSONArray("hiddenApps")?.let { apps -> (0 until apps.length()).mapNotNull { apps.optString(it).ifEmpty { null } }.toSet() },
             )
         }
     }

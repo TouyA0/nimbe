@@ -43,7 +43,8 @@ sealed interface PlayerStatus {
 
 /**
  * Lecture d'un contenu Jellyfin dans Nimbe. Ouvre le flux choisi par le serveur, envoie la position
- * au départ, toutes les 10 s, à chaque pause ou saut, et à l'arrêt.
+ * au départ, toutes les 10 s, à chaque pause ou saut, et à l'arrêt. Avec [reportToServer] à false
+ * (profil Invité), rien n'est envoyé : la reprise de lecture de la famille n'est pas touchée.
  * Toutes les méthodes s'appellent depuis le fil principal ; seuls les rapports partent sur [reportScope],
  * qui survit à l'écran : le rapport d'arrêt doit arriver même si l'on quitte aussitôt.
  */
@@ -54,6 +55,7 @@ class PlayerController(
     private val account: JellyfinAccount,
     val request: PlayRequest,
     private val reportScope: CoroutineScope,
+    private val reportToServer: Boolean = true,
 ) {
     var player by mutableStateOf<ExoPlayer?>(null)
         private set
@@ -260,6 +262,7 @@ class PlayerController(
 
     /** Un rapport qui échoue (Pi coupé) n'interrompt pas la lecture : le suivant rattrapera. */
     private fun report(block: suspend JellyfinPlayback.(JellyfinAuth) -> Unit): Job? {
+        if (!reportToServer) return null
         val auth = auth ?: return null
         return reportScope.launch {
             try {

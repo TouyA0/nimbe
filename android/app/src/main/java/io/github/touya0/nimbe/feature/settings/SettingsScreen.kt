@@ -53,6 +53,7 @@ import io.github.touya0.nimbe.data.jellyfin.JellyfinLink
 import io.github.touya0.nimbe.data.layout.LayoutRules
 import io.github.touya0.nimbe.data.layout.ProfileLayout
 import io.github.touya0.nimbe.data.layout.TabKeys
+import io.github.touya0.nimbe.data.profiles.GuestMode
 import io.github.touya0.nimbe.data.profiles.ProfileKind
 import io.github.touya0.nimbe.data.profiles.ProfilesState
 import io.github.touya0.nimbe.data.profiles.ProfilesStore
@@ -70,6 +71,8 @@ import io.github.touya0.nimbe.feature.layout.tabLabel
 import io.github.touya0.nimbe.feature.onboarding.JellyfinConnectScreen
 import io.github.touya0.nimbe.feature.screensaver.ScreensaverSetting
 import io.github.touya0.nimbe.feature.onboarding.ServiceInitial
+import io.github.touya0.nimbe.feature.apps.InstalledApp
+import io.github.touya0.nimbe.feature.profiles.GuestAppsScreen
 import io.github.touya0.nimbe.feature.profiles.ProfilesManager
 import io.github.touya0.nimbe.feature.security.PinChange
 import io.github.touya0.nimbe.feature.security.PinChangeScreen
@@ -138,6 +141,8 @@ fun SettingsScreen(
     onLayoutChange: (ProfileLayout) -> Unit,
     onLayoutReset: () -> Unit,
     onProfileDeleted: (String) -> Unit,
+    /** Applis du stick, pour choisir celles que l'invité ne voit pas ; null pendant le chargement. */
+    installedApps: List<InstalledApp>?,
     /** Ouvre le mode « Modifier l'accueil » sur l'accueil lui-même. */
     onEditHome: () -> Unit,
     /** Rubrique affichée, gardée par l'appelant pour ouvrir les réglages au bon endroit (« Gérer les profils »). */
@@ -167,6 +172,20 @@ fun SettingsScreen(
         return
     }
     val security by parentPin.settings.collectAsStateWithLifecycle(initialValue = null)
+    // Applis masquées pour l'invité : en plein écran, par-dessus Profils.
+    var guestAppsOpen by remember { mutableStateOf(false) }
+    val guestProfile = profilesState.profiles.firstOrNull { it.kind == ProfileKind.Guest }
+    if (guestAppsOpen && guestProfile != null) {
+        val scope = rememberCoroutineScope()
+        GuestAppsScreen(
+            apps = installedApps,
+            hidden = GuestMode.hiddenApps(guestProfile),
+            onChange = { scope.launch { profiles.save(guestProfile.copy(hiddenApps = it)) } },
+            onReset = { scope.launch { profiles.save(guestProfile.copy(hiddenApps = null)) } },
+            onClose = { guestAppsOpen = false },
+        )
+        return
+    }
     var previewOpen by remember { mutableStateOf(false) }
     if (previewOpen) {
         ScreensaverPreview(screensaverPreview, onClose = { previewOpen = false })
@@ -231,7 +250,7 @@ fun SettingsScreen(
             when (section) {
                 SettingsSection.Home -> HomeLayoutPage(layout, profilesState.active?.name.orEmpty(), onLayoutChange, onLayoutReset, onEditHome)
                 SettingsSection.Tabs -> TabsPage(layout, profilesState.active?.name.orEmpty(), onLayoutChange, onLayoutReset)
-                SettingsSection.Profiles -> ProfilesPage(profiles, profilesState, onProfileDeleted)
+                SettingsSection.Profiles -> ProfilesPage(profiles, profilesState, installedApps, onProfileDeleted, onGuestApps = { guestAppsOpen = true })
                 SettingsSection.Display -> DisplayPage(display, onDisplayChange, about, links)
                 SettingsSection.Screensaver -> ScreensaverPage(links, onPreview = { previewOpen = true })
                 SettingsSection.Servers -> ServersPage(
@@ -298,7 +317,13 @@ private fun TabsPage(layout: ProfileLayout, profileName: String, onChange: (Prof
 }
 
 @Composable
-private fun ProfilesPage(store: ProfilesStore, state: ProfilesState, onDeleted: (String) -> Unit) {
+private fun ProfilesPage(
+    store: ProfilesStore,
+    state: ProfilesState,
+    installedApps: List<InstalledApp>?,
+    onDeleted: (String) -> Unit,
+    onGuestApps: () -> Unit,
+) {
     val scope = rememberCoroutineScope()
     PageTitle(
         "Profils",
@@ -312,6 +337,21 @@ private fun ProfilesPage(store: ProfilesStore, state: ProfilesState, onDeleted: 
             onDeleted(it.id)
         },
     ) {
+        state.profiles.firstOrNull { it.kind == ProfileKind.Guest }?.let { guest ->
+            SettingsGroupTitle("Profil ${guest.name}")
+            // Seules comptent les applis installées : la liste par défaut en cite d'autres.
+            val count = GuestMode.hiddenApps(guest).count { id -> installedApps?.any { it.packageName == id } == true }
+            LinkRow(
+                "Applis masquées pour l'invité",
+                if (guest.hiddenApps == null) {
+                    "Comptes de la famille (Netflix, Disney+, Play Store…) et réglages Android"
+                } else {
+                    "Choisies à la main"
+                },
+                value = if (count == 0) "Aucune" else "$count masquée(s)",
+                onClick = onGuestApps,
+            )
+        }
         SettingsGroupTitle("Pour toute la TV")
         LinkRow(
             "Quand la TV s'allume",
