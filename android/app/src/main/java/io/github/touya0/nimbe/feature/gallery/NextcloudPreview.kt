@@ -19,6 +19,7 @@ import io.github.touya0.nimbe.ui.theme.LuneAttenuee
 import io.github.touya0.nimbe.ui.theme.PanneauClair
 import androidx.compose.ui.layout.ContentScale
 import coil3.compose.AsyncImage
+import coil3.PlatformContext
 import coil3.compose.LocalPlatformContext
 import coil3.network.NetworkHeaders
 import coil3.network.httpHeaders
@@ -41,14 +42,11 @@ fun NextcloudPreview(
     height: Int,
     modifier: Modifier = Modifier,
     contentScale: ContentScale = ContentScale.Crop,
+    /** Recadré pour remplir la case (grille) ; sinon la photo entière, dans [width]×[height] (plein écran). */
+    crop: Boolean = true,
 ) {
     val context = LocalPlatformContext.current
-    val request = remember(auth, item.fileId, width, height) {
-        ImageRequest.Builder(context)
-            .data(NextcloudApi.previewUrl(auth.server, item.fileId, width, height, crop = true))
-            .httpHeaders(NetworkHeaders.Builder().set("Authorization", NextcloudApi.basic(auth)).build())
-            .build()
-    }
+    val request = remember(auth, item.fileId, width, height, crop) { previewRequest(context, auth, item, width, height, crop) }
     var failed by remember(request) { mutableStateOf(!item.hasPreview) }
     if (failed) {
         Box(modifier.background(PanneauClair), contentAlignment = Alignment.Center) {
@@ -72,3 +70,10 @@ fun NextcloudPreview(
         onError = { failed = true },
     )
 }
+
+/** Même requête pour l'affichage et le préchargement : même adresse, donc même entrée du cache d'images. */
+fun previewRequest(context: PlatformContext, auth: NextcloudAuth, item: GalleryItem, width: Int, height: Int, crop: Boolean): ImageRequest =
+    ImageRequest.Builder(context)
+        .data(NextcloudApi.previewUrl(auth.server, item.fileId, width, height, crop))
+        .httpHeaders(NetworkHeaders.Builder().set("Authorization", NextcloudApi.basic(auth)).build())
+        .build()

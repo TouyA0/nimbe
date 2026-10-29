@@ -31,4 +31,19 @@ object GalleryTimeline {
         month?.let { sections += MonthSection(it, current) }
         return sections
     }
+
+    /**
+     * Position d'une photo dans la grille, en-têtes compris : le titre de la galerie (0), puis pour
+     * chaque mois son en-tête et ses photos. null si elle n'y est plus (supprimée entre-temps).
+     */
+    fun gridIndex(sections: List<MonthSection>, fileId: Long): Int? {
+        var position = 1
+        for (section in sections) {
+            position++
+            val inside = section.items.indexOfFirst { it.fileId == fileId }
+            if (inside >= 0) return position + inside
+            position += section.items.size
+        }
+        return null
+    }
 }

@@ -82,6 +82,9 @@ import io.github.touya0.nimbe.data.jellyfin.JellyfinAccount
 import io.github.touya0.nimbe.data.nextcloud.NextcloudAccounts
 import io.github.touya0.nimbe.data.nextcloud.NextcloudGallery
 import io.github.touya0.nimbe.feature.gallery.GalleryScreen
+import io.github.touya0.nimbe.feature.gallery.GalleryViewer
+import io.github.touya0.nimbe.feature.gallery.GalleryViewerRequest
+import androidx.compose.foundation.lazy.grid.LazyGridState
 import io.github.touya0.nimbe.data.homeassistant.HaConnection
 import io.github.touya0.nimbe.data.homeassistant.HaLive
 import io.github.touya0.nimbe.data.homeassistant.HistoryPoint
@@ -565,6 +568,11 @@ private fun NimbeShell(
         restoreFocusId = item.id
         destination = target
     }
+    // Photo en plein écran, par-dessus les onglets. La grille garde sa position (un état par profil)
+    // et, au retour, la photo regardée en dernier reprend le focus.
+    var galleryViewer by remember { mutableStateOf<GalleryViewerRequest?>(null) }
+    var galleryRestoreId by remember { mutableStateOf<Long?>(null) }
+    val galleryGrid = remember(activeId) { LazyGridState() }
     // Lecture : par-dessus tout le reste. Une carte entamée demande d'abord « Reprendre ou recommencer ».
     var playing by remember { mutableStateOf<PlayRequest?>(null) }
     var askResume by remember { mutableStateOf<MediaItem?>(null) }
@@ -577,6 +585,7 @@ private fun NimbeShell(
             playing = null
             askResume = null
             destination = null
+            galleryViewer = null
             restoreFocusId = null
             untouchedEpisodes = 0
             sleepTimer = null
@@ -624,6 +633,13 @@ private fun NimbeShell(
             },
             onDismiss = { askResume = null },
         )
+        return
+    }
+    galleryViewer?.let { request ->
+        GalleryViewer(request, onClose = { last ->
+            galleryRestoreId = last.fileId
+            galleryViewer = null
+        })
         return
     }
     when (val target = destination) {
@@ -756,7 +772,15 @@ private fun NimbeShell(
                         onRestored = { restoreFocusId = null },
                     )
                     Tab.Music -> ComingSoonScreen("Musique", "Spotify arrive bientôt.")
-                    Tab.Gallery -> GalleryScreen(gallery, profilesState.active, onOpenSettings = { openSettings(SettingsSection.Servers) })
+                    Tab.Gallery -> GalleryScreen(
+                        gallery,
+                        profilesState.active,
+                        onOpenSettings = { openSettings(SettingsSection.Servers) },
+                        gridState = galleryGrid,
+                        restoreFileId = galleryRestoreId,
+                        onRestored = { galleryRestoreId = null },
+                        onOpen = { galleryViewer = it },
+                    )
                 }
             }
         }

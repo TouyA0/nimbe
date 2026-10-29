@@ -39,6 +39,9 @@ class NextcloudGallery(
     /** Le profil a-t-il une galerie reliée ? */
     fun linked(profileId: String): Flow<Boolean> = accounts.links.map { profileId in it }
 
+    /** Le lien du profil (compte, dossiers), null s'il n'est pas relié. */
+    fun link(profileId: String): Flow<NextcloudLink?> = accounts.links.map { it[profileId] }
+
     fun counts(profileId: String): Flow<GalleryCounts> = dao.counts(profileId)
 
     fun syncedAt(profileId: String): Flow<Long?> = dao.syncedAt(profileId)

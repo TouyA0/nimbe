@@ -23,6 +23,35 @@ object GalleryText {
         }
     }
 
+    /** « Samedi 18 octobre 2025 · 19:42 », à l'heure de la maison. */
+    fun fullDate(at: Long, zone: java.time.ZoneId = java.time.ZoneId.systemDefault()): String {
+        val text = java.time.Instant.ofEpochMilli(at).atZone(zone).format(FULL_DATE)
+        return text.replaceFirstChar { it.uppercase() }
+    }
+
+    private val FULL_DATE = java.time.format.DateTimeFormatter.ofPattern("EEEE d MMMM yyyy · HH:mm", java.util.Locale.FRENCH)
+
+    /** Rappel des touches en bas de la visionneuse. */
+    fun viewerHints(video: Boolean, slideshow: Boolean): String = listOf(
+        when {
+            video -> "OK : lire ou mettre en pause"
+            slideshow -> "OK : arrêter le diaporama"
+            else -> "OK : lancer le diaporama"
+        },
+        "Gauche / droite : précédente ou suivante",
+        "Retour : quitter",
+    ).joinToString("   ·   ")
+
+    /** Raison d'un échec de lecture vidéo, d'après le code Media3 (PlaybackException). */
+    fun playbackError(code: Int): String = when (code) {
+        2001, 2002 -> "Nextcloud ne répond pas"
+        2004 -> "Nextcloud refuse l'accès à ce fichier"
+        2005 -> "le fichier n'existe plus"
+        3001, 3002, 3003, 3004 -> "format de fichier illisible"
+        4001, 4002, 4003, 4004, 4005 -> "ce format vidéo n'est pas pris en charge par la TV"
+        else -> "erreur $code"
+    }
+
     /** « Octobre 2025 ». */
     fun month(month: java.time.YearMonth): String = "${MONTHS[month.monthValue - 1]} ${month.year}"
 

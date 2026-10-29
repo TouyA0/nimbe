@@ -36,4 +36,27 @@ class GalleryTimelineTest {
         assertEquals("58 photos · 2 vidéos", GalleryText.monthCounts(58, 2))
         assertEquals("3 vidéos", GalleryText.monthCounts(0, 3))
     }
+
+    @Test
+    fun `position dans la grille, en-têtes compris`() {
+        val sections = GalleryTimeline.group(
+            listOf(
+                item(1, LocalDateTime.of(2025, 10, 18, 19, 42)),
+                item(2, LocalDateTime.of(2025, 10, 2, 8, 0)),
+                item(3, LocalDateTime.of(2024, 9, 1, 12, 0)),
+            ),
+            paris,
+        )
+        // 0 titre, 1 « Octobre 2025 », 2 et 3 ses photos, 4 « Septembre 2024 », 5 sa photo.
+        assertEquals(2, GalleryTimeline.gridIndex(sections, 1))
+        assertEquals(3, GalleryTimeline.gridIndex(sections, 2))
+        assertEquals(5, GalleryTimeline.gridIndex(sections, 3))
+        assertEquals(null, GalleryTimeline.gridIndex(sections, 99))
+    }
+
+    @Test
+    fun `date complète en français`() {
+        val at = LocalDateTime.of(2025, 10, 18, 19, 42).atZone(paris).toInstant().toEpochMilli()
+        assertEquals("Samedi 18 octobre 2025 · 19:42", GalleryText.fullDate(at, paris))
+    }
 }

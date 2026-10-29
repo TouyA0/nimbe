@@ -226,6 +226,9 @@ class NextcloudApi(private val userAgent: () -> String) {
         fun previewUrl(server: String, fileId: Long, width: Int, height: Int, crop: Boolean): String =
             "$server/index.php/core/preview?fileId=$fileId&x=$width&y=$height&a=${if (crop) 0 else 1}&forceIcon=0"
 
+        /** Adresse WebDAV du fichier d'origine, pour la lecture des vidéos (le mot de passe part en en-tête). */
+        fun fileUrl(server: String, userId: String, path: String): String = "$server/remote.php/dav${WebDav.filesPath(userId, path)}"
+
         fun basic(auth: NextcloudAuth): String =
             "Basic " + Base64.getEncoder().encodeToString("${auth.loginName}:${auth.appPassword}".toByteArray(Charsets.UTF_8))
 

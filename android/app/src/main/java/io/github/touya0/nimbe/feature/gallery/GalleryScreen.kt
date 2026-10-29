@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.GridItemSpan
+import androidx.compose.foundation.lazy.grid.LazyGridState
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -25,6 +26,8 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.unit.dp
@@ -59,7 +62,17 @@ import kotlinx.coroutines.launch
  * elle s'affiche tout de suite, et même serveur coupé. [onOpenSettings] : relier la galerie du profil.
  */
 @Composable
-fun GalleryScreen(gallery: NextcloudGallery, profile: Profile?, onOpenSettings: () -> Unit) {
+fun GalleryScreen(
+    gallery: NextcloudGallery,
+    profile: Profile?,
+    onOpenSettings: () -> Unit,
+    /** Gardé par l'appelant : en revenant du plein écran, la grille est au même endroit. */
+    gridState: LazyGridState,
+    /** Photo regardée en dernier en plein écran : elle reprend le focus au retour. */
+    restoreFileId: Long?,
+    onRestored: () -> Unit,
+    onOpen: (GalleryViewerRequest) -> Unit,
+) {
     if (profile == null || profile.kind != ProfileKind.Adult) {
         StateMessage("Pas de galerie dans ce profil", "Les photos Nextcloud sont personnelles : chaque adulte relie la sienne.")
         return
@@ -77,12 +90,20 @@ fun GalleryScreen(gallery: NextcloudGallery, profile: Profile?, onOpenSettings: 
             action = "Ouvrir les réglages",
             onAction = onOpenSettings,
         )
-        else -> GalleryContent(gallery, profile, auth!!.getOrThrow()!!)
+        else -> GalleryContent(gallery, profile, auth!!.getOrThrow()!!, gridState, restoreFileId, onRestored, onOpen)
     }
 }
 
 @Composable
-private fun GalleryContent(gallery: NextcloudGallery, profile: Profile, auth: NextcloudAuth) {
+private fun GalleryContent(
+    gallery: NextcloudGallery,
+    profile: Profile,
+    auth: NextcloudAuth,
+    gridState: LazyGridState,
+    restoreFileId: Long?,
+    onRestored: () -> Unit,
+    onOpen: (GalleryViewerRequest) -> Unit,
+) {
     val scope = rememberCoroutineScope()
     LaunchedEffect(profile.id) { gallery.sync(profile.id) }
     val state by remember(profile.id) { gallery.state(profile.id) }.collectAsStateWithLifecycle()
@@ -92,6 +113,20 @@ private fun GalleryContent(gallery: NextcloudGallery, profile: Profile, auth: Ne
     val sections by remember(profile.id) {
         gallery.all(profile.id).map { GalleryTimeline.group(it) }.flowOn(Dispatchers.Default)
     }.collectAsStateWithLifecycle(initialValue = emptyList())
+    val userId by remember(profile.id) { gallery.link(profile.id).map { it?.userId } }.collectAsStateWithLifecycle(initialValue = null)
+    // La visionneuse parcourt la même suite que la grille, mois après mois.
+    val flat = remember(sections) { sections.flatMap { it.items } }
+    fun open(item: GalleryItem) {
+        val id = userId ?: return
+        onOpen(GalleryViewerRequest(auth, id, flat, flat.indexOf(item)))
+    }
+    // Retour du plein écran : on fait défiler jusqu'à la photo vue en dernier, qui reprend le focus.
+    LaunchedEffect(restoreFileId, sections) {
+        val target = restoreFileId ?: return@LaunchedEffect
+        if (sections.isEmpty()) return@LaunchedEffect
+        val position = GalleryTimeline.gridIndex(sections, target)
+        if (position == null) onRestored() else gridState.scrollToItem(position)
+    }
     val retry = { scope.launch { gallery.sync(profile.id, force = true) }; Unit }
 
     // Jamais synchronisée : rien à montrer tant que la première lecture n'a pas abouti.
@@ -110,6 +145,7 @@ private fun GalleryContent(gallery: NextcloudGallery, profile: Profile, auth: Ne
 
     LazyVerticalGrid(
         columns = GridCells.Fixed(COLUMNS),
+        state = gridState,
         modifier = Modifier.fillMaxSize(),
         contentPadding = PaddingValues(start = 56.dp, end = 56.dp, top = 24.dp, bottom = 48.dp),
         horizontalArrangement = Arrangement.spacedBy(16.dp),
@@ -143,17 +179,27 @@ private fun GalleryContent(gallery: NextcloudGallery, profile: Profile, auth: Ne
                     Text(GalleryText.monthCounts(section.photos, section.videos), style = MaterialTheme.typography.bodyMedium, color = LuneAttenuee)
                 }
             }
-            items(section.items, key = { it.fileId }, contentType = { "photo" }) { item -> PhotoCard(auth, item) }
+            items(section.items, key = { it.fileId }, contentType = { "photo" }) { item ->
+                PhotoCard(auth, item, restore = item.fileId == restoreFileId, onRestored = onRestored, onClick = { open(item) })
+            }
         }
     }
 }
 
 @Composable
-private fun PhotoCard(auth: NextcloudAuth, item: GalleryItem) {
+private fun PhotoCard(auth: NextcloudAuth, item: GalleryItem, restore: Boolean, onRestored: () -> Unit, onClick: () -> Unit) {
     var focused by remember { mutableStateOf(false) }
+    val requester = remember { FocusRequester() }
+    if (restore) {
+        LaunchedEffect(Unit) {
+            runCatching { requester.requestFocus() }
+            onRestored()
+        }
+    }
     Surface(
-        onClick = {},
+        onClick = onClick,
         modifier = Modifier
+            .focusRequester(requester)
             .fillMaxWidth()
             .aspectRatio(16f / 9f)
             .onFocusChanged { focused = it.isFocused }
