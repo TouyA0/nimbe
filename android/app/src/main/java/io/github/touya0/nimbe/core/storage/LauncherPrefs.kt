@@ -31,6 +31,13 @@ class LauncherPrefs(context: Context) {
 
     val hidden: Flow<Set<String>> = store.data.map { it[HIDDEN].orEmpty() }
 
+    /** Premier lancement terminé : sinon Nimbe s'ouvre sur l'assistant, même si des services sont déjà reliés. */
+    val setupDone: Flow<Boolean> = store.data.map { it[SETUP_DONE] ?: false }
+
+    suspend fun setSetupDone(done: Boolean) {
+        store.edit { it[SETUP_DONE] = done }
+    }
+
     val display: Flow<DisplaySettings> = store.data.map { prefs ->
         DisplaySettings(
             textSize = TextSize.fromKey(prefs[TEXT_SIZE]),
@@ -64,5 +71,6 @@ class LauncherPrefs(context: Context) {
         val HIGH_CONTRAST = booleanPreferencesKey("high_contrast")
         val REDUCE_MOTION = booleanPreferencesKey("reduce_motion")
         val KEY_HINTS = booleanPreferencesKey("key_hints")
+        val SETUP_DONE = booleanPreferencesKey("setup_done")
     }
 }

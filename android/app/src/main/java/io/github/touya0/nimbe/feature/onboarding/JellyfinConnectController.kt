@@ -53,7 +53,7 @@ class JellyfinConnectController(
 
     fun search() = launchStep {
         step = ConnectStep.Searching
-        val servers = discovery.find().mapNotNull { resolve(it) }
+        val servers = discovery.find().mapNotNull { resolveDiscovered(account, it) }
         step = if (servers.isEmpty()) ConnectStep.Manual("Aucun serveur trouvé tout seul sur ton réseau.") else ConnectStep.Found(servers)
     }
 
@@ -90,15 +90,6 @@ class JellyfinConnectController(
     private fun launchStep(block: suspend () -> Unit) {
         job?.cancel()
         job = scope.launch { block() }
-    }
-
-    /** La découverte donne des adresses candidates : on garde la première où le même serveur répond. */
-    private suspend fun resolve(found: DiscoveredServer): FoundServer? {
-        for (url in found.addresses) {
-            val info = runCatching { account.api.publicInfo(url) }.getOrNull() ?: continue
-            if (info.id == found.id) return FoundServer(url, info)
-        }
-        return null
     }
 
     private suspend fun quickConnect(server: FoundServer) {
@@ -143,4 +134,13 @@ class JellyfinConnectController(
         const val CODE_LIFETIME_MS = 10 * 60_000L
         const val MAX_CODES = 3
     }
+}
+
+/** La découverte donne des adresses candidates : on garde la première où le même serveur répond. */
+internal suspend fun resolveDiscovered(account: JellyfinAccount, found: DiscoveredServer): FoundServer? {
+    for (url in found.addresses) {
+        val info = runCatching { account.api.publicInfo(url) }.getOrNull() ?: continue
+        if (info.id == found.id) return FoundServer(url, info)
+    }
+    return null
 }

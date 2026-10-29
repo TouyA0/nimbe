@@ -112,6 +112,8 @@ fun SettingsScreen(
     /** L'écran de veille en plein écran, tel qu'Android l'affichera. */
     screensaverPreview: @Composable () -> Unit,
     onOpenUpdate: () -> Unit,
+    /** Rouvre l'assistant du premier lancement ; les services reliés le restent. */
+    onRestartSetup: () -> Unit,
     onClose: () -> Unit,
 ) {
     val updateState by updates.state.collectAsStateWithLifecycle(initialValue = UpdateState())
@@ -198,7 +200,7 @@ fun SettingsScreen(
                     onConnectHomeAssistant = { homeAssistantConnectOpen = true },
                 )
                 SettingsSection.Updates -> UpdatesPage(updateState, updates, onOpenUpdate)
-                SettingsSection.About -> AboutPage(about, links, onCacheCleared = { aboutVersion++ })
+                SettingsSection.About -> AboutPage(about, links, onCacheCleared = { aboutVersion++ }, onRestartSetup = onRestartSetup)
             }
         }
     }
@@ -442,7 +444,7 @@ private fun RowScope.Status(text: String, color: Color) {
 }
 
 @Composable
-private fun AboutPage(about: AboutInfo?, links: SettingsLinks, onCacheCleared: () -> Unit) {
+private fun AboutPage(about: AboutInfo?, links: SettingsLinks, onCacheCleared: () -> Unit, onRestartSetup: () -> Unit) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     PageTitle("À propos et diagnostic", "Version de Nimbe, état du stick et aide au dépannage.")
@@ -474,6 +476,12 @@ private fun AboutPage(about: AboutInfo?, links: SettingsLinks, onCacheCleared: (
     )
     LinkRow("Accueil d'origine du stick", "Toujours installé, c'est le secours", value = "Ouvrir", onClick = links.stockLauncher)
     LinkRow("Réglages Android", "Réseau, son, applis, mises à jour du stick", value = "Ouvrir", onClick = links.androidSettings)
+    LinkRow(
+        "Premier lancement",
+        "Refaire l'assistant de départ · les services déjà reliés le restent",
+        value = "Recommencer",
+        onClick = onRestartSetup,
+    )
 }
 
 @Composable

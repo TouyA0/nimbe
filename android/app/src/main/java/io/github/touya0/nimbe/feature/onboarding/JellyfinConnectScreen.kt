@@ -224,7 +224,7 @@ private fun DoneContent(step: ConnectStep.Done, onClose: () -> Unit) {
 
 /** Chaque étape pose le focus sur son action principale dès qu'elle s'affiche. */
 @Composable
-private fun rememberStepFocus(): FocusRequester {
+internal fun rememberStepFocus(): FocusRequester {
     val requester = remember { FocusRequester() }
     LaunchedEffect(Unit) { runCatching { requester.requestFocus() } }
     return requester
@@ -263,7 +263,7 @@ private fun Stage(number: Int, label: String, done: Boolean) {
 }
 
 @Composable
-private fun Instruction(number: Int, text: String) {
+internal fun Instruction(number: Int, text: String) {
     Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
         Text("$number", style = MaterialTheme.typography.titleSmall, color = Focus)
         Text(text, style = MaterialTheme.typography.bodyLarge)
@@ -271,7 +271,7 @@ private fun Instruction(number: Int, text: String) {
 }
 
 @Composable
-private fun StatusLine(text: String, spinning: Boolean, alert: Boolean = false) {
+internal fun StatusLine(text: String, spinning: Boolean, alert: Boolean = false) {
     Row(
         Modifier.fillMaxWidth().background(PanneauClair.copy(alpha = 0.6f), RoundedCornerShape(10.dp)).padding(horizontal = 16.dp, vertical = 12.dp),
         horizontalArrangement = Arrangement.spacedBy(12.dp),
@@ -313,7 +313,13 @@ private fun ServerRow(title: String, detail: String, onClick: () -> Unit, modifi
 
 /** Champ d'adresse : OK ouvre le clavier d'Android, « Valider » sur le clavier lance la vérification. */
 @Composable
-private fun AddressField(value: String, onValueChange: (String) -> Unit, onSubmit: () -> Unit, modifier: Modifier = Modifier) {
+internal fun AddressField(
+    value: String,
+    onValueChange: (String) -> Unit,
+    onSubmit: () -> Unit,
+    modifier: Modifier = Modifier,
+    placeholder: String = "192.168.1.20:8096",
+) {
     var focused by remember { mutableStateOf(false) }
     BasicTextField(
         value = value,
@@ -336,7 +342,7 @@ private fun AddressField(value: String, onValueChange: (String) -> Unit, onSubmi
                     .padding(horizontal = 16.dp, vertical = 14.dp),
             ) {
                 if (value.isEmpty()) {
-                    Text("192.168.1.20:8096", style = MaterialTheme.typography.titleMedium.copy(fontSize = 20.sp), color = LuneAttenuee)
+                    Text(placeholder, style = MaterialTheme.typography.titleMedium.copy(fontSize = 20.sp), color = LuneAttenuee)
                 }
                 inner()
             }

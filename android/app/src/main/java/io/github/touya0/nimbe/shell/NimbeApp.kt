@@ -19,6 +19,7 @@ import io.github.touya0.nimbe.feature.films.FilmsScreen
 import io.github.touya0.nimbe.feature.media.JellyfinUi
 import io.github.touya0.nimbe.feature.media.LocalJellyfin
 import io.github.touya0.nimbe.feature.media.MediaDestination
+import io.github.touya0.nimbe.feature.onboarding.FirstLaunchScreen
 import io.github.touya0.nimbe.feature.onboarding.JellyfinConnectScreen
 import io.github.touya0.nimbe.feature.series.SeriesDetailScreen
 import io.github.touya0.nimbe.feature.series.SeriesScreen
@@ -150,6 +151,19 @@ fun NimbeApp(
             piDown = piDown,
             piUp = piUp,
         )
+    }
+    // Tant que le premier lancement n'est pas terminé, Nimbe s'ouvre dessus ; rien avant d'avoir lu le réglage.
+    val setupDone by prefs.setupDone.collectAsStateWithLifecycle(initialValue = null)
+    when (setupDone) {
+        null -> {
+            Box(Modifier.fillMaxSize().background(Nuit))
+            return
+        }
+        false -> {
+            FirstLaunchScreen(jellyfin, homeAssistant, onFinish = { retryScope.launch { prefs.setSetupDone(true) } })
+            return
+        }
+        true -> Unit
     }
     CompositionLocalProvider(LocalJellyfin provides ui) {
         if (jellyfinConnectOpen) {
@@ -283,6 +297,10 @@ private fun NimbeShell(
             homeAssistant = homeAssistant,
             screensaverPreview = { ScreensaverContent(status, ha) },
             onOpenUpdate = { updateOpen = true },
+            onRestartSetup = {
+                settingsOpen = false
+                scope.launch { prefs.setSetupDone(false) }
+            },
             onClose = { settingsOpen = false },
         )
         return
