@@ -43,6 +43,8 @@ class NextcloudGallery(
 
     fun syncedAt(profileId: String): Flow<Long?> = dao.syncedAt(profileId)
 
+    fun all(profileId: String): Flow<List<GalleryItem>> = dao.all(profileId)
+
     fun recent(profileId: String, limit: Int): Flow<List<GalleryItem>> = dao.recent(profileId, limit)
 
     suspend fun page(profileId: String, offset: Int, limit: Int): List<GalleryItem> = dao.page(profileId, offset, limit)

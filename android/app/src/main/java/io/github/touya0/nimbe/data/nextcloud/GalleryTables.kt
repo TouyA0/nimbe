@@ -71,6 +71,13 @@ interface GalleryDao {
     @Query("SELECT * FROM gallery_items WHERE profileId = :profileId ORDER BY takenAt DESC, fileId DESC LIMIT :limit OFFSET :offset")
     suspend fun page(profileId: String, offset: Int, limit: Int): List<GalleryItem>
 
+    /**
+     * Toute la galerie, des plus récentes aux plus anciennes. Quelques milliers de lignes courtes tiennent
+     * sans peine en mémoire ; la grille, elle, ne dessine que ce qui est à l'écran.
+     */
+    @Query("SELECT * FROM gallery_items WHERE profileId = :profileId ORDER BY takenAt DESC, fileId DESC")
+    fun all(profileId: String): Flow<List<GalleryItem>>
+
     @Query("SELECT * FROM gallery_items WHERE profileId = :profileId ORDER BY takenAt DESC, fileId DESC LIMIT :limit")
     fun recent(profileId: String, limit: Int): Flow<List<GalleryItem>>
 

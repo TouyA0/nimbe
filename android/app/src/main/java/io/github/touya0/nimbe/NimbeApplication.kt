@@ -8,6 +8,7 @@ import coil3.PlatformContext
 import coil3.SingletonImageLoader
 import coil3.disk.DiskCache
 import coil3.memory.MemoryCache
+import coil3.network.okhttp.OkHttpNetworkFetcherFactory
 import coil3.request.crossfade
 import io.github.touya0.nimbe.core.storage.NimbeDatabase
 import io.github.touya0.nimbe.core.storage.SecretVault
@@ -29,7 +30,9 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
+import okhttp3.OkHttpClient
 import okio.Path.Companion.toOkioPath
+import java.util.concurrent.TimeUnit
 
 class NimbeApplication : Application(), SingletonImageLoader.Factory {
 
@@ -98,6 +101,8 @@ class NimbeApplication : Application(), SingletonImageLoader.Factory {
     /**
      * Chargeur d'images de toute l'appli. Le stick a peu de mémoire : 15 % pour les images en mémoire,
      * et 1 Go sur le disque pour ne pas retélécharger les affiches à chaque démarrage.
+     * Délai de lecture de 30 s : sans aperçus préparés à l'avance, Nextcloud fabrique chacun au moment
+     * où on le demande, et le Pi dépasse souvent les 10 s par défaut quand la grille en demande beaucoup.
      */
     override fun newImageLoader(context: PlatformContext): ImageLoader =
         ImageLoader.Builder(context)
@@ -109,6 +114,9 @@ class NimbeApplication : Application(), SingletonImageLoader.Factory {
                     .build()
             }
             .crossfade(!isLowRamDevice())
+            .components {
+                add(OkHttpNetworkFetcherFactory(callFactory = { OkHttpClient.Builder().readTimeout(30, TimeUnit.SECONDS).build() }))
+            }
             .build()
 
     private fun isLowRamDevice(): Boolean = getSystemService(ActivityManager::class.java)?.isLowRamDevice == true

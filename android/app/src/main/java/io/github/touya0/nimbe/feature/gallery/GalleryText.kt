@@ -23,6 +23,20 @@ object GalleryText {
         }
     }
 
+    /** « Octobre 2025 ». */
+    fun month(month: java.time.YearMonth): String = "${MONTHS[month.monthValue - 1]} ${month.year}"
+
+    /** « 58 photos · 2 vidéos », « 3 vidéos ». */
+    fun monthCounts(photos: Int, videos: Int): String = listOfNotNull(
+        count(photos, "photo", "photos").takeIf { photos > 0 },
+        count(videos, "vidéo", "vidéos").takeIf { videos > 0 },
+    ).joinToString(" · ")
+
+    private val MONTHS = listOf(
+        "Janvier", "Février", "Mars", "Avril", "Mai", "Juin",
+        "Juillet", "Août", "Septembre", "Octobre", "Novembre", "Décembre",
+    )
+
     /** Espace insécable fine entre les milliers, comme en français : « 4 812 ». */
     fun count(n: Int, one: String, many: String): String {
         val digits = n.toString().reversed().chunked(3).joinToString(" ").reversed()

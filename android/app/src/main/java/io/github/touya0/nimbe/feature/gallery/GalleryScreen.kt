@@ -9,9 +9,11 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.lazy.LazyRow
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.GridItemSpan
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -47,11 +49,14 @@ import io.github.touya0.nimbe.ui.theme.LuneAttenuee
 import io.github.touya0.nimbe.ui.theme.NimbeFocus
 import io.github.touya0.nimbe.ui.theme.Nuit
 import io.github.touya0.nimbe.ui.theme.PanneauClair
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.flowOn
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 
 /**
- * Onglet Galerie, version provisoire : état de la synchronisation et dernières photos.
- * La grille par mois arrive à l'étape suivante. [onOpenSettings] : relier la galerie du profil.
+ * Onglet Galerie : la chronologie du profil, mois par mois, en grille. Lue dans l'index local :
+ * elle s'affiche tout de suite, et même serveur coupé. [onOpenSettings] : relier la galerie du profil.
  */
 @Composable
 fun GalleryScreen(gallery: NextcloudGallery, profile: Profile?, onOpenSettings: () -> Unit) {
@@ -83,7 +88,10 @@ private fun GalleryContent(gallery: NextcloudGallery, profile: Profile, auth: Ne
     val state by remember(profile.id) { gallery.state(profile.id) }.collectAsStateWithLifecycle()
     val counts by remember(profile.id) { gallery.counts(profile.id) }.collectAsStateWithLifecycle(initialValue = null)
     val syncedAt by remember(profile.id) { gallery.syncedAt(profile.id) }.collectAsStateWithLifecycle(initialValue = null)
-    val recent by remember(profile.id) { gallery.recent(profile.id, RECENT) }.collectAsStateWithLifecycle(initialValue = emptyList())
+    // Rangement par mois hors du fil de l'interface : quelques milliers de photos, à chaque synchronisation.
+    val sections by remember(profile.id) {
+        gallery.all(profile.id).map { GalleryTimeline.group(it) }.flowOn(Dispatchers.Default)
+    }.collectAsStateWithLifecycle(initialValue = emptyList())
     val retry = { scope.launch { gallery.sync(profile.id, force = true) }; Unit }
 
     // Jamais synchronisée : rien à montrer tant que la première lecture n'a pas abouti.
@@ -100,22 +108,43 @@ private fun GalleryContent(gallery: NextcloudGallery, profile: Profile, auth: Ne
         return
     }
 
-    Column(Modifier.fillMaxSize().padding(horizontal = 56.dp, vertical = 24.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
-        Text("Galerie de ${profile.name}", style = MaterialTheme.typography.displaySmall)
-        Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
-            Text(
-                GalleryText.summary(counts?.photos ?: 0, counts?.videos ?: 0, syncedAt, System.currentTimeMillis()),
-                style = MaterialTheme.typography.bodyLarge,
-                color = LuneAttenuee,
-            )
-            if (state.syncing) Spinner(Focus)
+    LazyVerticalGrid(
+        columns = GridCells.Fixed(COLUMNS),
+        modifier = Modifier.fillMaxSize(),
+        contentPadding = PaddingValues(start = 56.dp, end = 56.dp, top = 24.dp, bottom = 48.dp),
+        horizontalArrangement = Arrangement.spacedBy(16.dp),
+        verticalArrangement = Arrangement.spacedBy(16.dp),
+    ) {
+        item(key = "header", span = { GridItemSpan(maxLineSpan) }, contentType = "header") {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("Galerie de ${profile.name}", style = MaterialTheme.typography.displaySmall)
+                    Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Text(
+                            GalleryText.summary(counts?.photos ?: 0, counts?.videos ?: 0, syncedAt, System.currentTimeMillis()),
+                            style = MaterialTheme.typography.bodyLarge,
+                            color = LuneAttenuee,
+                        )
+                        if (state.syncing) Spinner(Focus)
+                    }
+                    state.error?.let { Text(it, style = MaterialTheme.typography.bodyMedium, color = Alerte) }
+                }
+                PillButton("Synchroniser", onClick = retry)
+            }
         }
-        state.error?.let { Text(it, style = MaterialTheme.typography.bodyMedium, color = Alerte) }
-        Text("Ajoutées récemment", style = MaterialTheme.typography.headlineSmall)
-        LazyRow(horizontalArrangement = Arrangement.spacedBy(16.dp), contentPadding = PaddingValues(vertical = 12.dp)) {
-            items(recent, key = { it.fileId }) { item -> PhotoCard(auth, item) }
+        sections.forEach { section ->
+            item(key = "m:${section.month}", span = { GridItemSpan(maxLineSpan) }, contentType = "month") {
+                Row(
+                    Modifier.padding(top = 20.dp),
+                    horizontalArrangement = Arrangement.spacedBy(14.dp),
+                    verticalAlignment = Alignment.Bottom,
+                ) {
+                    Text(GalleryText.month(section.month), style = MaterialTheme.typography.headlineSmall)
+                    Text(GalleryText.monthCounts(section.photos, section.videos), style = MaterialTheme.typography.bodyMedium, color = LuneAttenuee)
+                }
+            }
+            items(section.items, key = { it.fileId }, contentType = { "photo" }) { item -> PhotoCard(auth, item) }
         }
-        PillButton("Synchroniser maintenant", onClick = retry)
     }
 }
 
@@ -125,7 +154,8 @@ private fun PhotoCard(auth: NextcloudAuth, item: GalleryItem) {
     Surface(
         onClick = {},
         modifier = Modifier
-            .size(CARD_WIDTH.dp, CARD_HEIGHT.dp)
+            .fillMaxWidth()
+            .aspectRatio(16f / 9f)
             .onFocusChanged { focused = it.isFocused }
             .focusRing(focused, NimbeFocus.CardRadius),
         shape = ClickableSurfaceDefaults.shape(NimbeFocus.CardShape),
@@ -133,7 +163,7 @@ private fun PhotoCard(auth: NextcloudAuth, item: GalleryItem) {
         scale = ClickableSurfaceDefaults.scale(focusedScale = NimbeFocus.SCALE),
     ) {
         Box(Modifier.fillMaxSize()) {
-            NextcloudPreview(auth, item, CARD_WIDTH, CARD_HEIGHT, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
+            NextcloudPreview(auth, item, PREVIEW_WIDTH, PREVIEW_HEIGHT, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
             if (item.isVideo) {
                 Text(
                     "▶",
@@ -150,6 +180,8 @@ private fun PhotoCard(auth: NextcloudAuth, item: GalleryItem) {
     }
 }
 
-private const val RECENT = 12
-private const val CARD_WIDTH = 320
-private const val CARD_HEIGHT = 180
+private const val COLUMNS = 5
+
+/** Taille des aperçus demandés pour la grille, en pixels : celle du dossier technique, gardée en cache par Nextcloud. */
+private const val PREVIEW_WIDTH = 480
+private const val PREVIEW_HEIGHT = 270
