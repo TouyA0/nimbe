@@ -16,7 +16,9 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -36,8 +38,13 @@ import androidx.tv.material3.MaterialTheme
 import androidx.tv.material3.Text
 import io.github.touya0.nimbe.data.homeassistant.HomeAssistantAccount
 import io.github.touya0.nimbe.data.jellyfin.JellyfinAccount
+import io.github.touya0.nimbe.data.profiles.ProfileKind
+import io.github.touya0.nimbe.data.profiles.ProfileRules
+import io.github.touya0.nimbe.data.profiles.ProfilesState
+import io.github.touya0.nimbe.data.profiles.ProfilesStore
 import io.github.touya0.nimbe.feature.homeassistant.HomeAssistantColor
 import io.github.touya0.nimbe.feature.homeassistant.HomeAssistantConnectScreen
+import io.github.touya0.nimbe.feature.profiles.ProfilesManager
 import io.github.touya0.nimbe.ui.components.PillButton
 import io.github.touya0.nimbe.ui.theme.Alerte
 import io.github.touya0.nimbe.ui.theme.EnLigne
@@ -48,6 +55,7 @@ import io.github.touya0.nimbe.ui.theme.Nuit
 import io.github.touya0.nimbe.ui.theme.Panneau
 import io.github.touya0.nimbe.ui.theme.PanneauClair
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.launch
 
 /** Framboise de l'initiale « P » du Raspberry Pi. */
 private val PiColor = Color(0xFFC51A4A)
@@ -68,19 +76,27 @@ enum class SetupStep(val label: String, val summary: String) {
 class SetupChrome(val stepBar: @Composable () -> Unit, val onBack: () -> Unit, val onSkip: () -> Unit)
 
 /** Les étapes déjà construites ; après la dernière, le premier lancement se termine. */
-private val BuiltSteps = listOf(SetupStep.Server, SetupStep.HomeAssistant, SetupStep.Jellyfin)
+private val BuiltSteps = listOf(SetupStep.Server, SetupStep.HomeAssistant, SetupStep.Jellyfin, SetupStep.Profiles)
 
 /** Enveloppe pour distinguer « pas encore lu » (null) de « pas relié ». */
 private class Loaded<T>(val value: T?)
 
 /**
  * Premier lancement : Nimbe s'ouvre ici tant qu'il n'est pas terminé, même si des services sont déjà reliés
- * (leur étape propose alors de continuer ou de relier à nouveau). Chaque étape peut être passée :
- * Nimbe doit marcher Pi coupé.
+ * (leur étape propose alors de continuer ou de relier à nouveau). Chaque étape peut être passée, sauf les profils :
+ * Nimbe doit marcher Pi coupé, mais il lui faut quelqu'un devant la TV.
+ * [startAt] : Profils quand l'assistant est fini mais qu'il n'y a plus aucun profil.
  */
 @Composable
-fun FirstLaunchScreen(jellyfin: JellyfinAccount, homeAssistant: HomeAssistantAccount, onFinish: () -> Unit) {
-    var step by rememberSaveable { mutableStateOf(SetupStep.Server) }
+fun FirstLaunchScreen(
+    jellyfin: JellyfinAccount,
+    homeAssistant: HomeAssistantAccount,
+    profiles: ProfilesStore,
+    profilesState: ProfilesState,
+    onFinish: () -> Unit,
+    startAt: SetupStep = SetupStep.Server,
+) {
+    var step by rememberSaveable { mutableStateOf(startAt) }
     val scope = rememberCoroutineScope()
     // Gardé d'une étape à l'autre : en revenant au serveur, on retrouve le résultat sans tout rechercher.
     val server = remember { ServerStepController(PiScanner(jellyfin, homeAssistant), scope) }
@@ -161,7 +177,54 @@ fun FirstLaunchScreen(jellyfin: JellyfinAccount, homeAssistant: HomeAssistantAcc
                 )
             }
         }
-        SetupStep.Profiles, SetupStep.Apps -> Unit
+        SetupStep.Profiles -> SetupFrame(step) {
+            ProfilesStepContent(profiles, profilesState, onContinue = ::next, onBack = ::back)
+        }
+        SetupStep.Apps -> Unit
+    }
+}
+
+@Composable
+private fun ProfilesStepContent(store: ProfilesStore, state: ProfilesState, onContinue: () -> Unit, onBack: () -> Unit) {
+    val scope = rememberCoroutineScope()
+    BackHandler(onBack = onBack)
+    Row(Modifier.fillMaxSize(), horizontalArrangement = Arrangement.spacedBy(40.dp)) {
+        Column(Modifier.width(340.dp).padding(top = 16.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+            Text("Profils", style = MaterialTheme.typography.displaySmall.copy(fontSize = 36.sp, lineHeight = 44.sp))
+            Text(
+                "Chaque membre de la maison a son profil, avec son accueil et ses réglages. Jellyfin et " +
+                    "Home Assistant restent communs à tout le monde.",
+                style = MaterialTheme.typography.bodyLarge,
+                color = LuneAttenuee,
+            )
+            ProfileKind.entries.forEach { Instruction(it.ordinal + 1, "${it.label} : ${it.summary.replaceFirstChar(Char::lowercase)}") }
+        }
+        SetupPanel {
+            Text(
+                if (state.profiles.isEmpty()) "Aucun profil pour l'instant" else "Profils de cette TV",
+                style = MaterialTheme.typography.labelMedium,
+                color = LuneAttenuee,
+            )
+            ProfilesManager(
+                profiles = state.profiles,
+                onSave = { scope.launch { store.save(it) } },
+                onDelete = { scope.launch { store.delete(it.id) } },
+                focusOnShow = true,
+            ) {
+                Spacer(Modifier.height(4.dp))
+                if (!ProfileRules.hasAdult(state.profiles)) {
+                    Text(
+                        "Crée au moins un profil adulte pour continuer : c'est lui qui règle la TV.",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = LuneAttenuee,
+                    )
+                }
+                Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    if (ProfileRules.hasAdult(state.profiles)) PillButton("Continuer", onClick = onContinue)
+                    PillButton("Retour", onClick = onBack)
+                }
+            }
+        }
     }
 }
 
@@ -189,6 +252,8 @@ private fun RowScope.SetupPanel(content: @Composable ColumnScope.() -> Unit) {
             .weight(1f)
             .background(Panneau, RoundedCornerShape(20.dp))
             .border(1.dp, PanneauClair, RoundedCornerShape(20.dp))
+            // Le formulaire d'un profil peut dépasser : le focus fait défiler jusqu'à l'élément choisi.
+            .verticalScroll(rememberScrollState())
             .padding(28.dp),
         verticalArrangement = Arrangement.spacedBy(14.dp),
         content = content,

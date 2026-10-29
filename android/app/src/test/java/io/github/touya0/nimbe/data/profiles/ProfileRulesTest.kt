@@ -1,0 +1,79 @@
+package io.github.touya0.nimbe.data.profiles
+
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
+import org.junit.Test
+
+class ProfileRulesTest {
+
+    private val quentin = Profile("q", "Quentin", 0, ProfileKind.Adult)
+    private val enfant = Profile("e", "Enfant", 1, ProfileKind.Child)
+    private val invite = Profile("i", "Invité", 2, ProfileKind.Guest)
+
+    @Test
+    fun `nom vide, trop long ou déjà pris`() {
+        assertEquals("Donne un nom au profil", ProfileRules.problem(Profile("n", "   ", 0, ProfileKind.Adult), listOf(quentin)))
+        assertNotNull(ProfileRules.problem(Profile("n", "x".repeat(21), 0, ProfileKind.Adult), listOf(quentin)))
+        assertNotNull(ProfileRules.problem(Profile("n", " quentin ", 0, ProfileKind.Adult), listOf(quentin)))
+        // Renommer un profil en gardant son propre nom n'est pas un doublon.
+        assertNull(ProfileRules.problem(quentin.copy(color = 3), listOf(quentin, enfant)))
+    }
+
+    @Test
+    fun `un seul invité`() {
+        assertNotNull(ProfileRules.problem(Profile("n", "Visite", 3, ProfileKind.Guest), listOf(quentin, invite)))
+        assertNull(ProfileRules.problem(invite.copy(color = 4), listOf(quentin, invite)))
+    }
+
+    @Test
+    fun `le dernier adulte ne peut ni partir ni changer de type`() {
+        assertNotNull(ProfileRules.problem(quentin.copy(kind = ProfileKind.Child), listOf(quentin, enfant)))
+        assertNotNull(ProfileRules.deleteProblem(quentin, listOf(quentin, enfant)))
+        val sophie = Profile("s", "Sophie", 3, ProfileKind.Adult)
+        assertNull(ProfileRules.problem(quentin.copy(kind = ProfileKind.Child), listOf(quentin, sophie)))
+        assertNull(ProfileRules.deleteProblem(quentin, listOf(quentin, sophie)))
+        assertNull(ProfileRules.deleteProblem(enfant, listOf(quentin, enfant)))
+    }
+
+    @Test
+    fun `on peut commencer par un profil enfant, mais continuer demande un adulte`() {
+        assertNull(ProfileRules.problem(enfant, emptyList()))
+        assertFalse(ProfileRules.hasAdult(listOf(enfant)))
+        assertTrue(ProfileRules.hasAdult(listOf(enfant, quentin)))
+    }
+
+    @Test
+    fun `huit profils au plus`() {
+        val eight = (1..8).map { Profile("p$it", "Profil $it", it % 6, ProfileKind.Adult) }
+        assertNotNull(ProfileRules.problem(Profile("n", "Neuf", 0, ProfileKind.Adult), eight))
+    }
+
+    @Test
+    fun `couleur libre et nom proposé`() {
+        assertEquals(2, ProfileRules.nextColor(listOf(quentin, enfant)))
+        assertEquals("", ProfileRules.suggestedName(ProfileKind.Adult, emptyList()))
+        assertEquals("Enfant", ProfileRules.suggestedName(ProfileKind.Child, listOf(quentin)))
+        assertEquals("", ProfileRules.suggestedName(ProfileKind.Child, listOf(enfant)))
+    }
+
+    @Test
+    fun `profil actif et question au démarrage`() {
+        val state = ProfilesState(listOf(quentin, enfant), activeId = "disparu", onStart = StartChoice.Ask)
+        assertEquals(quentin, state.active)
+        assertTrue(state.asksOnStart)
+        assertFalse(state.copy(onStart = StartChoice.ResumeLast).asksOnStart)
+        assertFalse(state.copy(profiles = listOf(quentin)).asksOnStart)
+    }
+
+    @Test
+    fun `aller-retour JSON, entrées illisibles ignorées`() {
+        val profiles = listOf(quentin, enfant, invite)
+        assertEquals(profiles, ProfileCodec.decode(ProfileCodec.encode(profiles)))
+        assertEquals(emptyList<Profile>(), ProfileCodec.decode("pas du json"))
+        val mixed = """[{"id":"q","name":"Quentin","color":9,"kind":"adult"},{"id":"x","name":"X","kind":"martien"},{"name":"sans id"}]"""
+        assertEquals(listOf(quentin.copy(color = 3)), ProfileCodec.decode(mixed))
+    }
+}

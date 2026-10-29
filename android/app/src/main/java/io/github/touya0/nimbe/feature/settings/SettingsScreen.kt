@@ -50,12 +50,16 @@ import io.github.touya0.nimbe.data.homeassistant.HomeAssistantAccount
 import io.github.touya0.nimbe.data.homeassistant.HomeAssistantLink
 import io.github.touya0.nimbe.data.jellyfin.JellyfinAccount
 import io.github.touya0.nimbe.data.jellyfin.JellyfinLink
+import io.github.touya0.nimbe.data.profiles.ProfilesState
+import io.github.touya0.nimbe.data.profiles.ProfilesStore
+import io.github.touya0.nimbe.data.profiles.StartChoice
 import io.github.touya0.nimbe.feature.homeassistant.HomeAssistantColor
 import io.github.touya0.nimbe.feature.homeassistant.HomeAssistantConnectController
 import io.github.touya0.nimbe.feature.homeassistant.HomeAssistantConnectScreen
 import io.github.touya0.nimbe.feature.onboarding.JellyfinConnectScreen
 import io.github.touya0.nimbe.feature.screensaver.ScreensaverSetting
 import io.github.touya0.nimbe.feature.onboarding.ServiceInitial
+import io.github.touya0.nimbe.feature.profiles.ProfilesManager
 import io.github.touya0.nimbe.ui.components.focusRing
 import io.github.touya0.nimbe.ui.theme.Alerte
 import io.github.touya0.nimbe.ui.theme.EnLigne
@@ -85,6 +89,7 @@ import kotlinx.coroutines.launch
 
 /** Les rubriques déjà construites ; les autres de la maquette arriveront avec leurs fonctions. */
 enum class SettingsSection(val label: String) {
+    Profiles("Profils"),
     Display("Affichage et accessibilité"),
     Screensaver("Écran de veille"),
     Servers("Serveurs et comptes"),
@@ -109,6 +114,11 @@ fun SettingsScreen(
     updates: UpdateController,
     jellyfin: JellyfinAccount,
     homeAssistant: HomeAssistantAccount,
+    profiles: ProfilesStore,
+    profilesState: ProfilesState,
+    /** Rubrique affichée, gardée par l'appelant pour ouvrir les réglages au bon endroit (« Gérer les profils »). */
+    section: SettingsSection,
+    onSectionChange: (SettingsSection) -> Unit,
     /** L'écran de veille en plein écran, tel qu'Android l'affichera. */
     screensaverPreview: @Composable () -> Unit,
     onOpenUpdate: () -> Unit,
@@ -117,7 +127,6 @@ fun SettingsScreen(
     onClose: () -> Unit,
 ) {
     val updateState by updates.state.collectAsStateWithLifecycle(initialValue = UpdateState())
-    var section by rememberSaveable { mutableStateOf(SettingsSection.Display) }
     val sectionRequesters = remember { SettingsSection.entries.associateWith { FocusRequester() } }
 
     // Ouvert par-dessus les réglages : en revenant, on retrouve la même rubrique.
@@ -169,8 +178,8 @@ fun SettingsScreen(
                     NavItem(
                         label = item.label,
                         selected = item == section,
-                        onClick = { section = item },
-                        onFocus = { section = item },
+                        onClick = { onSectionChange(item) },
+                        onFocus = { onSectionChange(item) },
                         badge = item == SettingsSection.Updates && updates.isNewer(updateState.available),
                         modifier = Modifier.focusRequester(sectionRequesters.getValue(item)),
                     )
@@ -189,6 +198,7 @@ fun SettingsScreen(
             verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
             when (section) {
+                SettingsSection.Profiles -> ProfilesPage(profiles, profilesState)
                 SettingsSection.Display -> DisplayPage(display, onDisplayChange, about, links)
                 SettingsSection.Screensaver -> ScreensaverPage(links, onPreview = { previewOpen = true })
                 SettingsSection.Servers -> ServersPage(
@@ -203,6 +213,31 @@ fun SettingsScreen(
                 SettingsSection.About -> AboutPage(about, links, onCacheCleared = { aboutVersion++ }, onRestartSetup = onRestartSetup)
             }
         }
+    }
+}
+
+@Composable
+private fun ProfilesPage(store: ProfilesStore, state: ProfilesState) {
+    val scope = rememberCoroutineScope()
+    PageTitle(
+        "Profils",
+        "Chaque profil a son accueil et ses réglages. Jellyfin et Home Assistant sont communs à toute la maison.",
+    )
+    ProfilesManager(
+        profiles = state.profiles,
+        onSave = { scope.launch { store.save(it) } },
+        onDelete = { scope.launch { store.delete(it.id) } },
+    ) {
+        SettingsGroupTitle("Pour toute la TV")
+        LinkRow(
+            "Quand la TV s'allume",
+            if (state.profiles.size > 1) "OK pour changer" else "Sans effet tant qu'il n'y a qu'un profil",
+            value = state.onStart.label,
+            onClick = {
+                val next = if (state.onStart == StartChoice.Ask) StartChoice.ResumeLast else StartChoice.Ask
+                scope.launch { store.setOnStart(next) }
+            },
+        )
     }
 }
 

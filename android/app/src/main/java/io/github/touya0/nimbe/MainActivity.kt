@@ -1,6 +1,9 @@
 package io.github.touya0.nimbe
 
+import android.content.BroadcastReceiver
+import android.content.Context
 import android.content.Intent
+import android.content.IntentFilter
 import android.content.pm.ApplicationInfo
 import android.os.Bundle
 import androidx.activity.ComponentActivity
@@ -8,6 +11,7 @@ import androidx.activity.compose.setContent
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.lifecycleScope
 import io.github.touya0.nimbe.core.network.ConnectivityMonitor
@@ -40,10 +44,19 @@ class MainActivity : ComponentActivity() {
     /** Un appui sur Accueil pendant que Nimbe tourne déjà : retour à l'onglet Accueil. */
     private val homePresses = MutableSharedFlow<Unit>(extraBufferCapacity = 1)
 
+    /** La TV vient de s'allumer : c'est là qu'on demande « Qui regarde ? ». */
+    private val screenOn = MutableSharedFlow<Unit>(extraBufferCapacity = 1)
+    private val screenOnReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context, intent: Intent) {
+            screenOn.tryEmit(Unit)
+        }
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         mode = CrashGuard.startupMode(this)
         simulateCrashIfAsked(intent)
+        ContextCompat.registerReceiver(this, screenOnReceiver, IntentFilter(Intent.ACTION_SCREEN_ON), ContextCompat.RECEIVER_NOT_EXPORTED)
 
         setContent {
             // Réglages d'affichage appliqués partout, y compris aux écrans Secours et sans échec.
@@ -76,11 +89,18 @@ class MainActivity : ComponentActivity() {
                         library = (application as NimbeApplication).library,
                         homeAssistant = (application as NimbeApplication).homeAssistant,
                         homeAssistantMonitor = (application as NimbeApplication).homeAssistantMonitor,
+                        profiles = (application as NimbeApplication).profiles,
                         homePresses = homePresses,
+                        screenOn = screenOn,
                     )
                 }
             }
         }
+    }
+
+    override fun onDestroy() {
+        unregisterReceiver(screenOnReceiver)
+        super.onDestroy()
     }
 
     override fun onNewIntent(intent: Intent) {

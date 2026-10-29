@@ -33,3 +33,13 @@ val TileColors = listOf(
     Color(0xFF475569),
     Color(0xFF2A2F38),
 )
+
+// Couleurs des avatars de profil, dans l'ordre où elles sont proposées (ProfileRules.COLORS).
+val ProfileColors = listOf(
+    Color(0xFFD9822B),
+    Color(0xFF7C5CD6),
+    Color(0xFF2F7FD8),
+    Color(0xFF2E9E6A),
+    Color(0xFFD9467A),
+    Color(0xFF0E9AAE),
+)

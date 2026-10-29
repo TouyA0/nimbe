@@ -15,9 +15,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.text.BasicTextField
-import androidx.compose.foundation.text.KeyboardActions
-import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -33,8 +30,6 @@ import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.SolidColor
-import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -46,6 +41,7 @@ import io.github.touya0.nimbe.data.jellyfin.JellyfinAccount
 import io.github.touya0.nimbe.data.jellyfin.JellyfinDiscovery
 import io.github.touya0.nimbe.ui.components.PillButton
 import io.github.touya0.nimbe.ui.components.Spinner
+import io.github.touya0.nimbe.ui.components.TextInput
 import io.github.touya0.nimbe.ui.components.focusRing
 import io.github.touya0.nimbe.ui.theme.Alerte
 import io.github.touya0.nimbe.ui.theme.EnLigne
@@ -342,34 +338,7 @@ internal fun AddressField(
     modifier: Modifier = Modifier,
     placeholder: String = "192.168.1.20:8096",
 ) {
-    var focused by remember { mutableStateOf(false) }
-    BasicTextField(
-        value = value,
-        onValueChange = { onValueChange(it.replace("\n", "")) },
-        singleLine = true,
-        textStyle = MaterialTheme.typography.titleMedium.copy(color = Lune, fontSize = 20.sp),
-        cursorBrush = SolidColor(Focus),
-        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri, imeAction = ImeAction.Go, autoCorrectEnabled = false),
-        keyboardActions = KeyboardActions(onGo = { onSubmit() }),
-        modifier = modifier
-            .fillMaxWidth()
-            .onFocusChanged { focused = it.isFocused }
-            .focusRing(focused, NimbeFocus.CardRadius, grow = false),
-        decorationBox = { inner ->
-            Box(
-                Modifier
-                    .fillMaxWidth()
-                    .background(Nuit.copy(alpha = 0.6f), NimbeFocus.CardShape)
-                    .border(1.dp, PanneauClair, NimbeFocus.CardShape)
-                    .padding(horizontal = 16.dp, vertical = 14.dp),
-            ) {
-                if (value.isEmpty()) {
-                    Text(placeholder, style = MaterialTheme.typography.titleMedium.copy(fontSize = 20.sp), color = LuneAttenuee)
-                }
-                inner()
-            }
-        },
-    )
+    TextInput(value, onValueChange, onSubmit, modifier, placeholder, KeyboardType.Uri)
 }
 
 /** « 9:42 », recalculé chaque seconde. */

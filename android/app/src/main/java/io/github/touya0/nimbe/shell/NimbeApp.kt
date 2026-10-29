@@ -19,7 +19,11 @@ import io.github.touya0.nimbe.feature.films.FilmsScreen
 import io.github.touya0.nimbe.feature.media.JellyfinUi
 import io.github.touya0.nimbe.feature.media.LocalJellyfin
 import io.github.touya0.nimbe.feature.media.MediaDestination
+import io.github.touya0.nimbe.data.profiles.ProfilesState
+import io.github.touya0.nimbe.data.profiles.ProfilesStore
 import io.github.touya0.nimbe.feature.onboarding.FirstLaunchScreen
+import io.github.touya0.nimbe.feature.onboarding.SetupStep
+import io.github.touya0.nimbe.feature.profiles.WhoIsWatchingScreen
 import io.github.touya0.nimbe.feature.onboarding.JellyfinConnectScreen
 import io.github.touya0.nimbe.feature.series.SeriesDetailScreen
 import io.github.touya0.nimbe.feature.series.SeriesScreen
@@ -37,6 +41,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
@@ -78,6 +83,7 @@ import io.github.touya0.nimbe.feature.home.ComingSoonScreen
 import io.github.touya0.nimbe.feature.home.HomeScreen
 import io.github.touya0.nimbe.feature.settings.SettingsLinks
 import io.github.touya0.nimbe.feature.settings.SettingsScreen
+import io.github.touya0.nimbe.feature.settings.SettingsSection
 import io.github.touya0.nimbe.ui.components.MenuHost
 import io.github.touya0.nimbe.ui.components.MenuState
 import io.github.touya0.nimbe.ui.theme.LocalDisplay
@@ -102,7 +108,9 @@ fun NimbeApp(
     library: JellyfinLibrary,
     homeAssistant: HomeAssistantAccount,
     homeAssistantMonitor: HomeAssistantMonitor,
+    profiles: ProfilesStore,
     homePresses: Flow<Unit>,
+    screenOn: Flow<Unit>,
 ) {
     val linked by remember(jellyfin) { jellyfin.link.map { Linked(it) } }.collectAsStateWithLifecycle(initialValue = null)
     var jellyfinConnectOpen by rememberSaveable { mutableStateOf(false) }
@@ -152,24 +160,44 @@ fun NimbeApp(
             piUp = piUp,
         )
     }
-    // Tant que le premier lancement n'est pas terminé, Nimbe s'ouvre dessus ; rien avant d'avoir lu le réglage.
+    // Tant que le premier lancement n'est pas terminé, ou s'il n'y a plus aucun profil, Nimbe s'ouvre dessus ;
+    // rien avant d'avoir lu les réglages.
     val setupDone by prefs.setupDone.collectAsStateWithLifecycle(initialValue = null)
-    when (setupDone) {
-        null -> {
-            Box(Modifier.fillMaxSize().background(Nuit))
-            return
-        }
-        false -> {
-            FirstLaunchScreen(jellyfin, homeAssistant, onFinish = { retryScope.launch { prefs.setSetupDone(true) } })
-            return
-        }
-        true -> Unit
+    val profilesState by profiles.state.collectAsStateWithLifecycle(initialValue = null)
+    val done = setupDone
+    val state = profilesState
+    if (done == null || state == null) {
+        Box(Modifier.fillMaxSize().background(Nuit))
+        return
+    }
+    // Une fois ouvert, l'assistant reste affiché jusqu'à « Continuer » : créer le premier profil ne le ferme pas.
+    var inSetup by rememberSaveable { mutableStateOf(false) }
+    val showSetup = inSetup || !done || state.profiles.isEmpty()
+    LaunchedEffect(showSetup) { if (showSetup) inSetup = true }
+    if (showSetup) {
+        FirstLaunchScreen(
+            jellyfin,
+            homeAssistant,
+            profiles,
+            state,
+            onFinish = {
+                retryScope.launch {
+                    prefs.setSetupDone(true)
+                    inSetup = false
+                }
+            },
+            startAt = if (done) SetupStep.Profiles else SetupStep.Server,
+        )
+        return
     }
     CompositionLocalProvider(LocalJellyfin provides ui) {
         if (jellyfinConnectOpen) {
             JellyfinConnectScreen(jellyfin, linked?.link?.serverUrl, onClose = { jellyfinConnectOpen = false })
         } else {
-            NimbeShell(repository, prefs, launcher, connectivityMonitor, launches, updates, jellyfin, homeAssistant, ha, homeAssistantMonitor::history, homePresses)
+            NimbeShell(
+                repository, prefs, launcher, connectivityMonitor, launches, updates, jellyfin, homeAssistant, ha,
+                homeAssistantMonitor::history, profiles, state, homePresses, screenOn,
+            )
         }
     }
 }
@@ -186,9 +214,19 @@ private fun NimbeShell(
     homeAssistant: HomeAssistantAccount,
     ha: HaLive,
     loadHistory: suspend (String) -> List<HistoryPoint>,
+    profiles: ProfilesStore,
+    profilesState: ProfilesState,
     homePresses: Flow<Unit>,
+    screenOn: Flow<Unit>,
 ) {
     var settingsOpen by rememberSaveable { mutableStateOf(false) }
+    var settingsSection by rememberSaveable { mutableStateOf(SettingsSection.Display) }
+    // « Qui regarde ? » au démarrage de Nimbe et quand la TV s'allume, si la TV est réglée pour demander.
+    var whoOpen by rememberSaveable { mutableStateOf(profilesState.asksOnStart) }
+    val currentProfiles by rememberUpdatedState(profilesState)
+    LaunchedEffect(screenOn) {
+        screenOn.collect { if (currentProfiles.asksOnStart) whoOpen = true }
+    }
     var statusOpen by rememberSaveable { mutableStateOf(false) }
     var returnToSettingsButton by remember { mutableStateOf(false) }
     val context = LocalContext.current
@@ -247,6 +285,7 @@ private fun NimbeShell(
         homePresses.collect {
             settingsOpen = false
             statusOpen = false
+            whoOpen = false
             returnToSettingsButton = false
             focusTab(Tab.Home)
         }
@@ -264,6 +303,23 @@ private fun NimbeShell(
             updates.snooze()
             updateOpen = false
         })
+        return
+    }
+
+    if (whoOpen) {
+        WhoIsWatchingScreen(
+            profilesState,
+            onPick = { profile ->
+                scope.launch { profiles.setActive(profile.id) }
+                whoOpen = false
+            },
+            onManage = {
+                whoOpen = false
+                settingsSection = SettingsSection.Profiles
+                settingsOpen = true
+            },
+            onClose = { whoOpen = false },
+        )
         return
     }
 
@@ -295,6 +351,10 @@ private fun NimbeShell(
             updates = updates,
             jellyfin = jellyfin,
             homeAssistant = homeAssistant,
+            profiles = profiles,
+            profilesState = profilesState,
+            section = settingsSection,
+            onSectionChange = { settingsSection = it },
             screensaverPreview = { ScreensaverContent(status, ha) },
             onOpenUpdate = { updateOpen = true },
             onRestartSetup = {
@@ -415,9 +475,12 @@ private fun NimbeShell(
                 onStatus = { statusOpen = true },
                 onSettings = {
                     returnToSettingsButton = true
+                    settingsSection = SettingsSection.Display
                     settingsOpen = true
                 },
                 settingsRequester = settingsRequester,
+                profile = profilesState.active,
+                onProfile = { whoOpen = true },
             )
             // En remontant depuis le contenu, le focus va sur l'onglet affiché, même depuis une carte
             // placée sous la roue crantée : sinon la recherche géométrique choisit l'élément le plus proche.

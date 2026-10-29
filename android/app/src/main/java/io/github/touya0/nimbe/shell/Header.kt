@@ -38,6 +38,8 @@ import androidx.tv.material3.MaterialTheme
 import androidx.tv.material3.Surface
 import androidx.tv.material3.Text
 import io.github.touya0.nimbe.core.network.ConnectivityStatus
+import io.github.touya0.nimbe.data.profiles.Profile
+import io.github.touya0.nimbe.feature.profiles.profileColor
 import io.github.touya0.nimbe.feature.status.ServerLevel
 import io.github.touya0.nimbe.feature.status.ServerVerdict
 import io.github.touya0.nimbe.ui.components.focusRing
@@ -83,6 +85,8 @@ fun Header(
     onStatus: () -> Unit,
     onSettings: () -> Unit,
     settingsRequester: FocusRequester,
+    profile: Profile?,
+    onProfile: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     Row(
@@ -105,6 +109,10 @@ fun Header(
         StatusPill(status, onStatus)
         Spacer(Modifier.width(12.dp))
         SettingsButton(onSettings, Modifier.focusRequester(settingsRequester))
+        profile?.let {
+            Spacer(Modifier.width(12.dp))
+            ProfileButton(it, onProfile)
+        }
         Spacer(Modifier.width(16.dp))
         Clock()
     }
@@ -164,6 +172,32 @@ private fun SettingsButton(onClick: () -> Unit, modifier: Modifier) {
     ) {
         Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
             Text("⚙", style = MaterialTheme.typography.titleMedium)
+        }
+    }
+}
+
+/** Avatar du profil actif : OK ouvre « Qui regarde ? » pour changer de profil. */
+@Composable
+private fun ProfileButton(profile: Profile, onClick: () -> Unit) {
+    var focused by remember { mutableStateOf(false) }
+    val color = profileColor(profile.color)
+    Surface(
+        onClick = onClick,
+        modifier = Modifier
+            .size(40.dp)
+            .onFocusChanged { focused = it.isFocused }
+            .focusRing(focused, 20.dp, grow = false),
+        shape = ClickableSurfaceDefaults.shape(CircleShape),
+        colors = ClickableSurfaceDefaults.colors(
+            containerColor = color,
+            contentColor = Lune,
+            focusedContainerColor = color,
+            focusedContentColor = Lune,
+        ),
+        scale = ClickableSurfaceDefaults.scale(focusedScale = 1f),
+    ) {
+        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+            Text(profile.initial, style = MaterialTheme.typography.titleMedium)
         }
     }
 }
