@@ -60,7 +60,7 @@ class WebDavTest {
     @Test
     fun `photos et vidéos lues, dossiers cachés écartés`() {
         var read = 0
-        val files = WebDav.parseSearch(response.byteInputStream()) { read = it }
+        val files = WebDav.parseSearch(response.byteInputStream(), count = { read = it })
         assertEquals(3, read)
         assertEquals(2, files.size)
 

@@ -26,6 +26,8 @@ object ChildMode {
             LayoutItem(HomeRow.Apps.key, visible = true),
             LayoutItem(HomeRow.Latest.key, visible = true),
             LayoutItem(HomeRow.Continue.key, visible = false),
+            // Pas de galerie : ni les photos de la famille, ni leurs souvenirs.
+            LayoutItem(HomeRow.Memories.key, visible = false),
         ),
         tabs = TabKeys.defaults.map { LayoutItem(it, visible = it in setOf(TabKeys.HOME, "movies", "series", TabKeys.APPS)) },
     )

@@ -81,10 +81,11 @@ import io.github.touya0.nimbe.crashguard.StockLauncher
 import io.github.touya0.nimbe.data.jellyfin.JellyfinAccount
 import io.github.touya0.nimbe.data.nextcloud.NextcloudAccounts
 import io.github.touya0.nimbe.data.nextcloud.NextcloudGallery
+import io.github.touya0.nimbe.feature.gallery.GalleryHomeRow
+import io.github.touya0.nimbe.feature.gallery.GalleryNav
 import io.github.touya0.nimbe.feature.gallery.GalleryScreen
 import io.github.touya0.nimbe.feature.gallery.GalleryViewer
 import io.github.touya0.nimbe.feature.gallery.GalleryViewerRequest
-import androidx.compose.foundation.lazy.grid.LazyGridState
 import io.github.touya0.nimbe.data.homeassistant.HaConnection
 import io.github.touya0.nimbe.data.homeassistant.HaLive
 import io.github.touya0.nimbe.data.homeassistant.HistoryPoint
@@ -383,7 +384,13 @@ private fun NimbeShell(
     )
 
     // Retour ramène à l'Accueil ; sur l'Accueil, il ne fait rien : c'est l'écran d'accueil du stick.
-    BackHandler { focusTab(Tab.Home) }
+    // État de l'onglet Galerie (rubrique, album ouvert, positions), un par profil : il survit au plein écran.
+    val galleryNav = remember(activeId) { GalleryNav() }
+    galleryNav.holdFocus = { runCatching { requesters.getValue(Tab.Gallery).requestFocus() } }
+    // Retour : referme d'abord l'album ou le souvenir ouvert dans la Galerie, sinon revient à l'Accueil.
+    BackHandler {
+        if (tab == Tab.Gallery && galleryNav.open != null) galleryNav.close() else focusTab(Tab.Home)
+    }
     // Accueil, depuis n'importe où dans Nimbe : réglages fermés, focus sur l'onglet Accueil.
     LaunchedEffect(homePresses) {
         homePresses.collect {
@@ -571,8 +578,6 @@ private fun NimbeShell(
     // Photo en plein écran, par-dessus les onglets. La grille garde sa position (un état par profil)
     // et, au retour, la photo regardée en dernier reprend le focus.
     var galleryViewer by remember { mutableStateOf<GalleryViewerRequest?>(null) }
-    var galleryRestoreId by remember { mutableStateOf<Long?>(null) }
-    val galleryGrid = remember(activeId) { LazyGridState() }
     // Lecture : par-dessus tout le reste. Une carte entamée demande d'abord « Reprendre ou recommencer ».
     var playing by remember { mutableStateOf<PlayRequest?>(null) }
     var askResume by remember { mutableStateOf<MediaItem?>(null) }
@@ -637,7 +642,7 @@ private fun NimbeShell(
     }
     galleryViewer?.let { request ->
         GalleryViewer(request, onClose = { last ->
-            galleryRestoreId = last.fileId
+            galleryNav.restoreFileId = last.fileId
             galleryViewer = null
         })
         return
@@ -707,6 +712,7 @@ private fun NimbeShell(
             ) {
                 when (tab) {
                     Tab.Home -> HomeScreen(
+                        memories = { GalleryHomeRow(gallery, profilesState.active, onOpen = { galleryViewer = it }) },
                         rows = layout.visibleRows,
                         welcome = when {
                             guest -> HomeWelcome(
@@ -776,9 +782,7 @@ private fun NimbeShell(
                         gallery,
                         profilesState.active,
                         onOpenSettings = { openSettings(SettingsSection.Servers) },
-                        gridState = galleryGrid,
-                        restoreFileId = galleryRestoreId,
-                        onRestored = { galleryRestoreId = null },
+                        nav = galleryNav,
                         onOpen = { galleryViewer = it },
                     )
                 }

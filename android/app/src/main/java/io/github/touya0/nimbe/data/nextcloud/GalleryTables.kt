@@ -94,3 +94,15 @@ interface GalleryDao {
         deleteSync(profileId)
     }
 }
+
+/**
+ * Un album de l'appli Photos de Nextcloud. [davPath] : son adresse WebDAV, décodée
+ * (« photos/quentin/albums/Bretagne 2025 »). [owner] : pour un album partagé, qui l'a partagé.
+ */
+data class NextcloudAlbum(
+    val name: String,
+    val davPath: String,
+    val count: Int,
+    val coverFileId: Long?,
+    val owner: String? = null,
+)

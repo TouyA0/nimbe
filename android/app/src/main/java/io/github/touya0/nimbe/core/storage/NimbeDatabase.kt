@@ -94,6 +94,10 @@ interface CachedResponseDao {
     @Query("DELETE FROM cached_responses WHERE savedAt < :before")
     suspend fun deleteOlderThan(before: Long)
 
+    /** Tout ce qui commence par [prefix] (les albums d'un profil Nextcloud, par exemple). */
+    @Query("DELETE FROM cached_responses WHERE `key` LIKE :prefix || '%'")
+    suspend fun deletePrefix(prefix: String)
+
     /** À la déconnexion : on oublie tout ce qui venait du compte. */
     @Query("DELETE FROM cached_responses")
     suspend fun clear()

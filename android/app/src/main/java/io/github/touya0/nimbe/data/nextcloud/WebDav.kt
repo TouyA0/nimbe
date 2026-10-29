@@ -61,6 +61,97 @@ object WebDav {
         </d:searchrequest>
     """.trimIndent()
 
+    /**
+     * Les photos d'un album (appli Photos de Nextcloud) n'ont pas de chemin dans les fichiers du compte :
+     * on garde leur adresse WebDAV d'album, derrière ce préfixe (« @dav/photos/quentin/albums/Bretagne/42-IMG.jpg »).
+     * Elle sert à lire la vidéo ; l'aperçu, lui, passe par l'identifiant du fichier.
+     */
+    const val DAV_PREFIX = "@dav/"
+
+    /** Nom du fichier à afficher : dans un album, Nextcloud le préfixe de son identifiant (« 42-IMG.jpg »). */
+    fun displayName(path: String): String {
+        val name = path.substringAfterLast('/')
+        return if (path.startsWith(DAV_PREFIX)) name.replaceFirst(Regex("^\\d+-"), "") else name
+    }
+
+    /** Chemin d'un élément d'album, décodé, derrière [DAV_PREFIX] ; null pour une autre adresse. */
+    internal fun albumItemPath(href: String): String? {
+        val decoded = percentDecode(href).trimEnd('/')
+        val start = decoded.indexOf("/remote.php/dav/").takeIf { it >= 0 } ?: return null
+        return DAV_PREFIX + decoded.substring(start + "/remote.php/dav/".length)
+    }
+
+    /** Liste des albums : nombre d'éléments et dernière photo (pour la couverture). */
+    const val ALBUMS_BODY = """<?xml version="1.0" encoding="UTF-8"?>
+<d:propfind xmlns:d="DAV:" xmlns:nc="http://nextcloud.org/ns"><d:prop><d:resourcetype/><nc:nbItems/><nc:last-photo/></d:prop></d:propfind>"""
+
+    /** Contenu d'un album : les mêmes propriétés que la recherche des photos. */
+    const val ALBUM_ITEMS_BODY = """<?xml version="1.0" encoding="UTF-8"?>
+<d:propfind xmlns:d="DAV:" xmlns:oc="http://owncloud.org/ns" xmlns:nc="http://nextcloud.org/ns"><d:prop>
+<oc:fileid/><d:getcontenttype/><d:getlastmodified/><oc:size/><nc:has-preview/>
+<nc:metadata-photos-original_date_time/><nc:metadata-photos-size/>
+</d:prop></d:propfind>"""
+
+    /**
+     * Albums d'une réponse PROPFIND sur …/albums/ ou …/sharedalbums/. Un album partagé s'appelle
+     * « Nom (propriétaire) » côté serveur : on sépare les deux. Triés du plus fourni au moins fourni.
+     */
+    fun parseAlbums(input: InputStream, shared: Boolean): List<NextcloudAlbum> {
+        val handler = AlbumHandler()
+        val factory = SAXParserFactory.newInstance().apply { isNamespaceAware = true }
+        factory.newSAXParser().parse(InputSource(input), handler)
+        return handler.albums.mapNotNull { (href, props) ->
+            val path = percentDecode(href).trimEnd('/')
+            val parent = path.substringBeforeLast('/', "").substringAfterLast('/')
+            // Le dossier demandé lui-même (…/albums) n'est pas un album.
+            if (parent != "albums" && parent != "sharedalbums") return@mapNotNull null
+            val start = path.indexOf("/remote.php/dav/").takeIf { it >= 0 } ?: return@mapNotNull null
+            val rawName = path.substringAfterLast('/')
+            val owner = if (shared) OWNER.find(rawName)?.groupValues?.get(1) else null
+            NextcloudAlbum(
+                name = if (owner != null) rawName.removeSuffix("($owner)").trim() else rawName,
+                davPath = path.substring(start + "/remote.php/dav/".length),
+                count = props["nbItems"]?.toIntOrNull() ?: 0,
+                coverFileId = props["last-photo"]?.toLongOrNull()?.takeIf { it > 0 },
+                owner = owner,
+            )
+        }.sortedByDescending { it.count }
+    }
+
+    private val OWNER = Regex("""\(([^()]+)\)$""")
+
+    private class AlbumHandler : DefaultHandler() {
+        val albums = mutableListOf<Pair<String, Map<String, String>>>()
+        private val text = StringBuilder()
+        private var props = mutableMapOf<String, String>()
+        private var collection = false
+
+        override fun startElement(uri: String, localName: String, qName: String, attributes: Attributes) {
+            text.setLength(0)
+            if (uri == DAV && localName == "response") {
+                props = mutableMapOf()
+                collection = false
+            }
+            if (uri == DAV && localName == "collection") collection = true
+        }
+
+        override fun characters(ch: CharArray, start: Int, length: Int) {
+            text.append(ch, start, length)
+        }
+
+        override fun endElement(uri: String, localName: String, qName: String) {
+            if (uri == DAV && localName == "response") {
+                props["href"]?.takeIf { collection }?.let { albums += it to props }
+                return
+            }
+            val value = text.toString().trim()
+            text.setLength(0)
+            if (value.isNotEmpty() && localName in ALBUM_PROPS) props[localName] = value
+        }
+    }
+
+    private val ALBUM_PROPS = setOf("href", "nbItems", "last-photo")
+
     /** Les dossiers directement dans un dossier : PROPFIND de profondeur 1, type de ressource seulement. */
     const val FOLDERS_BODY = """<?xml version="1.0" encoding="UTF-8"?>
 <d:propfind xmlns:d="DAV:"><d:prop><d:resourcetype/></d:prop></d:propfind>"""
@@ -94,8 +185,8 @@ object WebDav {
      * les éléments sans identifiant ou sans type, et ce qui n'est ni image ni vidéo.
      * [count] reçoit le nombre de réponses lues, écartées comprises, pour savoir s'il reste une page.
      */
-    fun parseSearch(input: InputStream, count: (Int) -> Unit = {}): List<GalleryFile> {
-        val handler = SearchHandler()
+    fun parseSearch(input: InputStream, count: (Int) -> Unit = {}, pathOf: (String) -> String? = ::relativePath): List<GalleryFile> {
+        val handler = SearchHandler(pathOf)
         val factory = SAXParserFactory.newInstance().apply { isNamespaceAware = true }
         factory.newSAXParser().parse(InputSource(input), handler)
         count(handler.responses)
@@ -175,7 +266,7 @@ object WebDav {
 
     private fun escapeXml(text: String) = text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
 
-    private class SearchHandler : DefaultHandler() {
+    private class SearchHandler(private val pathOf: (String) -> String?) : DefaultHandler() {
         val files = mutableListOf<GalleryFile>()
         var responses = 0
 
@@ -204,7 +295,7 @@ object WebDav {
         }
 
         private fun toFile(p: Map<String, String>): GalleryFile? {
-            val path = relativePath(p["href"] ?: return null) ?: return null
+            val path = pathOf(p["href"] ?: return null) ?: return null
             if (path.split('/').any { it.startsWith(".") }) return null
             val mime = p["getcontenttype"]?.substringBefore(';')?.trim()?.lowercase() ?: return null
             if (!mime.startsWith("image/") && !mime.startsWith("video/")) return null
@@ -216,7 +307,7 @@ object WebDav {
                 fileId = fileId,
                 path = path,
                 mime = mime,
-                takenAt = taken ?: FileNameDate.parse(path.substringAfterLast('/')) ?: modified,
+                takenAt = taken ?: FileNameDate.parse(displayName(path)) ?: modified,
                 size = p["size"]?.toLongOrNull() ?: 0L,
                 width = width,
                 height = height,

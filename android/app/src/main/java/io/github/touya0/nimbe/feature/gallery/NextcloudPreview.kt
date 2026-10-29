@@ -27,6 +27,7 @@ import coil3.request.ImageRequest
 import io.github.touya0.nimbe.data.nextcloud.GalleryItem
 import io.github.touya0.nimbe.data.nextcloud.NextcloudApi
 import io.github.touya0.nimbe.data.nextcloud.NextcloudAuth
+import io.github.touya0.nimbe.data.nextcloud.WebDav
 
 /**
  * Aperçu calculé par Nextcloud, jamais le fichier d'origine : [width]×[height] en pixels, recadré.
@@ -44,14 +45,17 @@ fun NextcloudPreview(
     contentScale: ContentScale = ContentScale.Crop,
     /** Recadré pour remplir la case (grille) ; sinon la photo entière, dans [width]×[height] (plein écran). */
     crop: Boolean = true,
+    /** Sans aperçu, le nom du fichier ; pas sur une couverture, où il se mêlerait au titre. */
+    showNameWithoutPreview: Boolean = true,
 ) {
     val context = LocalPlatformContext.current
     val request = remember(auth, item.fileId, width, height, crop) { previewRequest(context, auth, item, width, height, crop) }
     var failed by remember(request) { mutableStateOf(!item.hasPreview) }
     if (failed) {
         Box(modifier.background(PanneauClair), contentAlignment = Alignment.Center) {
+            if (!showNameWithoutPreview) return@Box
             Text(
-                item.path.substringAfterLast('/'),
+                WebDav.displayName(item.path),
                 style = MaterialTheme.typography.labelMedium,
                 color = LuneAttenuee,
                 textAlign = TextAlign.Center,

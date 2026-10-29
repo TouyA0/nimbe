@@ -53,7 +53,7 @@ class NimbeApplication : Application(), SingletonImageLoader.Factory {
     val nextcloud: NextcloudAccounts by lazy { NextcloudAccounts(this, vault, onDisconnected = { gallery.forget(it) }) }
 
     /** Index des photos et vidéos de chaque galerie, lu par l'onglet Galerie et l'écran de veille. */
-    val gallery: NextcloudGallery by lazy { NextcloudGallery(nextcloud, database.gallery(), scope) }
+    val gallery: NextcloudGallery by lazy { NextcloudGallery(nextcloud, database.gallery(), database.cachedResponses(), scope) }
 
     /** État du Pi en direct, partagé par l'en-tête, l'écran « État du serveur » et bientôt l'écran de veille. */
     val homeAssistantMonitor: HomeAssistantMonitor by lazy { HomeAssistantMonitor(homeAssistant, scope) }

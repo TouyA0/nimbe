@@ -35,6 +35,8 @@ object GuestMode {
             LayoutItem(HomeRow.Apps.key, visible = true),
             // Pas d'historique : la reprise de lecture des autres ne s'affiche pas non plus.
             LayoutItem(HomeRow.Continue.key, visible = false),
+            // Pas de galerie pour l'invité.
+            LayoutItem(HomeRow.Memories.key, visible = false),
         ),
         tabs = TabKeys.defaults.map { LayoutItem(it, visible = it !in setOf("music", "gallery")) },
     )

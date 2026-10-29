@@ -108,7 +108,7 @@ class NextcloudApi(private val userAgent: () -> String) {
     suspend fun searchMedia(auth: NextcloudAuth, userId: String, folder: String?, offset: Int, limit: Int): Pair<List<GalleryFile>, Int> {
         var read = 0
         val files = dav(auth, "SEARCH", "${auth.server}/remote.php/dav/", WebDav.searchBody(userId, folder, offset, limit)) {
-            WebDav.parseSearch(it) { count -> read = count }
+            WebDav.parseSearch(it, count = { count -> read = count })
         }
         return files to read
     }
@@ -117,6 +117,25 @@ class NextcloudApi(private val userAgent: () -> String) {
     suspend fun folders(auth: NextcloudAuth, userId: String, folder: String?): List<String> =
         dav(auth, "PROPFIND", "${auth.server}/remote.php/dav${WebDav.filesPath(userId, folder)}/", WebDav.FOLDERS_BODY, depth = "1") {
             WebDav.parseFolders(it, folder)
+        }
+
+    /**
+     * Albums de l'appli Photos du compte ([shared] : ceux que d'autres lui ont partagés).
+     * Sans l'appli Photos sur le serveur, l'adresse n'existe pas : simplement aucun album.
+     */
+    suspend fun albums(auth: NextcloudAuth, userId: String, shared: Boolean): List<NextcloudAlbum> = try {
+        val folder = if (shared) "sharedalbums" else "albums"
+        dav(auth, "PROPFIND", "${auth.server}/remote.php/dav/photos/${WebDav.encodeSegment(userId)}/$folder/", WebDav.ALBUMS_BODY, depth = "1") {
+            WebDav.parseAlbums(it, shared)
+        }
+    } catch (e: NextcloudException) {
+        if (e.kind == NextcloudException.Kind.NotFound) emptyList() else throw e
+    }
+
+    /** Photos et vidéos d'un album. */
+    suspend fun albumItems(auth: NextcloudAuth, album: NextcloudAlbum): List<GalleryFile> =
+        dav(auth, "PROPFIND", davUrl(auth.server, album.davPath) + "/", WebDav.ALBUM_ITEMS_BODY, depth = "1") {
+            WebDav.parseSearch(it, pathOf = WebDav::albumItemPath)
         }
 
     /** Requête WebDAV dont la réponse XML est lue au fil de l'eau par [parse]. */
@@ -227,7 +246,13 @@ class NextcloudApi(private val userAgent: () -> String) {
             "$server/index.php/core/preview?fileId=$fileId&x=$width&y=$height&a=${if (crop) 0 else 1}&forceIcon=0"
 
         /** Adresse WebDAV du fichier d'origine, pour la lecture des vidéos (le mot de passe part en en-tête). */
-        fun fileUrl(server: String, userId: String, path: String): String = "$server/remote.php/dav${WebDav.filesPath(userId, path)}"
+        fun fileUrl(server: String, userId: String, path: String): String =
+            if (path.startsWith(WebDav.DAV_PREFIX)) davUrl(server, path.removePrefix(WebDav.DAV_PREFIX))
+            else "$server/remote.php/dav${WebDav.filesPath(userId, path)}"
+
+        /** « photos/quentin/albums/Bretagne 2025 » → adresse complète, chaque morceau encodé. */
+        fun davUrl(server: String, davPath: String): String =
+            "$server/remote.php/dav/" + davPath.split('/').filter { it.isNotEmpty() }.joinToString("/") { WebDav.encodeSegment(it) }
 
         fun basic(auth: NextcloudAuth): String =
             "Basic " + Base64.getEncoder().encodeToString("${auth.loginName}:${auth.appPassword}".toByteArray(Charsets.UTF_8))

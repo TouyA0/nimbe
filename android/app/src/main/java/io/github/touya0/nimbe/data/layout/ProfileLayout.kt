@@ -12,6 +12,7 @@ enum class HomeRow(val key: String, val label: String) {
     Continue("continue", "Continuer à regarder"),
     Apps("apps", "Mes applis"),
     Latest("latest", "Ajouté récemment sur Jellyfin"),
+    Memories("memories", "Souvenirs"),
     ;
 
     companion object {

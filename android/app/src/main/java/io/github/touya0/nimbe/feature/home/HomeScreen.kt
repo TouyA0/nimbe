@@ -87,6 +87,8 @@ fun HomeScreen(
     onPlayItem: (MediaItem) -> Unit,
     restoreFocusId: String?,
     onRestored: () -> Unit,
+    /** Rangée « Souvenirs » de la galerie Nextcloud du profil ; elle ne dessine rien s'il n'y en a pas. */
+    memories: @Composable () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     val jellyfin = LocalJellyfin.current
@@ -215,6 +217,7 @@ fun HomeScreen(
                             }
             
                             }
+                            HomeRow.Memories -> memories()
                         }
                     }
                 }

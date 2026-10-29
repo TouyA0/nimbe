@@ -1,5 +1,7 @@
 package io.github.touya0.nimbe.data.nextcloud
 
+import io.github.touya0.nimbe.core.storage.CachedResponse
+import io.github.touya0.nimbe.core.storage.CachedResponseDao
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.launch
@@ -27,6 +29,8 @@ data class GallerySyncState(val syncing: Boolean = false, val error: String? = n
 class NextcloudGallery(
     private val accounts: NextcloudAccounts,
     private val dao: GalleryDao,
+    /** Albums et leur contenu, gardés pour s'afficher tout de suite et serveur coupé. */
+    private val cache: CachedResponseDao,
     /** Pour les synchronisations qui doivent survivre à l'écran qui les lance. */
     private val scope: CoroutineScope,
 ) {
@@ -85,8 +89,39 @@ class NextcloudGallery(
     /** Galerie déconnectée ou profil supprimé : on oublie son index et son état. */
     suspend fun forget(profileId: String) {
         dao.forget(profileId)
+        cache.deletePrefix(cachePrefix(profileId))
         states.remove(profileId)
     }
+
+    /** Albums gardés sur la TV, null s'il n'y a encore rien en cache. */
+    suspend fun cachedAlbums(profileId: String, shared: Boolean): List<NextcloudAlbum>? =
+        cache.get(albumsKey(profileId, shared))?.json?.let(AlbumCodec::decodeAlbums)
+
+    /** Redemande les albums au serveur et les garde. Lève [NextcloudException] s'il ne répond pas. */
+    suspend fun refreshAlbums(profileId: String, shared: Boolean): List<NextcloudAlbum> {
+        val auth = accounts.auth(profileId) ?: return emptyList()
+        val userId = accounts.links.first()[profileId]?.userId ?: return emptyList()
+        val albums = accounts.api.albums(auth, userId, shared)
+        cache.put(CachedResponse(albumsKey(profileId, shared), AlbumCodec.encodeAlbums(albums), System.currentTimeMillis()))
+        return albums
+    }
+
+    suspend fun cachedAlbumItems(profileId: String, album: NextcloudAlbum): List<GalleryItem>? =
+        cache.get(albumKey(profileId, album))?.json?.let(AlbumCodec::decodeFiles)?.let { sorted(profileId, it) }
+
+    suspend fun refreshAlbumItems(profileId: String, album: NextcloudAlbum): List<GalleryItem> {
+        val auth = accounts.auth(profileId) ?: return emptyList()
+        val files = accounts.api.albumItems(auth, album)
+        cache.put(CachedResponse(albumKey(profileId, album), AlbumCodec.encodeFiles(files), System.currentTimeMillis()))
+        return sorted(profileId, files)
+    }
+
+    private fun sorted(profileId: String, files: List<GalleryFile>) =
+        files.map { it.toItem(profileId) }.sortedWith(compareByDescending<GalleryItem> { it.takenAt }.thenByDescending { it.fileId })
+
+    private fun cachePrefix(profileId: String) = "nextcloud|$profileId|"
+    private fun albumsKey(profileId: String, shared: Boolean) = cachePrefix(profileId) + if (shared) "sharedalbums" else "albums"
+    private fun albumKey(profileId: String, album: NextcloudAlbum) = cachePrefix(profileId) + "album|" + album.davPath
 
     /** Tout le compte, ou chaque dossier choisi l'un après l'autre. */
     private suspend fun fetchAll(auth: NextcloudAuth, userId: String, folders: List<String>): List<GalleryFile> {
