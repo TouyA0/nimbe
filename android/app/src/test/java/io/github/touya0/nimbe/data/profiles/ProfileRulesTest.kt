@@ -127,4 +127,11 @@ class ProfileRulesTest {
         // Même vers un autre profil Enfant : c'est au parent de choisir.
         assertTrue(leavingNeedsPin(enfant, enfant.copy(id = "e2", name = "Léa"), pinSet = true))
     }
+
+    @Test
+    fun `limites de l'enfant gardées en JSON`() {
+        val child = enfant.copy(limits = ChildLimits(dailyMinutes = 120, curfew = Curfew(20 * 60, 7 * 60 + 30)))
+        assertEquals(listOf(child), ProfileCodec.decode(ProfileCodec.encode(listOf(child))))
+        assertEquals(ChildLimits(), ProfileCodec.decode(ProfileCodec.encode(listOf(enfant))).single().limits)
+    }
 }

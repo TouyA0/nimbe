@@ -8,6 +8,8 @@ import io.github.touya0.nimbe.feature.player.ResumeRule
 import io.github.touya0.nimbe.feature.player.SleepTimer
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableLongStateOf
+import java.time.ZoneId
 import androidx.compose.runtime.CompositionLocalProvider
 import io.github.touya0.nimbe.data.jellyfin.JellyfinHealth
 import io.github.touya0.nimbe.data.jellyfin.JellyfinLibrary
@@ -27,6 +29,9 @@ import io.github.touya0.nimbe.data.profiles.ProfilesState
 import io.github.touya0.nimbe.data.profiles.ChildMode
 import io.github.touya0.nimbe.data.profiles.GuestMode
 import io.github.touya0.nimbe.data.profiles.ProfilesStore
+import io.github.touya0.nimbe.data.profiles.ScreenTime
+import io.github.touya0.nimbe.data.profiles.ScreenTimeStore
+import io.github.touya0.nimbe.data.profiles.ScreenTimeVerdict
 import io.github.touya0.nimbe.data.profiles.isChild
 import io.github.touya0.nimbe.data.profiles.isGuest
 import io.github.touya0.nimbe.data.profiles.isRestricted
@@ -34,6 +39,7 @@ import io.github.touya0.nimbe.data.profiles.leavingNeedsPin
 import io.github.touya0.nimbe.data.security.ParentPinStore
 import io.github.touya0.nimbe.feature.onboarding.FirstLaunchScreen
 import io.github.touya0.nimbe.feature.onboarding.SetupStep
+import io.github.touya0.nimbe.feature.profiles.TimeUpScreen
 import io.github.touya0.nimbe.feature.profiles.WhoIsWatchingScreen
 import io.github.touya0.nimbe.feature.security.PinPrompt
 import io.github.touya0.nimbe.feature.onboarding.JellyfinConnectScreen
@@ -127,6 +133,7 @@ fun NimbeApp(
     profiles: ProfilesStore,
     parentPin: ParentPinStore,
     layouts: LayoutStore,
+    screenTime: ScreenTimeStore,
     homePresses: Flow<Unit>,
     screenOn: Flow<Unit>,
 ) {
@@ -218,7 +225,7 @@ fun NimbeApp(
         } else {
             NimbeShell(
                 repository, prefs, launcher, connectivityMonitor, launches, updates, jellyfin, homeAssistant, ha,
-                homeAssistantMonitor::history, profiles, state, parentPin, layouts, homePresses, screenOn,
+                homeAssistantMonitor::history, profiles, state, parentPin, layouts, screenTime, homePresses, screenOn,
             )
         }
     }
@@ -240,6 +247,7 @@ private fun NimbeShell(
     profilesState: ProfilesState,
     parentPin: ParentPinStore,
     layouts: LayoutStore,
+    screenTime: ScreenTimeStore,
     homePresses: Flow<Unit>,
     screenOn: Flow<Unit>,
 ) {
@@ -326,6 +334,18 @@ private fun NimbeShell(
     LaunchedEffect(visibleTabs) { if (tab !in visibleTabs) focusTab(Tab.Home) }
     var homeEditOpen by rememberSaveable { mutableStateOf(false) }
     var leavingTo by remember { mutableStateOf<Profile?>(null) }
+
+    // Temps d'écran du profil Enfant, recalculé toutes les 15 s : au-delà, « Temps écoulé » passe devant tout.
+    val usage by remember(activeId) { screenTime.usage(activeId) }.collectAsStateWithLifecycle(initialValue = null)
+    var now by remember { mutableLongStateOf(System.currentTimeMillis()) }
+    LaunchedEffect(child) {
+        while (child) {
+            now = System.currentTimeMillis()
+            delay(SCREEN_TIME_TICK_MS)
+        }
+    }
+    val screenVerdict = usage?.takeIf { child }?.let { ScreenTime.verdict(active!!.limits, it, now, ZoneId.systemDefault()) }
+    var bonusPinOpen by remember { mutableStateOf(false) }
     val menu = remember { MenuState() }
     // Quand une action fait disparaître la tuile qui a le focus, on pose le focus sur l'onglet courant
     // avant d'enregistrer : sinon Android le donne au premier élément venu, l'onglet Accueil.
@@ -396,6 +416,26 @@ private fun NimbeShell(
             },
             onCancel = { leavingTo = null },
         )
+        return
+    }
+
+    if (screenVerdict?.blocked == true && !whoOpen) {
+        if (bonusPinOpen) {
+            PinPrompt(
+                parentPin,
+                title = "Un peu de rab",
+                subtitle = "Saisis le PIN parent pour ${ScreenTime.formatDuration(ScreenTime.BONUS_MS)} de plus.",
+                onSuccess = {
+                    val granted = System.currentTimeMillis()
+                    scope.launch { screenTime.update(activeId) { ScreenTime.grantBonus(it, granted) } }
+                    now = granted
+                    bonusPinOpen = false
+                },
+                onCancel = { bonusPinOpen = false },
+            )
+        } else {
+            TimeUpScreen(active!!, screenVerdict, onBonus = { bonusPinOpen = true }, onSwitchProfile = { whoOpen = true })
+        }
         return
     }
 
@@ -479,7 +519,12 @@ private fun NimbeShell(
             layout = layout,
             onLayoutChange = ::saveLayout,
             onLayoutReset = { scope.launch { layouts.remove(activeId) } },
-            onProfileDeleted = { id -> scope.launch { layouts.remove(id) } },
+            onProfileDeleted = { id ->
+                scope.launch {
+                    layouts.remove(id)
+                    screenTime.remove(id)
+                }
+            },
             installedApps = apps,
             onEditHome = {
                 settingsOpen = false
@@ -646,7 +691,9 @@ private fun NimbeShell(
                             child -> HomeWelcome(
                                 "PROFIL ENFANT",
                                 "Coucou ${active?.name.orEmpty()} !",
-                                "Tes films, tes séries et tes applis. Pour changer de profil, demande à un parent.",
+                                ((screenVerdict as? ScreenTimeVerdict.Allowed)?.remainingMs?.let {
+                                    "Encore ${ScreenTime.formatDuration(it)} de télé aujourd'hui. "
+                                } ?: "") + "Tes films, tes séries et tes applis. Pour changer de profil, demande à un parent.",
                             )
                             else -> null
                         },
@@ -704,6 +751,9 @@ private fun NimbeShell(
         }
     }
 }
+
+/** Recalcul du temps d'écran restant du profil Enfant. */
+private const val SCREEN_TIME_TICK_MS = 15_000L
 
 /** Vérification directe de Jellyfin, et essai automatique pendant une coupure. */
 private const val CHECK_INTERVAL_MS = 30_000L

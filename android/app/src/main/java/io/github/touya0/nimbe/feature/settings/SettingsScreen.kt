@@ -59,6 +59,7 @@ import io.github.touya0.nimbe.data.profiles.Profile
 import io.github.touya0.nimbe.data.profiles.ProfileKind
 import io.github.touya0.nimbe.data.profiles.ProfilesState
 import io.github.touya0.nimbe.data.profiles.ProfilesStore
+import io.github.touya0.nimbe.data.profiles.ScreenTime
 import io.github.touya0.nimbe.data.profiles.StartChoice
 import io.github.touya0.nimbe.data.security.ParentPinStore
 import io.github.touya0.nimbe.data.security.PinLockout
@@ -385,6 +386,27 @@ private fun ProfilesPage(
                 if (child.allowedApps == null) "Les applis pour enfants (YouTube Kids) tant que tu n'as rien choisi" else "Choisies à la main",
                 value = if (allowed == 0) "Aucune" else "$allowed autorisée(s)",
                 onClick = { onAppChoice(child.id) },
+            )
+            // OK fait défiler les choix : rien à saisir à la télécommande.
+            LinkRow(
+                "Temps d'écran",
+                "Compté sur le stick, dans Nimbe et dans les applis · écran de fin doux, rab avec ton PIN",
+                value = ScreenTime.dailyLabel(child.limits.dailyMinutes),
+                onClick = {
+                    val choices = ScreenTime.DailyChoices
+                    val next = choices[(choices.indexOf(child.limits.dailyMinutes) + 1).mod(choices.size)]
+                    scope.launch { store.save(child.copy(limits = child.limits.copy(dailyMinutes = next))) }
+                },
+            )
+            LinkRow(
+                "Couvre-feu",
+                "Plus d'accès entre ces heures, sauf avec ton PIN",
+                value = child.limits.curfew?.label ?: "Aucun",
+                onClick = {
+                    val choices = ScreenTime.CurfewChoices
+                    val next = choices[(choices.indexOf(child.limits.curfew) + 1).mod(choices.size)]
+                    scope.launch { store.save(child.copy(limits = child.limits.copy(curfew = next))) }
+                },
             )
             SettingRow(
                 "Ce que voit ${child.name}",

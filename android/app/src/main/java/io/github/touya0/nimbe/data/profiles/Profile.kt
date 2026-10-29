@@ -20,6 +20,7 @@ enum class ProfileKind(val key: String, val label: String, val summary: String) 
  * [color] : indice dans la palette des profils, pour que l'avatar garde sa couleur quel que soit le thème.
  * [hiddenApps] : pour l'invité, les applis masquées (null : celles des comptes de la famille, par défaut).
  * [allowedApps] : pour l'enfant, les seules applis permises (null : celles pour enfants, par défaut).
+ * [limits] : pour l'enfant, temps d'écran quotidien et couvre-feu.
  */
 data class Profile(
     val id: String,
@@ -28,6 +29,7 @@ data class Profile(
     val kind: ProfileKind,
     val hiddenApps: Set<String>? = null,
     val allowedApps: Set<String>? = null,
+    val limits: ChildLimits = ChildLimits(),
 ) {
     val initial: String get() = name.trim().firstOrNull()?.uppercase() ?: "?"
 }
@@ -102,6 +104,8 @@ object ProfileRules {
 /** Profils en JSON, pour DataStore. Une entrée illisible est ignorée, jamais bloquante. */
 object ProfileCodec {
 
+    private const val MINUTES_PER_DAY = 24 * 60
+
     private fun packages(array: JSONArray): Set<String> = (0 until array.length()).mapNotNull { array.optString(it).ifEmpty { null } }.toSet()
 
     fun encode(profiles: List<Profile>): String = JSONArray().apply {
@@ -113,7 +117,9 @@ object ProfileCodec {
                     .put("color", profile.color)
                     .put("kind", profile.kind.key)
                     .apply { profile.hiddenApps?.let { put("hiddenApps", JSONArray(it.sorted())) } }
-                    .apply { profile.allowedApps?.let { put("allowedApps", JSONArray(it.sorted())) } },
+                    .apply { profile.allowedApps?.let { put("allowedApps", JSONArray(it.sorted())) } }
+                    .apply { profile.limits.dailyMinutes?.let { put("dailyMinutes", it) } }
+                    .apply { profile.limits.curfew?.let { put("curfewStart", it.start).put("curfewEnd", it.end) } },
             )
         }
     }.toString()
@@ -134,6 +140,14 @@ object ProfileCodec {
                 kind = ProfileKind.fromKey(item.optString("kind")) ?: return@mapNotNull null,
                 hiddenApps = item.optJSONArray("hiddenApps")?.let(::packages),
                 allowedApps = item.optJSONArray("allowedApps")?.let(::packages),
+                limits = ChildLimits(
+                    dailyMinutes = item.optInt("dailyMinutes", -1).takeIf { it > 0 },
+                    curfew = if (item.has("curfewStart") && item.has("curfewEnd")) {
+                        Curfew(item.optInt("curfewStart").coerceIn(0, MINUTES_PER_DAY - 1), item.optInt("curfewEnd").coerceIn(0, MINUTES_PER_DAY - 1))
+                    } else {
+                        null
+                    },
+                ),
             )
         }
     }

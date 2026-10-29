@@ -2,6 +2,7 @@ package io.github.touya0.nimbe
 
 import android.app.ActivityManager
 import android.app.Application
+import android.content.Intent
 import coil3.ImageLoader
 import coil3.PlatformContext
 import coil3.SingletonImageLoader
@@ -17,6 +18,8 @@ import io.github.touya0.nimbe.data.jellyfin.JellyfinAccount
 import io.github.touya0.nimbe.data.jellyfin.JellyfinLibrary
 import io.github.touya0.nimbe.data.layout.LayoutStore
 import io.github.touya0.nimbe.data.profiles.ProfilesStore
+import io.github.touya0.nimbe.data.profiles.ScreenTimeStore
+import io.github.touya0.nimbe.data.profiles.ScreenTimeTracker
 import io.github.touya0.nimbe.data.security.ParentPinStore
 import io.github.touya0.nimbe.update.UpdateScheduler
 import io.github.touya0.nimbe.update.Updater
@@ -50,6 +53,9 @@ class NimbeApplication : Application(), SingletonImageLoader.Factory {
     /** Rangées de l'accueil et onglets de chaque profil. */
     val layouts: LayoutStore by lazy { LayoutStore(this) }
 
+    /** Temps d'écran des profils Enfant, compté sur le stick. */
+    val screenTime: ScreenTimeStore by lazy { ScreenTimeStore(this) }
+
     /** Profils de la TV et profil actif. */
     val profiles: ProfilesStore by lazy { ProfilesStore(this) }
 
@@ -67,6 +73,18 @@ class NimbeApplication : Application(), SingletonImageLoader.Factory {
         scope.launch { runCatching { Updater(this@NimbeApplication).reconcile() } }
         // Les contenus enregistrés de plus d'un mois ne servent plus : on les retire.
         scope.launch { database.cachedResponses().deleteOlderThan(System.currentTimeMillis() - CACHE_MAX_AGE_MS) }
+        // Le temps d'écran se compte aussi pendant les autres applis : le suivi vit avec le processus.
+        ScreenTimeTracker(this, profiles, screenTime, scope, bringToFront = ::bringNimbeToFront).start()
+    }
+
+    /** Ramène Nimbe devant l'appli ouverte (temps d'écran écoulé). Android peut refuser : on n'insiste pas. */
+    private fun bringNimbeToFront() {
+        runCatching {
+            startActivity(
+                Intent(this, MainActivity::class.java)
+                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_REORDER_TO_FRONT),
+            )
+        }
     }
 
     /**

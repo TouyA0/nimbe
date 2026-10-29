@@ -92,6 +92,7 @@ class MainActivity : ComponentActivity() {
                         profiles = (application as NimbeApplication).profiles,
                         parentPin = (application as NimbeApplication).parentPin,
                         layouts = (application as NimbeApplication).layouts,
+                        screenTime = (application as NimbeApplication).screenTime,
                         homePresses = homePresses,
                         screenOn = screenOn,
                     )
