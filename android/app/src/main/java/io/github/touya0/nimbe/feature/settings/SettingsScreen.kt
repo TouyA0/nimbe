@@ -774,7 +774,7 @@ private fun AboutPage(about: AboutInfo?, links: SettingsLinks, onCacheCleared: (
     LinkRow("Nimbe ${about.version}", about.device, value = about.android, onClick = links.androidSettings)
     LinkRow(
         "Touche Accueil",
-        if (about.homeKeyOn) "Appui court : Nimbe · appui long : accueil Google TV" else "Ouvre Google TV · à activer une fois depuis le PC",
+        if (about.homeKeyOn) "Appui court : Nimbe · appui long : accueil Google TV, sauf sur un profil Enfant" else "Ouvre Google TV · à activer une fois depuis le PC",
         value = if (about.homeKeyOn) "Activée" else "Désactivée",
         onClick = links.accessibility,
     )

@@ -10,8 +10,15 @@ import android.view.KeyEvent
 import android.view.ViewConfiguration
 import android.view.accessibility.AccessibilityEvent
 import io.github.touya0.nimbe.MainActivity
+import io.github.touya0.nimbe.NimbeApplication
 import io.github.touya0.nimbe.crashguard.CrashGuard
 import io.github.touya0.nimbe.crashguard.StockLauncher
+import io.github.touya0.nimbe.data.profiles.isChild
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.launch
 
 /**
  * Sur Google TV, Android donne toujours la touche Accueil à l'accueil d'origine, même quand Nimbe
@@ -19,7 +26,8 @@ import io.github.touya0.nimbe.crashguard.StockLauncher
  * il ne voit ni le contenu de l'écran ni les autres touches.
  *
  * Il tourne dans le processus de Nimbe : si Nimbe plante au démarrage, le service ne démarre pas
- * et la touche revient d'elle-même à Google TV.
+ * et la touche revient d'elle-même à Google TV. Sur un profil Enfant, l'appui long reste dans Nimbe
+ * (pas de sortie sans le PIN parent) ; en Secours ou en mode sans échec, la touche revient à Android.
  *
  * Activation, une fois (le nom de la classe ne doit plus changer, sinon il faut la refaire) :
  * adb shell settings put secure enabled_accessibility_services io.github.touya0.nimbe/io.github.touya0.nimbe.homekey.HomeKeyService
@@ -30,7 +38,15 @@ class HomeKeyService : AccessibilityService() {
     /** Décidé à l'appui, appliqué au relâchement : on ne prend jamais la moitié d'un appui. */
     private var taking = false
 
+    /** Profil Enfant actif : l'appui long n'ouvre pas l'accueil d'origine. Suivi en continu, lu à chaque appui. */
+    @Volatile
+    private var childActive = false
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+
     override fun onServiceConnected() {
+        scope.launch {
+            (application as NimbeApplication).profiles.state.collect { childActive = it.active.isChild }
+        }
         val prefs = getSharedPreferences(PREFS, Context.MODE_PRIVATE)
         val bootCount = runCatching { Settings.Global.getInt(contentResolver, Settings.Global.BOOT_COUNT) }.getOrNull()
         val lastOpened = prefs.getInt(KEY_LAST_BOOT, -1).takeIf { it >= 0 }
@@ -49,7 +65,7 @@ class HomeKeyService : AccessibilityService() {
             KeyEvent.ACTION_UP -> if (taking) {
                 taking = false
                 val held = event.eventTime - event.downTime
-                when (HomeKeyPolicy.target(held, ViewConfiguration.getLongPressTimeout().toLong())) {
+                when (HomeKeyPolicy.target(held, ViewConfiguration.getLongPressTimeout().toLong(), childActive)) {
                     HomeTarget.Nimbe -> openNimbe()
                     HomeTarget.Stock -> StockLauncher.open(this)
                 }
@@ -75,6 +91,11 @@ class HomeKeyService : AccessibilityService() {
     override fun onAccessibilityEvent(event: AccessibilityEvent?) = Unit
 
     override fun onInterrupt() = Unit
+
+    override fun onDestroy() {
+        scope.cancel()
+        super.onDestroy()
+    }
 
     companion object {
         private const val PREFS = "homekey"

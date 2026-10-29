@@ -19,9 +19,13 @@ object HomeKeyPolicy {
      */
     fun takesHomeKey(mode: StartupMode): Boolean = mode == StartupMode.Normal
 
-    /** Appui court : Nimbe. Appui long : l'accueil d'origine, la sortie de secours à la télécommande. */
-    fun target(heldMs: Long, longPressMs: Long): HomeTarget =
-        if (heldMs >= longPressMs) HomeTarget.Stock else HomeTarget.Nimbe
+    /**
+     * Appui court : Nimbe. Appui long : l'accueil d'origine, la sortie de secours à la télécommande,
+     * sauf sur un profil Enfant ([childActive]) : ce serait une sortie sans le PIN parent.
+     * Le secours reste entier : si Nimbe va mal, [takesHomeKey] laisse la touche à Android.
+     */
+    fun target(heldMs: Long, longPressMs: Long, childActive: Boolean = false): HomeTarget =
+        if (heldMs >= longPressMs && !childActive) HomeTarget.Stock else HomeTarget.Nimbe
 
     /**
      * Au démarrage du stick, Android ouvre l'accueil d'origine : Nimbe passe devant une fois par démarrage.

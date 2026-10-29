@@ -45,7 +45,7 @@ object SetupChecks {
                 "Touche Accueil", "Nimbe est l'écran d'accueil d'Android", CheckLevel.Ok, "OK", null,
             )
             state.homeKeyOn -> SetupCheck(
-                "Touche Accueil", "Appui court : Nimbe · appui long : l'accueil d'origine", CheckLevel.Ok, "OK", CheckAction.Accessibility,
+                "Touche Accueil", "Appui court : Nimbe · appui long : l'accueil d'origine, sauf sur un profil Enfant", CheckLevel.Ok, "OK", CheckAction.Accessibility,
             )
             else -> SetupCheck(
                 "Touche Accueil",

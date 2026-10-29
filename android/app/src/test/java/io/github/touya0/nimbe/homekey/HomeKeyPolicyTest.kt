@@ -39,4 +39,11 @@ class HomeKeyPolicyTest {
         assertFalse(HomeKeyPolicy.opensAtBoot(bootCount = 12, lastOpenedBoot = 11, mode = StartupMode.SafeMode))
         assertFalse(HomeKeyPolicy.opensAtBoot(bootCount = null, lastOpenedBoot = 11, mode = StartupMode.Normal))
     }
+
+    @Test
+    fun `profil Enfant, l'appui long reste dans Nimbe`() {
+        assertEquals(HomeTarget.Nimbe, HomeKeyPolicy.target(heldMs = 2_000, longPressMs = 500, childActive = true))
+        assertEquals(HomeTarget.Nimbe, HomeKeyPolicy.target(heldMs = 120, longPressMs = 500, childActive = true))
+        assertEquals(HomeTarget.Stock, HomeKeyPolicy.target(heldMs = 2_000, longPressMs = 500, childActive = false))
+    }
 }
