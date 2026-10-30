@@ -57,6 +57,12 @@ adb shell cmd hdmi_control cec_setting get power_control_mode
 - `tv_wake_on_one_touch_play` (`0` ou `1`) : réveiller le stick allume la TV et passe sur son entrée.
 - Pour changer : `adb shell cmd hdmi_control cec_setting set <réglage> <valeur>`.
 
+Alerte critique par-dessus une autre appli (Google TV n'a pas ce réglage) :
+
+```bash
+adb shell appops set io.github.touya0.nimbe SYSTEM_ALERT_WINDOW allow
+```
+
 ## Publier une version
 
 Un tag `v*` lance [`release.yml`](.github/workflows/release.yml) : tests, APK signé, empreinte SHA-256

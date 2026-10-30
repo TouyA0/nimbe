@@ -15,6 +15,8 @@ import androidx.room.Transaction
 import io.github.touya0.nimbe.data.nextcloud.GalleryDao
 import io.github.touya0.nimbe.data.nextcloud.GalleryItem
 import io.github.touya0.nimbe.data.nextcloud.GallerySync
+import io.github.touya0.nimbe.data.notifications.NotificationDao
+import io.github.touya0.nimbe.data.notifications.NotificationEntry
 import io.github.touya0.nimbe.data.streaming.StreamingHistoryDao
 import io.github.touya0.nimbe.data.streaming.StreamingOpen
 import kotlinx.coroutines.flow.Flow
@@ -24,16 +26,17 @@ import kotlinx.coroutines.flow.Flow
  * titres ouverts sur les plateformes et index des galeries Nextcloud, pour tenir quand le Pi est coupé. Chaque version ajoute sa migration, testée sur le schéma exporté.
  */
 @Database(
-    entities = [AppLaunch::class, CachedResponse::class, GalleryItem::class, GallerySync::class, StreamingOpen::class],
-    version = 4,
+    entities = [AppLaunch::class, CachedResponse::class, GalleryItem::class, GallerySync::class, StreamingOpen::class, NotificationEntry::class],
+    version = 5,
     exportSchema = true,
-    autoMigrations = [AutoMigration(from = 1, to = 2), AutoMigration(from = 2, to = 3), AutoMigration(from = 3, to = 4)],
+    autoMigrations = [AutoMigration(from = 1, to = 2), AutoMigration(from = 2, to = 3), AutoMigration(from = 3, to = 4), AutoMigration(from = 4, to = 5)],
 )
 abstract class NimbeDatabase : RoomDatabase() {
     abstract fun appLaunches(): AppLaunchDao
     abstract fun cachedResponses(): CachedResponseDao
     abstract fun gallery(): GalleryDao
     abstract fun streamingHistory(): StreamingHistoryDao
+    abstract fun notifications(): NotificationDao
 
     companion object {
         fun create(context: Context): NimbeDatabase =

@@ -29,6 +29,16 @@ Plusieurs capteurs sont désactivés au départ : dans l'intégration, ouvrir le
 
 3. Outils de développement → YAML → Vérifier la configuration, puis redémarrer Home Assistant.
 
+## 4. Notifications (facultatif)
+
+Sans rien faire, Nimbe prévient déjà quand le Pi ou un service suivi ne répond plus depuis 2 minutes, et quand
+le disque dépasse 80 %. Pour envoyer tes propres alertes à la TV, une automatisation déclenche l'événement
+`nimbe_notify` (titre, détail, niveau `critique`, `normal` ou `discret`) : voir l'exemple à la fin de
+`packages/nimbe.yaml`, qui crée aussi le capteur `sensor.nimbe_notification` que la TV écoute.
+
+Pour essayer : Outils de développement → Événements → type `nimbe_notify`, données
+`{"title": "Test", "detail": "Depuis Home Assistant", "level": "normal"}`.
+
 ## Vérifier
 
 Outils de développement → Modèle, coller :

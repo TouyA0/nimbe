@@ -45,8 +45,8 @@ data class HaLive(
 
 /**
  * Suivi en direct des capteurs choisis, par le WebSocket (subscribe_entities) : Home Assistant envoie
- * chaque changement, sans requête en boucle. La connexion n'est ouverte que tant qu'un écran regarde
- * [live] ; perdue, elle est retentée toutes les 30 secondes, ou tout de suite avec [retryNow].
+ * chaque changement, sans requête en boucle. La connexion n'est ouverte que tant qu'un écran ou le suivi
+ * des notifications regarde [live] ; refermée, l'état repart de zéro (pas de vieille panne au réveil) ; perdue, elle est retentée toutes les 30 secondes, ou tout de suite avec [retryNow].
  */
 @OptIn(ExperimentalCoroutinesApi::class)
 class HomeAssistantMonitor(private val account: HomeAssistantAccount, scope: CoroutineScope) {
@@ -55,7 +55,7 @@ class HomeAssistantMonitor(private val account: HomeAssistantAccount, scope: Cor
 
     val live: StateFlow<HaLive> = account.link
         .flatMapLatest { link -> if (link == null) flowOf(HaLive(HaConnection.Off)) else watch(link) }
-        .stateIn(scope, SharingStarted.WhileSubscribed(STOP_DELAY_MS), HaLive())
+        .stateIn(scope, SharingStarted.WhileSubscribed(STOP_DELAY_MS, replayExpirationMillis = 0), HaLive())
 
     /** Les 24 dernières heures de [entityId], par une connexion à part (l'écran qui la demande attend la réponse). */
     suspend fun history(entityId: String, now: Long = System.currentTimeMillis()): List<HistoryPoint> {
@@ -79,7 +79,7 @@ class HomeAssistantMonitor(private val account: HomeAssistantAccount, scope: Cor
                     val weatherId = registry.filterKeys { it.startsWith("weather.") }
                         .entries.sortedBy { if (it.value.platform == "met") 0 else 1 }
                         .firstOrNull()?.key
-                    val subscription = subscribeEntities(link.sensors + listOfNotNull(weatherId))
+                    val subscription = subscribeEntities(link.sensors + listOfNotNull(weatherId) + HaEntity.NOTICE_ENTITY)
                     state = state.copy(connection = HaConnection.Live(System.currentTimeMillis()), retryAt = null, weatherId = weatherId)
                     send(state)
                     while (true) {

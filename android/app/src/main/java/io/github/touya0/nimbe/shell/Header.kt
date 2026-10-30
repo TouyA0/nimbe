@@ -99,6 +99,12 @@ fun Header(
     settingsRequester: FocusRequester,
     profile: Profile?,
     onProfile: () -> Unit,
+    onSearch: () -> Unit,
+    searchRequester: FocusRequester,
+    /** null pour l'invité et l'enfant : la cloche parle de la maison. */
+    onNotifications: (() -> Unit)?,
+    unread: Int,
+    bellRequester: FocusRequester,
     modifier: Modifier = Modifier,
 ) {
     Row(
@@ -119,9 +125,18 @@ fun Header(
             }
         }
         Spacer(Modifier.weight(1f))
+        IconButton(NimbeIcons.Search, "Rechercher", onSearch, Modifier.focusRequester(searchRequester))
+        Spacer(Modifier.width(12.dp))
+        onNotifications?.let {
+            Box {
+                IconButton(NimbeIcons.Bell, if (unread > 0) "Notifications, $unread nouvelles" else "Notifications", it, Modifier.focusRequester(bellRequester))
+                if (unread > 0) Box(Modifier.align(Alignment.TopEnd).size(10.dp).background(Focus, CircleShape))
+            }
+            Spacer(Modifier.width(12.dp))
+        }
         StatusPill(status, onStatus)
         Spacer(Modifier.width(12.dp))
-        onSettings?.let { SettingsButton(it, Modifier.focusRequester(settingsRequester)) }
+        onSettings?.let { IconButton(NimbeIcons.Settings, "Réglages", it, Modifier.focusRequester(settingsRequester)) }
         profile?.let {
             Spacer(Modifier.width(12.dp))
             ProfileButton(it, onProfile)
@@ -169,16 +184,16 @@ private fun TabPill(tab: Tab, selected: Boolean, onSelect: () -> Unit, struck: B
     }
 }
 
-/** Roue crantée : ouvre les réglages (OK, pas au simple passage du focus). */
+/** Bouton rond de l'en-tête (loupe, cloche, roue crantée) : OK l'ouvre, pas le simple passage du focus. */
 @Composable
-private fun SettingsButton(onClick: () -> Unit, modifier: Modifier) {
+private fun IconButton(icon: androidx.compose.ui.graphics.vector.ImageVector, label: String, onClick: () -> Unit, modifier: Modifier) {
     var focused by remember { mutableStateOf(false) }
     Surface(
         onClick = onClick,
         modifier = modifier
             .size(40.dp)
             .onFocusChanged { focused = it.isFocused }
-            .semantics { contentDescription = "Réglages" }
+            .semantics { contentDescription = label }
             .focusRing(focused, 20.dp, grow = false),
         shape = ClickableSurfaceDefaults.shape(CircleShape),
         colors = ClickableSurfaceDefaults.colors(
@@ -190,7 +205,7 @@ private fun SettingsButton(onClick: () -> Unit, modifier: Modifier) {
         scale = ClickableSurfaceDefaults.scale(focusedScale = 1f),
     ) {
         Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-            NimbeIcon(NimbeIcons.Settings, size = 20.dp)
+            NimbeIcon(icon, size = 20.dp)
         }
     }
 }

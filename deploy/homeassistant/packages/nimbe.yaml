@@ -23,3 +23,32 @@ command_line:
   #     payload_off: "OFF"
   #     device_class: connectivity
   #     scan_interval: 30
+
+# Notifications : une automatisation déclenche l'événement nimbe_notify (exemple ci-dessous), et ce capteur
+# le transmet à la TV. Son compte n'est pas administrateur : Home Assistant ne lui laisse pas écouter les
+# événements eux-mêmes, mais il suit les capteurs.
+template:
+  - trigger:
+      - platform: event
+        event_type: nimbe_notify
+    sensor:
+      - name: Nimbe notification
+        unique_id: nimbe_notification
+        state: "{{ now().isoformat() }}"
+        attributes:
+          title: "{{ trigger.event.data.title }}"
+          detail: "{{ trigger.event.data.detail | default('') }}"
+          level: "{{ trigger.event.data.level | default('normal') }}"
+
+# automation:
+#   - alias: "TV - sauvegarde ratée"
+#     trigger:
+#       - platform: state
+#         entity_id: binary_sensor.sauvegarde_ok
+#         to: "off"
+#     action:
+#       - event: nimbe_notify
+#         event_data:
+#           title: "La sauvegarde du Pi a échoué"
+#           detail: "Dernière réussie : hier"
+#           level: critique   # critique, normal ou discret

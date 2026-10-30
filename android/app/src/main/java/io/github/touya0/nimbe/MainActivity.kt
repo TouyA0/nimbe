@@ -9,9 +9,12 @@ import android.os.Bundle
 import android.view.KeyEvent
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Modifier
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.lifecycleScope
@@ -22,19 +25,27 @@ import io.github.touya0.nimbe.crashguard.RescueScreen
 import io.github.touya0.nimbe.crashguard.SafeModeScreen
 import io.github.touya0.nimbe.crashguard.StartupMode
 import io.github.touya0.nimbe.crashguard.StockLauncher
+import io.github.touya0.nimbe.data.notifications.NewNotification
+import io.github.touya0.nimbe.data.notifications.NotificationLevel
+import io.github.touya0.nimbe.data.notifications.NotificationType
+import io.github.touya0.nimbe.data.notifications.Presence
 import io.github.touya0.nimbe.feature.apps.AppLauncher
 import io.github.touya0.nimbe.feature.apps.AppsRepository
 import io.github.touya0.nimbe.feature.apps.rememberInstalledApps
+import io.github.touya0.nimbe.feature.notifications.BannerHost
 import io.github.touya0.nimbe.shell.NimbeApp
 import io.github.touya0.nimbe.ui.theme.DisplaySettings
 import io.github.touya0.nimbe.ui.theme.NimbeTheme
 import io.github.touya0.nimbe.update.UpdateController
 import io.github.touya0.nimbe.update.Updater
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.launch
 
 class MainActivity : ComponentActivity() {
 
     private val apps by lazy { AppsRepository(applicationContext) }
+    private val notifications by lazy { (application as NimbeApplication).notifications }
     private val database by lazy { (application as NimbeApplication).database }
     private val launcher by lazy { AppLauncher(this, apps, database.appLaunches(), lifecycleScope) }
     private val prefs by lazy { LauncherPrefs(applicationContext) }
@@ -57,6 +68,7 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         mode = CrashGuard.startupMode(this)
         simulateCrashIfAsked(intent)
+        postTestNotificationIfAsked(intent)
         ContextCompat.registerReceiver(this, screenOnReceiver, IntentFilter(Intent.ACTION_SCREEN_ON), ContextCompat.RECEIVER_NOT_EXPORTED)
 
         setContent {
@@ -79,7 +91,7 @@ class MainActivity : ComponentActivity() {
                         onRestartNormally = ::restartNormally,
                         onOpenStock = { StockLauncher.open(this) },
                     )
-                    StartupMode.Normal -> NimbeApp(
+                    StartupMode.Normal -> Box(Modifier.fillMaxSize()) { NimbeApp(
                         repository = apps,
                         prefs = prefs,
                         launcher = launcher,
@@ -100,10 +112,24 @@ class MainActivity : ComponentActivity() {
                         streamingHistory = database.streamingHistory(),
                         homePresses = homePresses,
                         screenOn = screenOn,
+                        notifications = notifications,
                     )
+                        BannerHost(notifications)
+                    }
                 }
             }
         }
+    }
+
+    /** Le bandeau se place par-dessus cette activité ; ailleurs, c'est [io.github.touya0.nimbe.feature.notifications.BannerOverlay]. */
+    override fun onStart() {
+        super.onStart()
+        notifications.presence.value = Presence.Browsing
+    }
+
+    override fun onStop() {
+        notifications.presence.value = Presence.OtherApp
+        super.onStop()
     }
 
     override fun onDestroy() {
@@ -120,13 +146,27 @@ class MainActivity : ComponentActivity() {
             if (event.eventTime - lastRepeatAt < REPEAT_MS) return true
             lastRepeatAt = event.eventTime
         }
+        // Un bandeau critique ne prend pas le focus (le film continue) : Retour le ferme.
+        if (event.keyCode == KeyEvent.KEYCODE_BACK) {
+            if (event.action == KeyEvent.ACTION_DOWN && notifications.banner.value?.persistent == true) {
+                notifications.dismissBanner()
+                swallowBackUp = true
+                return true
+            }
+            if (event.action == KeyEvent.ACTION_UP && swallowBackUp) {
+                swallowBackUp = false
+                return true
+            }
+        }
         return super.dispatchKeyEvent(event)
     }
 
     private var lastRepeatAt = 0L
+    private var swallowBackUp = false
 
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
+        postTestNotificationIfAsked(intent)
         if (intent.hasCategory(Intent.CATEGORY_HOME)) homePresses.tryEmit(Unit)
     }
 
@@ -147,8 +187,34 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    /**
+     * Pour essayer les bandeaux, uniquement dans les versions de développement (niveau Critical, Normal ou Discreet) :
+     * adb shell am start -n io.github.touya0.nimbe.debug/io.github.touya0.nimbe.MainActivity --es nimbe.test_notification Critical
+     * Ajouter --ei nimbe.test_delay 8 laisse le temps d'ouvrir une autre appli, pour voir le bandeau par-dessus.
+     */
+    private fun postTestNotificationIfAsked(intent: Intent?) {
+        val debuggable = applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE != 0
+        val level = intent?.getStringExtra(EXTRA_TEST_NOTIFICATION)?.takeIf { debuggable } ?: return
+        val wait = intent.getIntExtra(EXTRA_TEST_DELAY, 0) * 1000L
+        (application as NimbeApplication).scope.launch {
+            delay(wait)
+            notifications.post(
+                NewNotification(
+                    key = "test:${System.currentTimeMillis()}",
+                    type = NotificationType.Home,
+                    level = NotificationLevel.valueOf(level),
+                    kicker = "ESSAI",
+                    title = "Notification d'essai",
+                    body = "Niveau $level",
+                ),
+            )
+        }
+    }
+
     private companion object {
         const val EXTRA_SIMULATE_CRASH = "nimbe.simulate_crash"
+        const val EXTRA_TEST_NOTIFICATION = "nimbe.test_notification"
+        const val EXTRA_TEST_DELAY = "nimbe.test_delay"
         const val REPEAT_MS = 85L
         val DPAD_KEYS = setOf(KeyEvent.KEYCODE_DPAD_UP, KeyEvent.KEYCODE_DPAD_DOWN, KeyEvent.KEYCODE_DPAD_LEFT, KeyEvent.KEYCODE_DPAD_RIGHT)
     }

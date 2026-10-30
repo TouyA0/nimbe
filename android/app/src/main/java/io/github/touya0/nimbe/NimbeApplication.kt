@@ -10,6 +10,7 @@ import coil3.disk.DiskCache
 import coil3.memory.MemoryCache
 import coil3.network.okhttp.OkHttpNetworkFetcherFactory
 import coil3.request.crossfade
+import io.github.touya0.nimbe.core.network.ConnectivityMonitor
 import io.github.touya0.nimbe.core.storage.NimbeDatabase
 import io.github.touya0.nimbe.core.storage.SecretVault
 import io.github.touya0.nimbe.crashguard.CrashGuard
@@ -21,19 +22,26 @@ import io.github.touya0.nimbe.data.layout.LayoutStore
 import io.github.touya0.nimbe.data.nextcloud.NextcloudAccounts
 import io.github.touya0.nimbe.data.nextcloud.GalleryPrefsStore
 import io.github.touya0.nimbe.data.nextcloud.NextcloudGallery
+import io.github.touya0.nimbe.data.notifications.NotificationCenter
+import io.github.touya0.nimbe.data.notifications.NotificationPrefsStore
+import io.github.touya0.nimbe.data.notifications.NotificationWatcher
 import io.github.touya0.nimbe.data.profiles.ProfilesStore
 import io.github.touya0.nimbe.data.profiles.ScreenTimeStore
 import io.github.touya0.nimbe.data.profiles.ScreenTimeTracker
+import io.github.touya0.nimbe.data.search.SearchHistoryStore
 import io.github.touya0.nimbe.data.security.ParentPinStore
 import io.github.touya0.nimbe.data.streaming.JustWatchApi
 import io.github.touya0.nimbe.data.streaming.StreamingCatalog
 import io.github.touya0.nimbe.data.streaming.StreamingRules
+import io.github.touya0.nimbe.feature.notifications.BannerOverlay
 import io.github.touya0.nimbe.feature.screensaver.ScreensaverStore
 import io.github.touya0.nimbe.update.UpdateScheduler
 import io.github.touya0.nimbe.update.Updater
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import okhttp3.OkHttpClient
 import okio.Path.Companion.toOkioPath
@@ -86,6 +94,14 @@ class NimbeApplication : Application(), SingletonImageLoader.Factory {
     /** Catalogue des plateformes de streaming (JustWatch), gardé dans la base pour les coupures d'internet. */
     val streaming: StreamingCatalog by lazy { StreamingCatalog(JustWatchApi(), database.cachedResponses()) }
 
+    /** Recherches récentes de chaque profil. */
+    val searchHistory: SearchHistoryStore by lazy { SearchHistoryStore(this) }
+
+    /** Alertes enregistrées et bandeaux à l'écran. */
+    val notifications: NotificationCenter by lazy {
+        NotificationCenter(database.notifications(), NotificationPrefsStore(this), profiles, scope)
+    }
+
     /** Travaux courts qui ne doivent pas retarder l'affichage. */
     val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
 
@@ -102,6 +118,22 @@ class NimbeApplication : Application(), SingletonImageLoader.Factory {
         scope.launch { database.streamingHistory().deleteOlderThan(System.currentTimeMillis() - StreamingRules.HISTORY_DAYS * DAY_MS) }
         // Le temps d'écran se compte aussi pendant les autres applis : le suivi vit avec le processus.
         ScreenTimeTracker(this, profiles, screenTime, scope, bringToFront = ::bringNimbeToFront).start()
+        // Les alertes arrivent aussi quand on est dans une autre appli.
+        val updater = Updater(this)
+        NotificationWatcher(
+            this,
+            notifications,
+            homeAssistantMonitor,
+            library,
+            ConnectivityMonitor(this),
+            readyUpdate = updater.store.state.map { state ->
+                state.available?.takeIf { state.ready && it.versionCode > updater.installed().versionCode }
+            }.distinctUntilChanged(),
+            profiles,
+            screenTime,
+            scope,
+        ).start()
+        BannerOverlay(this, notifications, scope).start()
     }
 
     /** Ramène Nimbe devant l'appli ouverte (temps d'écran écoulé). Android peut refuser : on n'insiste pas. */

@@ -1,6 +1,22 @@
 package io.github.touya0.nimbe.shell
 
 import io.github.touya0.nimbe.NimbeApplication
+import androidx.compose.runtime.DisposableEffect
+import io.github.touya0.nimbe.data.nextcloud.NextcloudAuth
+import io.github.touya0.nimbe.data.notifications.NotificationCenter
+import io.github.touya0.nimbe.data.notifications.NotificationTarget
+import io.github.touya0.nimbe.data.profiles.ProfileKind
+import io.github.touya0.nimbe.data.search.SearchHit
+import io.github.touya0.nimbe.data.search.SearchProvider
+import io.github.touya0.nimbe.data.search.SearchSource
+import io.github.touya0.nimbe.data.search.SearchText
+import io.github.touya0.nimbe.feature.notifications.NotificationCenterScreen
+import io.github.touya0.nimbe.feature.search.SearchActions
+import io.github.touya0.nimbe.feature.search.SearchScreen
+import io.github.touya0.nimbe.feature.search.SearchSession
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.withContext
 import io.github.touya0.nimbe.feature.player.PlayRequest
 import io.github.touya0.nimbe.feature.player.PlayerScreen
 import io.github.touya0.nimbe.feature.player.ResumeDialog
@@ -168,6 +184,7 @@ fun NimbeApp(
     streamingHistory: StreamingHistoryDao,
     homePresses: Flow<Unit>,
     screenOn: Flow<Unit>,
+    notifications: NotificationCenter,
 ) {
     val linked by remember(jellyfin) { jellyfin.link.map { Linked(it) } }.collectAsStateWithLifecycle(initialValue = null)
     var jellyfinConnectOpen by rememberSaveable { mutableStateOf(false) }
@@ -258,7 +275,7 @@ fun NimbeApp(
             NimbeShell(
                 repository, prefs, launcher, connectivityMonitor, launches, updates, jellyfin, homeAssistant, nextcloud, gallery, ha,
                 homeAssistantMonitor::history, profiles, state, parentPin, layouts, screenTime, streaming, streamingHistory,
-                library, homePresses, screenOn,
+                library, homePresses, screenOn, notifications,
             )
         }
     }
@@ -288,6 +305,7 @@ private fun NimbeShell(
     library: JellyfinLibrary,
     homePresses: Flow<Unit>,
     screenOn: Flow<Unit>,
+    notifications: NotificationCenter,
 ) {
     var settingsOpen by rememberSaveable { mutableStateOf(false) }
     var settingsSection by rememberSaveable { mutableStateOf(SettingsSection.Display) }
@@ -306,6 +324,12 @@ private fun NimbeShell(
         screenOn.collect { if (currentProfiles.asksOnStart) whoOpen = true }
     }
     var statusOpen by rememberSaveable { mutableStateOf(false) }
+    var searchOpen by rememberSaveable { mutableStateOf(false) }
+    var bellOpen by rememberSaveable { mutableStateOf(false) }
+    val searchRequester = remember { FocusRequester() }
+    val bellRequester = remember { FocusRequester() }
+    // Au retour de la recherche ou de la cloche, le focus revient sur son bouton.
+    var returnFocus by remember { mutableStateOf<FocusRequester?>(null) }
     var returnToSettingsButton by remember { mutableStateOf(false) }
     val context = LocalContext.current
     val settingsRequester = remember { FocusRequester() }
@@ -347,6 +371,9 @@ private fun NimbeShell(
     val dockPackages = dock.orEmpty().map { it.packageName }
 
     val scope = rememberCoroutineScope()
+    val searchHistory = remember(context) { (context.applicationContext as NimbeApplication).searchHistory }
+    val bell by notifications.bell.collectAsStateWithLifecycle(initialValue = null)
+    val unread = bell.orEmpty().count { !it.read }
 
     // Mise en page du profil actif : celle par défaut le temps de la lire.
     val activeId = profilesState.active?.id.orEmpty()
@@ -370,6 +397,8 @@ private fun NimbeShell(
         }
     }
     LaunchedEffect(visibleTabs) { if (tab !in visibleTabs) focusTab(Tab.Home) }
+    // Ici, avant les écrans qui s'ouvrent par-dessus : la recherche garde son texte le temps d'une fiche.
+    val searchSessionHolder = remember(activeId) { mutableStateOf(SearchSession()) }
     var homeEditOpen by rememberSaveable { mutableStateOf(false) }
     var leavingTo by remember { mutableStateOf<Profile?>(null) }
 
@@ -429,6 +458,9 @@ private fun NimbeShell(
             settingsOpen = false
             settingsPinOpen = false
             statusOpen = false
+            searchOpen = false
+            bellOpen = false
+            returnFocus = null
             whoOpen = false
             homeEditOpen = false
             leavingTo = null
@@ -579,6 +611,8 @@ private fun NimbeShell(
                     nextcloud.disconnect(id)
                     gallery.prefs.remove(id)
                     streamingHistory.forgetProfile(id)
+                    searchHistory.clear(id)
+                    notifications.prefs.remove(id)
                 }
             },
             installedApps = apps,
@@ -602,6 +636,7 @@ private fun NimbeShell(
             },
             streamingChoice = streamingSettingChoice,
             onStreamingChange = { scope.launch { prefs.setStreamingServices(it) } },
+            notifications = notifications,
             onClose = { settingsOpen = false },
         )
         return
@@ -733,6 +768,10 @@ private fun NimbeShell(
     val onPlay: (MediaItem, Boolean) -> Unit = { item, fromStart ->
         playing = if (fromStart || !item.resumable) PlayRequest(item, 0) else ResumeRule.resume(item)
     }
+    DisposableEffect(playing != null) {
+        notifications.playing.value = playing != null
+        onDispose { notifications.playing.value = false }
+    }
     playing?.let { request ->
         // Une clé par contenu : passer à l'épisode suivant crée un nouveau lecteur.
         key(request) {
@@ -806,6 +845,112 @@ private fun NimbeShell(
         null -> Unit
     }
 
+    if (searchOpen) {
+        val session = searchSessionHolder.value
+        val shownApps = visibleApps.orEmpty()
+        val adult = active?.takeIf { it.kind == ProfileKind.Adult }
+        val galleryAuth by produceState<NextcloudAuth?>(null, adult?.id) { value = adult?.let { gallery.auth(it.id) } }
+        val history by remember(activeId, guest) {
+            if (guest) flowOf(null) else searchHistory.history(activeId)
+        }.collectAsStateWithLifecycle(initialValue = null)
+        val providers = remember(shownApps, streamingServices, tmdbIndex, adult?.id) {
+            buildList {
+                add(SearchProvider(SearchSource.Jellyfin) { query ->
+                    val auth = library.auth() ?: return@SearchProvider emptyList()
+                    library.search(auth, query).map { SearchHit.Media(it, SearchText.score(it.name, query)) }
+                })
+                add(SearchProvider(SearchSource.Apps) { query ->
+                    shownApps.mapNotNull { app -> SearchText.score(app.label, query).takeIf { it > 0 }?.let { SearchHit.App(app, it) } }
+                })
+                add(SearchProvider(SearchSource.Streaming) { query ->
+                    // Un titre déjà dans Jellyfin n'apparaît qu'une fois : sa fiche propose aussi les plateformes.
+                    streaming.search(query, streamingServices, StreamingRules.kidsOnly(active))
+                        .filterNot { streamingUi.inJellyfin(it) != null }
+                        .map { SearchHit.Streaming(it, SearchText.score(it.title, query)) }
+                })
+                adult?.let { profile ->
+                    add(SearchProvider(SearchSource.Gallery) { query ->
+                        // Dans l'index local : la galerie se cherche aussi quand le serveur est coupé.
+                        val shown = gallery.prefs.prefs(profile.id).first().filter(gallery.all(profile.id).first())
+                        withContext(Dispatchers.Default) {
+                            shown.mapNotNull { item ->
+                                val score = SearchText.score(item.path.substringAfterLast('/'), query)
+                                    .coerceAtLeast(if (SearchText.score(item.path, query) > 0) SearchText.CONTAINS else SearchText.NONE)
+                                if (score > 0) SearchHit.Photo(item, item.path.substringAfterLast('/'), score) else null
+                            }.take(GALLERY_RESULTS)
+                        }
+                    })
+                }
+            }
+        }
+        SearchScreen(
+            session,
+            SearchActions(
+                providers = providers,
+                history = history,
+                galleryAuth = galleryAuth,
+                onOpen = { hit, group ->
+                    if (!guest) scope.launch { searchHistory.add(activeId, session.query) }
+                    when (hit) {
+                        is SearchHit.Media -> openItem(hit.item)
+                        is SearchHit.Streaming -> openStreaming(hit.value)
+                        is SearchHit.App -> {
+                            session.restoreKey = null
+                            openApp(hit.app)
+                        }
+                        is SearchHit.Photo -> scope.launch {
+                            val auth = galleryAuth ?: return@launch
+                            val userId = adult?.let { gallery.link(it.id).first()?.userId } ?: return@launch
+                            val items = group.filterIsInstance<SearchHit.Photo>().map { it.item }
+                            galleryViewer = GalleryViewerRequest(auth, userId, items, items.indexOf(hit.item).coerceAtLeast(0))
+                        }
+                    }
+                },
+                onClearHistory = { scope.launch { searchHistory.clear(activeId) } },
+                onClose = {
+                    searchOpen = false
+                    restoreFocusId = null
+                    searchSessionHolder.value = SearchSession()
+                },
+            ),
+        )
+        return
+    }
+    if (bellOpen) {
+        var unreadAtOpen by remember { mutableIntStateOf(unread) }
+        LaunchedEffect(Unit) { notifications.markAllRead() }
+        NotificationCenterScreen(
+            entries = bell,
+            unread = unreadAtOpen,
+            onOpen = { entry ->
+                bellOpen = false
+                val itemId = NotificationTarget.itemId(entry.target)
+                when {
+                    entry.target == NotificationTarget.STATUS -> statusOpen = true
+                    entry.target == NotificationTarget.UPDATE -> if (updates.isNewer(updateState.available)) updateOpen = true else openSettings(SettingsSection.Updates)
+                    itemId != null -> scope.launch {
+                        val item = try {
+                            library.auth()?.let { library.item(it, itemId) }
+                        } catch (_: JellyfinException) {
+                            null
+                        }
+                        if (item != null) openItem(item) else Toast.makeText(context, "Impossible de retrouver cet épisode", Toast.LENGTH_LONG).show()
+                    }
+                }
+            },
+            onClearAll = {
+                unreadAtOpen = 0
+                scope.launch { notifications.clearAll() }
+            },
+            onSettings = {
+                bellOpen = false
+                openSettings(SettingsSection.Notifications)
+            },
+            onClose = { bellOpen = false },
+        )
+        return
+    }
+
     // À l'affichage, le focus va sur l'onglet ; au retour des réglages, sur la roue crantée ;
     // au retour d'une fiche, sur la carte d'origine (et sur l'onglet si elle n'est plus là).
     LaunchedEffect(Unit) {
@@ -815,6 +960,10 @@ private fun NimbeShell(
                 restoreFocusId = null
                 focusTab(tab)
             }
+        } else if (returnFocus != null) {
+            val target = returnFocus
+            returnFocus = null
+            runCatching { target?.requestFocus() }
         } else if (returnToSettingsButton) {
             returnToSettingsButton = false
             runCatching { settingsRequester.requestFocus() }
@@ -843,6 +992,19 @@ private fun NimbeShell(
                 settingsRequester = settingsRequester,
                 profile = profilesState.active,
                 onProfile = { whoOpen = true },
+                onSearch = {
+                    returnFocus = searchRequester
+                    searchOpen = true
+                },
+                searchRequester = searchRequester,
+                onNotifications = if (restricted) null else {
+                    {
+                        returnFocus = bellRequester
+                        bellOpen = true
+                    }
+                },
+                unread = unread,
+                bellRequester = bellRequester,
             ) }
             // En remontant depuis le contenu, le focus va sur l'onglet affiché, même depuis une carte
             // placée sous la roue crantée : sinon la recherche géométrique choisit l'élément le plus proche.
@@ -946,6 +1108,9 @@ private fun NimbeShell(
         }
     } }
 }
+
+/** La galerie peut compter des milliers de noms proches : on s'arrête aux plus récents. */
+private const val GALLERY_RESULTS = 30
 
 /** Les titres ouverts sur les plateformes restent un mois dans « Continuer à regarder ». */
 private const val HISTORY_MS = StreamingRules.HISTORY_DAYS * 24 * 60 * 60 * 1000

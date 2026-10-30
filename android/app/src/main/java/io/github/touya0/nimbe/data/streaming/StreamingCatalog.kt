@@ -86,6 +86,13 @@ class StreamingCatalog(private val api: JustWatchApi, private val cache: CachedR
         return title
     }
 
+    /** Films et séries des plateformes [services] dont le titre correspond à [query]. */
+    suspend fun search(query: String, services: List<StreamingService>, kids: Boolean): List<StreamingTitle> {
+        if (services.isEmpty()) return emptyList()
+        val variables = JustWatchJson.catalogVariables(null, services, null, StreamingSort.Popular, kids, first = 12, after = null, query = query)
+        return JustWatchJson.page(fetch(JustWatchJson.CATALOG, variables)).items
+    }
+
     /**
      * Le titre des plateformes qui correspond à un film ou une série Jellyfin : recherche par nom,
      * puis même identifiant TMDB (sinon même titre et même année). null si aucune plateforme ne l'a.

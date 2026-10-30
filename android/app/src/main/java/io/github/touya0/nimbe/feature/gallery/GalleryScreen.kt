@@ -887,6 +887,6 @@ private const val SMALL_WIDTH = 260
 private const val ROW_LIMIT = 15
 
 /** Taille des aperçus demandés, en pixels. Les cartes en 16:9, les cases de la grille en 4:3. */
-private const val PREVIEW_WIDTH = 480
+internal const val PREVIEW_WIDTH = 480
 private const val PREVIEW_HEIGHT = 270
-private const val PREVIEW_HEIGHT_GRID = 360
+internal const val PREVIEW_HEIGHT_GRID = 360

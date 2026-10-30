@@ -20,6 +20,8 @@ data class HaEntity(
     val translationKey: String? = null,
     /** Attribut « temperature » : celle annoncée par une entité météo. */
     val temperature: Double? = null,
+    /** Le message porté par le capteur [NOTICE_ENTITY], s'il en a un. */
+    val notice: HaNotice? = null,
 ) {
     val domain: String get() = id.substringBefore('.')
 
@@ -47,6 +49,12 @@ data class HaEntity(
     companion object {
         val UNKNOWN_STATES = setOf("unavailable", "unknown", "")
 
+        /**
+         * Capteur qui transmet les événements nimbe_notify (voir deploy/homeassistant) : le compte de la TV
+         * n'est pas administrateur, et Home Assistant ne lui laisse pas écouter les événements eux-mêmes.
+         */
+        const val NOTICE_ENTITY = "sensor.nimbe_notification"
+
         fun fromState(json: JSONObject): HaEntity? {
             val id = json.optString("entity_id").takeIf { '.' in it } ?: return null
             return of(
@@ -65,12 +73,23 @@ data class HaEntity(
             deviceClass = attributes.optString("device_class").ifBlank { null },
             updatedAt = updatedAt,
             temperature = attributes.optDouble("temperature").takeUnless { it.isNaN() },
+            notice = HaNotice.of(attributes),
         )
 
         private fun parseTime(text: String): Long? = try {
             OffsetDateTime.parse(text).toInstant().toEpochMilli()
         } catch (_: DateTimeParseException) {
             null
+        }
+    }
+}
+
+/** Message d'une automatisation Home Assistant : titre, détail, niveau (critique, normal, discret). */
+data class HaNotice(val title: String, val detail: String?, val level: String) {
+    companion object {
+        fun of(attributes: JSONObject): HaNotice? {
+            val title = attributes.optString("title").ifBlank { return null }
+            return HaNotice(title, attributes.optString("detail").ifBlank { null }, attributes.optString("level").lowercase())
         }
     }
 }

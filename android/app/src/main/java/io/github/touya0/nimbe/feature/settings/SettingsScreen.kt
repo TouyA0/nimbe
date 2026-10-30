@@ -46,6 +46,7 @@ import androidx.tv.material3.ClickableSurfaceDefaults
 import androidx.tv.material3.MaterialTheme
 import androidx.tv.material3.Surface
 import androidx.tv.material3.Text
+import io.github.touya0.nimbe.data.notifications.NotificationCenter
 import io.github.touya0.nimbe.core.storage.StreamingChoice
 import io.github.touya0.nimbe.data.homeassistant.HomeAssistantAccount
 import io.github.touya0.nimbe.data.homeassistant.HomeAssistantLink
@@ -127,6 +128,7 @@ enum class SettingsSection(val label: String) {
     Profiles("Profils"),
     Display("Affichage et accessibilité"),
     Screensaver("Écran de veille"),
+    Notifications("Notifications"),
     Servers("Serveurs et comptes"),
     Security("Confidentialité et sécurité"),
     Updates("Mises à jour"),
@@ -176,6 +178,7 @@ fun SettingsScreen(
     /** Abonnements aux plateformes de streaming ; null pendant la lecture du réglage. */
     streamingChoice: StreamingChoice?,
     onStreamingChange: (Set<String>?) -> Unit,
+    notifications: NotificationCenter,
     onClose: () -> Unit,
 ) {
     val updateState by updates.state.collectAsStateWithLifecycle(initialValue = UpdateState())
@@ -403,6 +406,7 @@ fun SettingsScreen(
                     galleryLinks = nextcloudLinks,
                     onPickPhotos = { screensaverPickOpen = true },
                 )
+                SettingsSection.Notifications -> NotificationsPage(notifications, profilesState.active?.id.orEmpty(), profilesState.active?.name.orEmpty())
                 SettingsSection.Servers -> ServersPage(
                     jellyfin,
                     jellyfinLink,

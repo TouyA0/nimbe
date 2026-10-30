@@ -76,6 +76,29 @@ class JellyfinLibrary(private val account: JellyfinAccount, private val cache: C
         page(auth, "/Items/Latest", mapOf("includeItemTypes" to "Movie,Episode", "groupItems" to true, "limit" to 16)).items
     }
 
+    /** Films, séries et épisodes dont le nom contient [query]. */
+    suspend fun search(auth: JellyfinAuth, query: String): List<MediaItem> =
+        page(
+            auth,
+            "/Items",
+            mapOf("searchTerm" to query, "includeItemTypes" to "Movie,Series,Episode", "recursive" to true, "limit" to SEARCH_LIMIT),
+        ).items
+
+    /**
+     * Épisodes ajoutés depuis [since], des séries suivies seulement. Une série dont on a vu des épisodes
+     * apparaît dans « À suivre », y compris une série terminée qui reçoit une nouvelle saison.
+     */
+    suspend fun newEpisodes(auth: JellyfinAuth, since: Long): List<MediaItem> {
+        val followed = page(auth, "/Shows/NextUp", mapOf("limit" to 100, "disableFirstEpisode" to true)).items.mapNotNull { it.seriesId }.toSet()
+        if (followed.isEmpty()) return emptyList()
+        val recent = page(
+            auth,
+            "/Items",
+            mapOf("includeItemTypes" to "Episode", "recursive" to true, "sortBy" to "DateCreated", "sortOrder" to "Descending", "limit" to 30),
+        ).items
+        return recent.filter { it.seriesId in followed && (it.dateCreated?.toEpochMilli() ?: 0) > since }
+    }
+
     /** [genres] : noms de genres Jellyfin acceptés (l'un ou l'autre) ; null pour tous. */
     suspend fun movies(auth: JellyfinAuth, sort: MovieSort, startIndex: Int, limit: Int, genres: List<String>? = null): ItemPage =
         remember(auth, "movies:$sort:${genres?.joinToString("|")}:$startIndex:$limit") {
@@ -232,6 +255,8 @@ class JellyfinLibrary(private val account: JellyfinAccount, private val cache: C
     }
 
     companion object {
+        private const val SEARCH_LIMIT = 20
+
         private const val FIELDS = "Overview,Genres,DateCreated,ChildCount,PrimaryImageAspectRatio,ProviderIds"
 
         /** Clé d'enregistrement : serveur, utilisateur, route et paramètres triés (l'ordre ne compte pas). */

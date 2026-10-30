@@ -20,6 +20,12 @@
     <!-- Ouvrir l'écran de désinstallation d'Android (qui demande lui-même confirmation). -->
     <uses-permission android:name="android.permission.REQUEST_DELETE_PACKAGES" />
 
+    <!-- Dictée de la recherche, avec le micro de la télécommande. Demandée la première fois qu'on s'en sert. -->
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
+
+    <!-- Alerte critique pendant une autre appli. Google TV ne propose pas ce réglage : il s'accorde par adb (voir README). -->
+    <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
+
     <!-- Android 11+ : rendre visibles les applis lançables, pour l'écran Applis. -->
     <queries>
         <intent>
@@ -29,6 +35,10 @@
         <intent>
             <action android:name="android.intent.action.MAIN" />
             <category android:name="android.intent.category.LAUNCHER" />
+        </intent>
+        <!-- Trouver le service de reconnaissance vocale, pour la dictée. -->
+        <intent>
+            <action android:name="android.speech.RecognitionService" />
         </intent>
         <!-- Trouver l'accueil d'origine, pour l'écran Secours. -->
         <intent>
