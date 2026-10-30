@@ -1,12 +1,18 @@
 package io.github.touya0.nimbe.feature.gallery
 
+import io.github.touya0.nimbe.data.nextcloud.DatePrecision
+import io.github.touya0.nimbe.data.nextcloud.FileNameDate
 import io.github.touya0.nimbe.data.nextcloud.GalleryItem
 import java.time.Instant
 import java.time.YearMonth
 import java.time.ZoneId
 
 /** Un mois de la chronologie : « Octobre 2025 », ses photos et vidéos, des plus récentes aux plus anciennes. */
-data class MonthSection(val month: YearMonth, val items: List<GalleryItem>) {
+/**
+ * [yearOnly] : les photos dont on ne connaît que l'année (dossier « Noël 2012 »), regroupées à la fin de
+ * leur année au lieu d'être mêlées à janvier.
+ */
+data class MonthSection(val month: YearMonth, val items: List<GalleryItem>, val yearOnly: Boolean = false) {
     val photos: Int get() = items.count { !it.isVideo }
     val videos: Int get() = items.count { it.isVideo }
 }
@@ -17,18 +23,19 @@ object GalleryTimeline {
     /** [items] déjà triés du plus récent au plus ancien ; les mois suivent le même ordre, dans le fuseau de la maison. */
     fun group(items: List<GalleryItem>, zone: ZoneId = ZoneId.systemDefault()): List<MonthSection> {
         val sections = mutableListOf<MonthSection>()
-        var month: YearMonth? = null
+        var key: Pair<YearMonth, Boolean>? = null
         var current = mutableListOf<GalleryItem>()
         for (item in items) {
-            val itemMonth = YearMonth.from(Instant.ofEpochMilli(item.takenAt).atZone(zone))
-            if (itemMonth != month) {
-                month?.let { sections += MonthSection(it, current) }
-                month = itemMonth
+            val itemKey = YearMonth.from(Instant.ofEpochMilli(item.takenAt).atZone(zone)) to
+                (FileNameDate.precisionOf(item, zone) == DatePrecision.Year)
+            if (itemKey != key) {
+                key?.let { (month, yearOnly) -> sections += MonthSection(month, current, yearOnly) }
+                key = itemKey
                 current = mutableListOf()
             }
             current += item
         }
-        month?.let { sections += MonthSection(it, current) }
+        key?.let { (month, yearOnly) -> sections += MonthSection(month, current, yearOnly) }
         return sections
     }
 

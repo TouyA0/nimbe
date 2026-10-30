@@ -149,7 +149,7 @@ private fun PhotoSlides(auth: NextcloudAuth, playlist: List<GalleryItem>, prefs:
                     .padding(horizontal = 72.dp, vertical = 40.dp),
             ) {
                 Text(caption ?: item.path.substringBeforeLast('/', "").substringAfterLast('/'), style = MaterialTheme.typography.titleLarge, color = Dim)
-                Text(GalleryText.fullDate(item.takenAt), style = MaterialTheme.typography.bodyMedium, color = Dimmer)
+                Text(GalleryText.fullDate(item), style = MaterialTheme.typography.bodyMedium, color = Dimmer)
             }
         }
         if (prefs.showClock || prefs.showServer) {

@@ -29,7 +29,38 @@ object GalleryText {
         return text.replaceFirstChar { it.uppercase() }
     }
 
+    /**
+     * Date d'une photo, aussi précise qu'elle est connue : « Samedi 18 octobre 2025 · 19:42 »,
+     * « Vendredi 2 octobre 2015 » (date d'un dossier), « Mai 2017 », « 2012 ».
+     */
+    fun fullDate(item: io.github.touya0.nimbe.data.nextcloud.GalleryItem, zone: java.time.ZoneId = java.time.ZoneId.systemDefault()): String {
+        val at = java.time.Instant.ofEpochMilli(item.takenAt).atZone(zone)
+        return when (io.github.touya0.nimbe.data.nextcloud.FileNameDate.precisionOf(item, zone)) {
+            io.github.touya0.nimbe.data.nextcloud.DatePrecision.Exact -> fullDate(item.takenAt, zone)
+            io.github.touya0.nimbe.data.nextcloud.DatePrecision.Day -> at.format(DAY_DATE).replaceFirstChar { it.uppercase() }
+            io.github.touya0.nimbe.data.nextcloud.DatePrecision.Month -> month(java.time.YearMonth.from(at))
+            io.github.touya0.nimbe.data.nextcloud.DatePrecision.Year -> "${at.year}"
+        }
+    }
+
+    /** Date courte sur une case de la grille : « 18 oct. 2025 », « oct. 2015 », « 2012 ». */
+    fun shortDate(item: io.github.touya0.nimbe.data.nextcloud.GalleryItem, zone: java.time.ZoneId = java.time.ZoneId.systemDefault()): String {
+        val at = java.time.Instant.ofEpochMilli(item.takenAt).atZone(zone)
+        return when (io.github.touya0.nimbe.data.nextcloud.FileNameDate.precisionOf(item, zone)) {
+            io.github.touya0.nimbe.data.nextcloud.DatePrecision.Exact, io.github.touya0.nimbe.data.nextcloud.DatePrecision.Day -> at.format(SHORT_DATE)
+            io.github.touya0.nimbe.data.nextcloud.DatePrecision.Month -> at.format(SHORT_MONTH)
+            io.github.touya0.nimbe.data.nextcloud.DatePrecision.Year -> "${at.year}"
+        }
+    }
+
+    /** En-tête d'une section de la chronologie : « Octobre 2025 », ou « 2012 · mois inconnu ». */
+    fun sectionTitle(section: io.github.touya0.nimbe.feature.gallery.MonthSection): String =
+        if (section.yearOnly) "${section.month.year} · mois inconnu" else month(section.month)
+
     private val FULL_DATE = java.time.format.DateTimeFormatter.ofPattern("EEEE d MMMM yyyy · HH:mm", java.util.Locale.FRENCH)
+    private val DAY_DATE = java.time.format.DateTimeFormatter.ofPattern("EEEE d MMMM yyyy", java.util.Locale.FRENCH)
+    private val SHORT_DATE = java.time.format.DateTimeFormatter.ofPattern("d MMM yyyy", java.util.Locale.FRENCH)
+    private val SHORT_MONTH = java.time.format.DateTimeFormatter.ofPattern("MMM yyyy", java.util.Locale.FRENCH)
 
     /** Rappel des touches en bas de la visionneuse. */
     fun viewerHints(video: Boolean, slideshow: Boolean): String = listOf(

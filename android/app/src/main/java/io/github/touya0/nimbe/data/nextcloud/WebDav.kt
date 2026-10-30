@@ -15,8 +15,8 @@ import javax.xml.parsers.SAXParserFactory
 /**
  * Une photo ou une vidéo du compte. [path] : chemin depuis la racine des fichiers de l'utilisateur,
  * décodé (« Photos/2025/Bretagne/IMG_0042.jpg »). [takenAt] : date de prise de vue si le serveur la
- * connaît (métadonnées EXIF lues par Nextcloud), sinon celle du nom de fichier, sinon date de
- * modification (souvent celle de l'envoi sur le serveur) ; en millisecondes.
+ * connaît (métadonnées EXIF lues par Nextcloud), sinon celle du nom du fichier ou de ses dossiers
+ * ([FileNameDate.fromPath]), sinon date de modification (souvent celle de l'envoi sur le serveur) ; en millisecondes.
  */
 data class GalleryFile(
     val fileId: Long,
@@ -307,7 +307,7 @@ object WebDav {
                 fileId = fileId,
                 path = path,
                 mime = mime,
-                takenAt = taken ?: FileNameDate.parse(displayName(path)) ?: modified,
+                takenAt = taken ?: FileNameDate.fromPath(path)?.millis ?: modified,
                 size = p["size"]?.toLongOrNull() ?: 0L,
                 width = width,
                 height = height,

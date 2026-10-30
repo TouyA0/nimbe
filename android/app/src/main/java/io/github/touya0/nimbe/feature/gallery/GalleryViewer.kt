@@ -198,7 +198,7 @@ private fun ViewerOverlay(item: GalleryItem, index: Int, total: Int, slideshow: 
         ) {
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 Text(item.path.substringBeforeLast('/', "").substringAfterLast('/').ifEmpty { "Nextcloud" }, style = MaterialTheme.typography.headlineMedium)
-                Text(GalleryText.fullDate(item.takenAt), style = MaterialTheme.typography.bodyLarge, color = LuneAttenuee)
+                Text(GalleryText.fullDate(item), style = MaterialTheme.typography.bodyLarge, color = LuneAttenuee)
             }
             Text(
                 if (slideshow) "Diaporama · ${index + 1} / $total" else "${index + 1} / $total",

@@ -59,4 +59,18 @@ class GalleryTimelineTest {
         val at = LocalDateTime.of(2025, 10, 18, 19, 42).atZone(paris).toInstant().toEpochMilli()
         assertEquals("Samedi 18 octobre 2025 · 19:42", GalleryText.fullDate(at, paris))
     }
+
+    @Test
+    fun `photos à l'année seule regroupées à part, dates aussi précises que connues`() {
+        fun dated(id: Long, path: String, at: LocalDateTime) = GalleryItem("p", id, path, "image/jpeg", at.atZone(paris).toInstant().toEpochMilli(), 1, 0, 0, true)
+        val items = listOf(
+            dated(1, "S/2012-01-15 Ski/a.jpg", LocalDateTime.of(2012, 1, 15, 12, 0)),
+            dated(2, "S/Noël 2012/b.jpg", LocalDateTime.of(2012, 1, 1, 0, 0)),
+        )
+        val sections = GalleryTimeline.group(items, paris)
+        assertEquals(listOf(false, true), sections.map { it.yearOnly })
+        assertEquals("2012 · mois inconnu", GalleryText.sectionTitle(sections[1]))
+        assertEquals("Dimanche 15 janvier 2012", GalleryText.fullDate(items[0], paris))
+        assertEquals("2012", GalleryText.fullDate(items[1], paris))
+    }
 }

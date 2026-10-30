@@ -1,5 +1,7 @@
 package io.github.touya0.nimbe.feature.gallery
 
+import io.github.touya0.nimbe.data.nextcloud.DatePrecision
+import io.github.touya0.nimbe.data.nextcloud.FileNameDate
 import io.github.touya0.nimbe.data.nextcloud.GalleryItem
 import io.github.touya0.nimbe.data.nextcloud.WebDav
 import java.time.Instant
@@ -36,6 +38,8 @@ object GalleryMemories {
         windowDays: Int = 3,
         minItems: Int = 3,
     ): List<GalleryCollection> = items
+        // Un jour précis est nécessaire : une photo datée par un dossier « Mai 2017 » ou « 2012 » n'est pas un souvenir du jour.
+        .filter { FileNameDate.precisionOf(it, zone).let { p -> p == DatePrecision.Exact || p == DatePrecision.Day } }
         .groupBy { Instant.ofEpochMilli(it.takenAt).atZone(zone).toLocalDate() }
         .flatMap { (date, photos) ->
             val years = today.year - date.year
@@ -59,7 +63,9 @@ object GalleryMemories {
     /** Les photos du mois en cours, null s'il n'y en a pas. */
     fun thisMonth(items: List<GalleryItem>, today: LocalDate, zone: ZoneId = ZoneId.systemDefault()): GalleryCollection? {
         val month = YearMonth.from(today)
-        val photos = items.filter { YearMonth.from(Instant.ofEpochMilli(it.takenAt).atZone(zone)) == month }
+        val photos = items.filter {
+            YearMonth.from(Instant.ofEpochMilli(it.takenAt).atZone(zone)) == month && FileNameDate.precisionOf(it, zone) != DatePrecision.Year
+        }
         return if (photos.isEmpty()) null else GalleryCollection("CE MOIS-CI", GalleryText.month(month), photos)
     }
 

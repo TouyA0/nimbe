@@ -191,7 +191,7 @@ private fun GalleryContent(gallery: NextcloudGallery, profile: Profile, auth: Ne
             GallerySection.Timeline -> TimelinePage(auth, timeline, nav.timeline, nav, empty = "Aucune photo pour l'instant", onView = { list, item -> view(list, item) })
             GallerySection.Videos -> {
                 val videos = remember(timeline) {
-                    timeline.mapNotNull { month -> month.items.filter { it.isVideo }.takeIf { it.isNotEmpty() }?.let { MonthSection(month.month, it) } }
+                    timeline.mapNotNull { month -> month.items.filter { it.isVideo }.takeIf { it.isNotEmpty() }?.let { month.copy(items = it) } }
                 }
                 TimelinePage(auth, videos, nav.videos, nav, empty = "Aucune vidéo dans ta galerie", onView = { list, item -> view(list, item) })
             }
@@ -672,9 +672,9 @@ private fun PhotoGrid(
 
 private fun LazyGridScope.monthSections(auth: NextcloudAuth, sections: List<MonthSection>, nav: GalleryNav, onClick: (GalleryItem) -> Unit) {
     sections.forEach { section ->
-        item(key = "m:${section.month}", span = { GridItemSpan(maxLineSpan) }, contentType = "month") {
+        item(key = "m:${section.month}:${section.yearOnly}", span = { GridItemSpan(maxLineSpan) }, contentType = "month") {
             Row(Modifier.padding(top = 10.dp), horizontalArrangement = Arrangement.spacedBy(14.dp), verticalAlignment = Alignment.Bottom) {
-                Text(GalleryText.month(section.month), style = MaterialTheme.typography.titleLarge)
+                Text(GalleryText.sectionTitle(section), style = MaterialTheme.typography.titleLarge)
                 Text(GalleryText.monthCounts(section.photos, section.videos), style = MaterialTheme.typography.labelMedium, color = LuneAttenuee)
             }
         }
@@ -847,7 +847,7 @@ private fun PhotoCard(
             )
             if (focused) {
                 Text(
-                    ShortDate.format(Instant.ofEpochMilli(item.takenAt).atZone(ZoneId.systemDefault())),
+                    GalleryText.shortDate(item),
                     style = MaterialTheme.typography.labelSmall,
                     color = Lune,
                     maxLines = 1,
@@ -873,9 +873,6 @@ private fun PhotoCard(
         }
     }
 }
-
-/** « 18 oct. 2025 ». */
-private val ShortDate = DateTimeFormatter.ofPattern("d MMM yyyy", Locale.FRENCH)
 
 private const val COLUMNS = 6
 private const val ALBUM_COLUMNS = 4

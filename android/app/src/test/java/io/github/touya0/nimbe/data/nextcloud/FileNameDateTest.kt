@@ -30,4 +30,26 @@ class FileNameDateTest {
         assertNull(parse("IMG_20230231_101010.jpg"))
         assertNull(parse("IMG_20271201_101010.jpg"))
     }
+
+    private fun at0(y: Int, mo: Int, d: Int) = LocalDateTime.of(y, mo, d, 0, 0).atZone(paris).toInstant().toEpochMilli()
+
+    @Test
+    fun `date des dossiers, du plus proche au plus lointain`() {
+        // Date complète dans le dossier : le jour.
+        assertEquals(
+            NameDate(at(2015, 10, 2, 12, 0, 0), DatePrecision.Day),
+            FileNameDate.fromPath("Souvenirs/02 - Enfance ( 2006 - 2018 )/2015-10-02 Jeux enfants Lavernose/DSC_0102.JPG", now, paris),
+        )
+        // Le nom du fichier passe avant les dossiers, même s'il n'a que le mois.
+        assertEquals(
+            NameDate(at0(2017, 5, 1), DatePrecision.Month),
+            FileNameDate.fromPath("Souvenirs/2015-10-02 Jeux/2017-05_video_gouaux_9.VOB", now, paris),
+        )
+        // Une année seule dans un dossier, mais pas une plage d'années.
+        assertEquals(NameDate(at0(2012, 1, 1), DatePrecision.Year), FileNameDate.fromPath("Souvenirs/Noël 2012/DSC_1.JPG", now, paris))
+        assertNull(FileNameDate.fromPath("Souvenirs/02 - Enfance ( 2006 - 2018 )/A trier/DSC_1.JPG", now, paris))
+        assertNull(FileNameDate.fromPath("Souvenirs/1984-2019 École de Gratens/DSC_1.JPG", now, paris))
+        // Un compteur de quatre chiffres dans un nom de fichier n'est pas une année.
+        assertNull(FileNameDate.fromPath("Photos/IMG_2015.JPG", now, paris))
+    }
 }
