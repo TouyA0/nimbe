@@ -1,5 +1,6 @@
 package io.github.touya0.nimbe.feature.player
 
+import io.github.touya0.nimbe.ui.components.NimbeIcons
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
@@ -713,7 +714,7 @@ private fun BoxScope.NextUpCard(
                 }
             }
             Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
-                PillButton("▶  Lire maintenant", onClick = onPlay, modifier = Modifier.focusRequester(focus))
+                PillButton("Lire maintenant", icon = NimbeIcons.Play, onClick = onPlay, modifier = Modifier.focusRequester(focus))
                 PillButton("Annuler", onClick = onCancel)
                 Spacer(Modifier.weight(1f))
                 Text("Dans $countdown s", style = MaterialTheme.typography.titleSmall, color = LuneAttenuee)

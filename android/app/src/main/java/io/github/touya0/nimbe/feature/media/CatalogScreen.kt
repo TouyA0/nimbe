@@ -17,6 +17,23 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.LazyGridScope
+import androidx.compose.foundation.lazy.grid.LazyGridState
+import io.github.touya0.nimbe.shell.HeaderHeight
+import io.github.touya0.nimbe.ui.components.ContentRow
+import io.github.touya0.nimbe.ui.components.LocalMenu
+import io.github.touya0.nimbe.ui.components.MenuOption
+import io.github.touya0.nimbe.ui.components.MenuRequest
+import io.github.touya0.nimbe.ui.components.MenuState
+import io.github.touya0.nimbe.ui.components.NimbeIcon
+import io.github.touya0.nimbe.ui.components.NimbeIcons
+import io.github.touya0.nimbe.ui.components.PivotScroll
+import io.github.touya0.nimbe.ui.components.RowCardPadding
+import io.github.touya0.nimbe.ui.components.RowMessage
+import io.github.touya0.nimbe.ui.components.RowTitle
+import io.github.touya0.nimbe.ui.components.ScreenMargin
+import io.github.touya0.nimbe.ui.components.rowCardTop
+import io.github.touya0.nimbe.ui.theme.Nuit
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.grid.rememberLazyGridState
@@ -127,8 +144,11 @@ class JellyfinSection(
     val pageKey: String,
     val loadPage: suspend JellyfinLibrary.(JellyfinAuth, Int, Int) -> ItemPage,
     val kicker: (MediaItem) -> String?,
-    val sorts: (@Composable RowScope.() -> Unit)? = null,
+    val sort: SortChoice? = null,
 )
+
+/** Un tri proposé dans la barre de filtres : ses libellés, celui choisi, et quoi faire d'un nouveau choix. */
+class SortChoice(val labels: List<String>, val selected: Int, val onSelect: (Int) -> Unit)
 
 /**
  * Onglet Films ou Séries : Jellyfin et les plateformes de streaming réunis.
@@ -163,51 +183,68 @@ fun CatalogScreen(
     val onFallback: (CatalogFocus) -> Unit = { if (fallback == null) fallback = it }
 
     val sourceRequester = remember { FocusRequester() }
-    Box(
-        modifier
-            .fillMaxSize()
-            .focusProperties {
-                // En descendant des onglets, on arrive sur la source choisie, pas sur la catégorie la plus proche.
-                onEnter = { if (requestedFocusDirection == FocusDirection.Down) runCatching { sourceRequester.requestFocus() } }
-                // Gauche et droite restent dans l'écran : au bout d'une rangée, on ne change pas d'onglet par accident.
-                onExit = {
-                    if (requestedFocusDirection == FocusDirection.Left || requestedFocusDirection == FocusDirection.Right) cancelFocusChange()
-                }
-            }
-            .focusGroup(),
-    ) {
+    val menu = LocalMenu.current
+    val sort = when {
+        source == CatalogSources.JELLYFIN -> jellyfin.sort
+        service != null -> SortChoice(StreamingSort.pills.map { it.label }, StreamingSort.pills.indexOf(state.streamingSort)) {
+            state.streamingSort = StreamingSort.pills[it]
+        }
+        else -> null
+    }
+    Box(modifier.fillMaxSize()) {
         when (hero) {
             is CatalogFocus.Jellyfin -> Backdrop(hero.item.backdrop)
             is CatalogFocus.Streaming -> StreamingBackdrop(hero.title.backdrop)
             null -> Unit
         }
-        Column(Modifier.fillMaxSize().padding(horizontal = 48.dp)) {
-            // Résumé sur une ligne : la place va aux affiches, la fiche donne le reste.
-            Box(Modifier.height(150.dp)) {
-                when (hero) {
-                    is CatalogFocus.Jellyfin -> Hero(hero.item, hero.kicker, overviewLines = 1)
-                    is CatalogFocus.Streaming -> StreamingHero(hero.title, hero.kicker, overviewLines = 1)
-                    null -> HeroPlaceholder(kind, hasServices = services.isNotEmpty(), canChoose = streaming?.onOpenSettings != null)
-                }
-            }
-            Row(Modifier.padding(top = 4.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                Text(title, style = MaterialTheme.typography.headlineSmall)
-                total?.takeIf { it > 0 }?.let { Text("$it", style = MaterialTheme.typography.titleSmall, color = LuneAttenuee) }
-                if (jellyfinUi?.down == true && source != CatalogSources.ALL && service == null) {
-                    Text("● Jellyfin injoignable · dernière liste reçue", style = MaterialTheme.typography.titleSmall, color = Alerte)
-                }
-                Spacer(Modifier.weight(1f))
-                SourcePills(source, services, streaming, sourceRequester, onSelect = { state.source = it })
-            }
-            Row(Modifier.padding(top = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-                CategoryPills(state.category, onSelect = { state.category = it }, modifier = Modifier.weight(1f))
-                Row(Modifier.padding(start = 16.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    when {
-                        source == CatalogSources.JELLYFIN -> jellyfin.sorts?.invoke(this)
-                        service != null -> StreamingSort.pills.forEach { option ->
-                            FilterPill(option.label, selected = option == state.streamingSort, onClick = { state.streamingSort = option })
-                        }
+        // La zone de focus commence sous l'en-tête : Bas, depuis un onglet, la trouve en dessous de lui.
+        Column(
+            Modifier
+                .fillMaxSize()
+                .padding(top = HeaderHeight)
+                .focusProperties {
+                    // En descendant des onglets, on arrive sur la source choisie, pas sur le filtre le plus proche.
+                    onEnter = { if (requestedFocusDirection == FocusDirection.Down) runCatching { sourceRequester.requestFocus() } }
+                    // Gauche et droite restent dans l'écran : au bout d'une rangée, on ne change pas d'onglet par accident.
+                    onExit = {
+                        if (requestedFocusDirection == FocusDirection.Left || requestedFocusDirection == FocusDirection.Right) cancelFocusChange()
                     }
+                }
+                .focusGroup(),
+        ) {
+            // Résumé sur deux lignes : la place va aux affiches, la fiche donne le reste.
+            Box(Modifier.padding(horizontal = ScreenMargin).padding(top = 10.dp).height(CATALOG_HERO_HEIGHT)) {
+                FocusHero(hero, overviewLines = 2) {
+                    HeroPlaceholder(kind, hasServices = services.isNotEmpty(), canChoose = streaming?.onOpenSettings != null)
+                }
+            }
+            // Une seule barre de filtres : les sources à gauche, la catégorie et le tri à droite, en menus.
+            Row(
+                Modifier.fillMaxWidth().padding(horizontal = ScreenMargin).padding(top = 6.dp, bottom = 2.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
+                SourcePills(source, services, streaming, sourceRequester, onSelect = { state.source = it })
+                Spacer(Modifier.weight(1f))
+                // Pendant une coupure, l'en-tête et les cartes grisées le disent déjà : pas de troisième rappel ici.
+                total?.takeIf { it > 0 }?.let {
+                    Text("$it ${kindWord(kind)}", style = MaterialTheme.typography.titleSmall, color = LuneAttenuee)
+                }
+                FilterPill(
+                    text = state.category?.label ?: "Catégories",
+                    selected = state.category != null,
+                    trailing = NimbeIcons.ExpandMore,
+                    onClick = { menu?.let { openCategories(it, kind, state) } },
+                    label = "Catégorie : ${state.category?.label ?: "toutes"}",
+                )
+                sort?.let { choice ->
+                    FilterPill(
+                        text = choice.labels[choice.selected],
+                        selected = false,
+                        trailing = NimbeIcons.ExpandMore,
+                        onClick = { menu?.let { openSort(it, choice) } },
+                        label = "Trier par : ${choice.labels[choice.selected]}",
+                    )
                 }
             }
             Box(Modifier.weight(1f).fillMaxWidth()) {
@@ -257,6 +294,20 @@ fun CatalogScreen(
     }
 }
 
+/** Choix de la catégorie, dans le panneau de droite : la catégorie en cours est cochée et a le focus. */
+private fun openCategories(menu: MenuState, kind: TitleKind, state: CatalogState) {
+    val options = listOf(MenuOption("", "Toutes les catégories", selected = state.category == null) { state.category = null }) +
+        Category.entries.map { category ->
+            MenuOption("", category.label, selected = state.category == category) { state.category = category }
+        }
+    menu.open(MenuRequest(subject = if (kind == TitleKind.Movie) "Films" else "Séries", options = options, title = "Catégorie"))
+}
+
+private fun openSort(menu: MenuState, choice: SortChoice) {
+    val options = choice.labels.mapIndexed { index, label -> MenuOption("", label, selected = index == choice.selected) { choice.onSelect(index) } }
+    menu.open(MenuRequest(subject = "Ordre des titres", options = options, title = "Trier par"))
+}
+
 /** Tout, Jellyfin, puis une pilule par plateforme ; sans plateforme, un raccourci vers le réglage. */
 @Composable
 private fun SourcePills(
@@ -271,7 +322,8 @@ private fun SourcePills(
         if (services.isNotEmpty()) {
             FilterPill("Tout", selected = source == CatalogSources.ALL, onClick = { onSelect(CatalogSources.ALL) }, modifier = Modifier.selected(CatalogSources.ALL))
         }
-        FilterPill(
+        // Jellyfin seul, sans plateforme à ajouter : rien à choisir, pas de pilule.
+        if (services.isNotEmpty() || streaming?.onOpenSettings != null) FilterPill(
             "Jellyfin",
             selected = source == CatalogSources.JELLYFIN,
             onClick = { onSelect(CatalogSources.JELLYFIN) },
@@ -280,7 +332,7 @@ private fun SourcePills(
         services.forEach { service ->
             FilterPill(service.label, selected = source == service.code, onClick = { onSelect(service.code) }, modifier = Modifier.selected(service.code))
         }
-        if (services.isEmpty()) streaming?.onOpenSettings?.let { open -> FilterPill("＋  Mes plateformes", selected = false, onClick = open) }
+        if (services.isEmpty()) streaming?.onOpenSettings?.let { open -> FilterPill("Mes plateformes", selected = false, onClick = open, trailing = NimbeIcons.Add) }
     }
 }
 
@@ -299,22 +351,6 @@ private fun HeroPlaceholder(kind: TitleKind, hasServices: Boolean, canChoose: Bo
             color = LuneAttenuee,
             modifier = Modifier.width(620.dp),
         )
-    }
-}
-
-/** « Toutes » puis les catégories ; la rangée défile à la télécommande. */
-@Composable
-private fun CategoryPills(selected: Category?, onSelect: (Category?) -> Unit, modifier: Modifier = Modifier) {
-    LazyRow(
-        // Décalée de la marge laissée à l'anneau de focus : « Toutes » s'aligne sur le titre de l'onglet.
-        modifier = modifier.offset(x = (-8).dp),
-        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 6.dp),
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
-    ) {
-        item(key = "toutes") { FilterPill("Toutes", selected = selected == null, onClick = { onSelect(null) }) }
-        items(Category.entries, key = { it.code }) { category ->
-            FilterPill(category.label, selected = selected == category, onClick = { onSelect(if (selected == category) null else category) })
-        }
     }
 }
 
@@ -387,19 +423,12 @@ private fun StreamingGrid(
                 if (category != null) "${service.label} ne propose pas de ${kindWord(kind)} « ${category.label} » en ce moment." else "Aucun titre trouvé sur ${service.label}.",
             )
         } else {
-            LazyVerticalGrid(
-                columns = GridCells.Fixed(8),
-                state = gridState,
-                modifier = Modifier.bleed(48.dp),
-                contentPadding = PaddingValues(horizontal = 48.dp, vertical = 16.dp),
-                horizontalArrangement = Arrangement.spacedBy(14.dp),
-                verticalArrangement = Arrangement.spacedBy(18.dp),
-            ) {
+            PosterGrid(gridState) {
                 items(items, key = { it.id }) { title ->
                     StreamingPosterCard(
                         title = title,
                         onClick = { ui.onOpenTitle(title) },
-                        width = 96.dp,
+                        width = GRID_POSTER_WIDTH,
                         // Toute la grille vient de la même plateforme : pas de badge sur chaque affiche.
                         service = null,
                         inJellyfin = ui.inJellyfin(title) != null,
@@ -433,7 +462,10 @@ private fun AllRows(
     val ui = LocalStreaming.current ?: return
     val jellyfinUi = LocalJellyfin.current
     val category = state.category
-    Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(top = 6.dp)) {
+    PivotScroll(rowCardTop()) { Column(
+        Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = ScreenMargin).padding(top = 8.dp),
+        verticalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
         if (category == null) ContinueRow(kind, onPlayItem, onFocus, onFallback, restoreFocusId, onRestored)
 
         if (jellyfinUi?.link != null) {
@@ -494,8 +526,9 @@ private fun AllRows(
                 onRestored = onRestored,
             )
         }
-        Spacer(Modifier.height(24.dp))
-    }
+        // De la place sous la dernière rangée, pour qu'elle puisse monter à son tour.
+        Spacer(Modifier.height(96.dp))
+    } }
 }
 
 /** « Continuer à regarder » de l'onglet : reprises Jellyfin et titres ouverts sur les plateformes, de ce type seulement. */
@@ -631,9 +664,11 @@ private fun CatalogRow(
     restoreFocusId: String?,
     content: LazyListScope.() -> Unit,
 ) {
-    Text(title, style = MaterialTheme.typography.headlineSmall, modifier = Modifier.padding(top = 4.dp))
     if (message != null) {
-        Text(message, style = MaterialTheme.typography.bodyMedium, color = LuneAttenuee, modifier = Modifier.padding(top = 6.dp, bottom = 14.dp))
+        Column {
+            RowTitle(title)
+            RowMessage(message)
+        }
         return
     }
     val listState = rememberLazyListState()
@@ -641,13 +676,26 @@ private fun CatalogRow(
         val index = keys.indexOf(restoreFocusId)
         if (index >= 0) listState.scrollToItem(index)
     }
-    LazyRow(
-        state = listState,
-        modifier = Modifier.bleed(48.dp),
-        contentPadding = PaddingValues(vertical = 12.dp, horizontal = 48.dp),
-        horizontalArrangement = Arrangement.spacedBy(14.dp),
-        content = content,
-    )
+    ContentRow(title, state = listState, content = content)
+}
+
+/**
+ * Grille d'affiches des onglets Films et Séries : sept colonnes, assez grandes pour se lire de loin.
+ * La ligne focalisée se cale en haut de la grille et la suivante dépasse dessous, pour qu'on sache qu'il y a une suite.
+ */
+@Composable
+fun PosterGrid(state: LazyGridState, content: LazyGridScope.() -> Unit) {
+    PivotScroll(RowCardPadding) {
+        LazyVerticalGrid(
+            columns = GridCells.Fixed(GRID_COLUMNS),
+            state = state,
+            modifier = Modifier.bleed(ScreenMargin),
+            contentPadding = PaddingValues(start = ScreenMargin, end = ScreenMargin, top = RowCardPadding, bottom = 96.dp),
+            horizontalArrangement = Arrangement.spacedBy(16.dp),
+            verticalArrangement = Arrangement.spacedBy(20.dp),
+            content = content,
+        )
+    }
 }
 
 /** Dernière carte d'une rangée : ouvre la grille complète de sa source. */
@@ -664,16 +712,20 @@ private fun SeeAllCard(label: String, onClick: () -> Unit) {
             .semantics { contentDescription = "$label, voir la liste complète" },
         shape = ClickableSurfaceDefaults.shape(androidx.compose.foundation.shape.RoundedCornerShape(10.dp)),
         colors = ClickableSurfaceDefaults.colors(
-            containerColor = Panneau,
+            containerColor = Lune.copy(alpha = 0.08f),
             contentColor = Lune,
-            focusedContainerColor = PanneauClair,
-            focusedContentColor = Lune,
-            pressedContainerColor = PanneauClair,
+            focusedContainerColor = Lune,
+            focusedContentColor = Nuit,
+            pressedContainerColor = Lune,
         ),
         scale = ClickableSurfaceDefaults.scale(focusedScale = 1f),
     ) {
-        Column(Modifier.fillMaxSize().padding(10.dp), verticalArrangement = Arrangement.Center, horizontalAlignment = Alignment.CenterHorizontally) {
-            Text("›", style = MaterialTheme.typography.displaySmall)
+        Column(
+            Modifier.fillMaxSize().padding(10.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterVertically),
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            NimbeIcon(NimbeIcons.ChevronRight, size = 32.dp)
             Text(label, style = MaterialTheme.typography.titleSmall, textAlign = TextAlign.Center)
         }
     }
@@ -681,5 +733,8 @@ private fun SeeAllCard(label: String, onClick: () -> Unit) {
 
 private fun kindWord(kind: TitleKind) = if (kind == TitleKind.Movie) "films" else "séries"
 
-private val POSTER_WIDTH = 104.dp
+private val POSTER_WIDTH = 112.dp
+private const val GRID_COLUMNS = 7
+val GRID_POSTER_WIDTH = 108.dp
+private val CATALOG_HERO_HEIGHT = 156.dp
 private const val ROW_SIZE = 20

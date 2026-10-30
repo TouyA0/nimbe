@@ -44,6 +44,9 @@ fun NimbeTheme(display: DisplaySettings = DisplaySettings(), content: @Composabl
 // entouré d'un anneau ambre décalé de l'élément (voir ui/components/FocusRing.kt).
 object NimbeFocus {
     const val SCALE = 1.08f
+
+    /** Boutons et pilules : agrandis moins, pour ne pas mordre sur leurs voisins. */
+    const val SMALL_SCALE = 1.04f
     val CardRadius = 12.dp
     val CardShape = RoundedCornerShape(CardRadius)
     val PillRadius = 24.dp

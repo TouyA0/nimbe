@@ -1,5 +1,6 @@
 package io.github.touya0.nimbe.feature.player
 
+import io.github.touya0.nimbe.ui.components.NimbeIcons
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -85,8 +86,8 @@ fun ResumeDialog(item: MediaItem, onPlay: (PlayRequest) -> Unit, onDismiss: () -
                 }
             }
             Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                PillButton("▶  Reprendre à $position", onClick = { onPlay(ResumeRule.resume(item)) }, modifier = Modifier.focusRequester(resume))
-                PillButton("↺  Recommencer", onClick = { onPlay(PlayRequest(item, 0)) })
+                PillButton("Reprendre à $position", icon = NimbeIcons.Play, onClick = { onPlay(ResumeRule.resume(item)) }, modifier = Modifier.focusRequester(resume))
+                PillButton("Recommencer", icon = NimbeIcons.Restart, onClick = { onPlay(PlayRequest(item, 0)) })
             }
             Text(
                 "Retour : revenir en arrière · Ce choix n'apparaît pas avant 2 min ni après 95 %",

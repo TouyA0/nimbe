@@ -1,6 +1,25 @@
 package io.github.touya0.nimbe.feature.home
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.unit.sp
+import io.github.touya0.nimbe.feature.apps.ActionCard
+import io.github.touya0.nimbe.feature.apps.AppCard
+import io.github.touya0.nimbe.feature.media.FocusHero
+import io.github.touya0.nimbe.feature.media.Kicker
+import io.github.touya0.nimbe.shell.HeaderHeight
+import io.github.touya0.nimbe.ui.components.ContentRow
+import io.github.touya0.nimbe.ui.components.NimbeIcons
+import io.github.touya0.nimbe.ui.components.PivotScroll
+import io.github.touya0.nimbe.ui.components.RowMessage
+import io.github.touya0.nimbe.ui.components.RowTitle
+import io.github.touya0.nimbe.ui.components.ScreenMargin
+import io.github.touya0.nimbe.ui.components.rowCardTop
+import io.github.touya0.nimbe.ui.theme.LocalDisplay
+import io.github.touya0.nimbe.ui.theme.Nuit
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -126,134 +145,136 @@ fun HomeScreen(
                 null -> Unit
             }
         }
-        Column(Modifier.fillMaxSize().padding(horizontal = 48.dp)) {
-            Box(Modifier.height(176.dp), contentAlignment = Alignment.TopStart) {
+        Column(Modifier.fillMaxSize().padding(top = HeaderHeight)) {
+            Box(
+                Modifier.padding(horizontal = ScreenMargin).padding(top = 10.dp).height(HERO_HEIGHT),
+                contentAlignment = Alignment.TopStart,
+            ) {
                 when {
                     connectivity.offline -> OfflineBanner(connectivity, onNetworkSettings)
                     jellyfin?.down == true -> ServerDownBanner(jellyfin)
                     welcome != null && focusedPick == null -> Welcome(welcome)
-                    hero is CatalogFocus.Jellyfin -> Hero(hero.item, hero.kicker, overviewLines = 2)
-                    hero is CatalogFocus.Streaming -> StreamingHero(hero.title, hero.kicker, overviewLines = 2)
-                    else -> Column {
-                        Text("Bienvenue sur Nimbe", style = MaterialTheme.typography.displaySmall)
-                        Text(
-                            "Tes films, tes séries et tes photos arriveront ici au fil des versions.",
-                            style = MaterialTheme.typography.bodyLarge,
-                            color = LuneAttenuee,
-                        )
+                    else -> FocusHero(hero, overviewLines = 2) {
+                        Welcome(HomeWelcome("NIMBE", "Bienvenue", "Tes films, tes séries, tes photos et tes applis, réunis ici."))
                     }
                 }
             }
 
-            Column(Modifier.weight(1f).verticalScroll(rememberScrollState())) {
-                rows.forEach { row ->
-                    // Une clé par rangée : déplacée, elle garde sa position de défilement.
-                    key(row.key) {
-                        when (row) {
-                            HomeRow.Continue -> {
-                                if (resume.isNotEmpty()) {
-                                    RowTitle("Continuer à regarder")
-                                    val state = rememberLazyListState()
-                                    LaunchedEffect(restoreFocusId, resume) {
-                                        val index = resume.indexOfFirst { it.id == restoreFocusId }
-                                        if (index >= 0) state.scrollToItem(index)
+            // La rangée focalisée vient se poser juste sous le haut de l'écran, titre compris :
+            // on garde l'œil au même endroit en descendant, comme sur les applis de streaming.
+            PivotScroll(rowCardTop()) {
+                Column(
+                    Modifier
+                        .weight(1f)
+                        .fillMaxWidth()
+                        .verticalScroll(rememberScrollState())
+                        .padding(horizontal = ScreenMargin),
+                    verticalArrangement = Arrangement.spacedBy(6.dp),
+                ) {
+                    rows.forEach { row ->
+                        // Une clé par rangée : déplacée, elle garde sa position de défilement.
+                        key(row.key) {
+                            when (row) {
+                                HomeRow.Continue -> {
+                                    if (resume.isNotEmpty()) {
+                                        val state = rememberLazyListState()
+                                        LaunchedEffect(restoreFocusId, resume) {
+                                            val index = resume.indexOfFirst { it.id == restoreFocusId }
+                                            if (index >= 0) state.scrollToItem(index)
+                                        }
+                                        ContentRow("Continuer à regarder", state = state) {
+                                            items(resume, key = { "continue:${it.key}" }) { entry ->
+                                                ContinueCard(
+                                                    entry = entry,
+                                                    onPlayItem = onPlayItem,
+                                                    onFocus = { focusedPick = it },
+                                                    restoreFocusId = restoreFocusId,
+                                                    onRestored = onRestored,
+                                                )
+                                            }
+                                        }
+                                    } else if (continueRow.state is Load.Failed && jellyfin?.down != true) {
+                                        RowMessage("Jellyfin ne répond pas : tes films reviendront avec le serveur. Tes applis restent disponibles.")
                                     }
-                                    LazyRow(
-                                        state = state,
-                                        modifier = Modifier.bleed(48.dp),
-                                        contentPadding = PaddingValues(vertical = 14.dp, horizontal = 48.dp),
-                                        horizontalArrangement = Arrangement.spacedBy(16.dp),
-                                    ) {
-                                        items(resume, key = { "continue:${it.key}" }) { entry ->
-                                            ContinueCard(
-                                                entry = entry,
-                                                onPlayItem = onPlayItem,
-                                                onFocus = { focusedPick = it },
-                                                restoreFocusId = restoreFocusId,
-                                                onRestored = onRestored,
-                                            )
+                                }
+                                HomeRow.Apps -> {
+                                    // La rangée n'apparaît qu'une fois la liste chargée : sinon, l'ajout des cartes devant
+                                    // « Toutes les applis » décale la rangée et la première appli sort de l'écran.
+                                    if (dock == null) {
+                                        RowTitle("Mes applis")
+                                        RowMessage("Chargement…")
+                                    } else {
+                                        ContentRow("Mes applis") {
+                                            items(dock, key = { it.packageName }) { app ->
+                                                AppCard(
+                                                    app = app,
+                                                    onClick = { onOpen(app) },
+                                                    onMenu = { requester -> onMenu(app, requester) },
+                                                    offline = connectivity.offline && InternetApps.needsInternet(app.packageName),
+                                                    modifier = Modifier.width(APP_CARD_WIDTH).animateItem(),
+                                                )
+                                            }
+                                            item(key = "toutes") {
+                                                ActionCard(NimbeIcons.Apps, "Toutes les applis", onClick = onAllApps, modifier = Modifier.width(APP_CARD_WIDTH))
+                                            }
                                         }
                                     }
-                                } else if (continueRow.state is Load.Failed && jellyfin?.down != true) {
-                                    Text(
-                                        "Jellyfin ne répond pas : tes films reviendront avec le serveur. Tes applis restent disponibles.",
-                                        style = MaterialTheme.typography.bodyMedium,
-                                        color = LuneAttenuee,
-                                        modifier = Modifier.padding(vertical = 8.dp),
-                                    )
-                            }
-                            }
-                            HomeRow.Apps -> {
-                                RowTitle("Mes applis")
-                                // La rangée n'apparaît qu'une fois la liste chargée : sinon, l'ajout des tuiles devant
-                                // « Toutes les applis » décale la rangée et la première appli sort de l'écran.
-                                if (dock == null) {
-                                    Text(
-                                        "Chargement…",
-                                        style = MaterialTheme.typography.bodyLarge,
-                                        color = LuneAttenuee,
-                                        modifier = Modifier.padding(vertical = 36.dp),
-                                    )
-                                } else LazyRow(
-                                    modifier = Modifier.bleed(48.dp),
-                                    contentPadding = PaddingValues(vertical = 16.dp, horizontal = 48.dp),
-                                    horizontalArrangement = Arrangement.spacedBy(14.dp),
-                                ) {
-                                    items(dock, key = { it.packageName }) { app ->
-                                        AppTile(
-                                            app = app,
-                                            onClick = { onOpen(app) },
-                                            onMenu = { requester -> onMenu(app, requester) },
-                                            offline = connectivity.offline && InternetApps.needsInternet(app.packageName),
-                                            modifier = Modifier.width(170.dp).animateItem(),
-                                        )
-                                    }
-                                    item(key = "toutes") {
-                                        ActionTile("▦", "Toutes les applis", onClick = { onAllApps() }, modifier = Modifier.width(170.dp))
-                                    }
-                            }
-                            }
-                            HomeRow.Latest -> {
-                                if (latest.isNotEmpty()) {
-                                    RowTitle("Ajouté récemment sur Jellyfin")
-                                    val state = rememberLazyListState()
-                                    ScrollToRestore(state, latest, restoreFocusId)
-                                    LazyRow(
-                                        state = state,
-                                        modifier = Modifier.bleed(48.dp),
-                                        contentPadding = PaddingValues(vertical = 14.dp, horizontal = 48.dp),
-                                        horizontalArrangement = Arrangement.spacedBy(14.dp),
-                                    ) {
-                                        items(latest, key = { "latest:${it.id}" }) { item ->
-                                            PosterCard(
-                                                item = item,
-                                                onClick = { onOpenItem(item) },
-                                                width = 104.dp,
-                                                onFocus = { focusedPick = CatalogFocus.Jellyfin(item, MediaText.added(item.dateCreated)) },
-                                                restoreFocus = item.id == restoreFocusId && resume.none { it.id == restoreFocusId },
-                                                onRestored = onRestored,
-                                            )
+                                }
+                                HomeRow.Latest -> {
+                                    if (latest.isNotEmpty()) {
+                                        val state = rememberLazyListState()
+                                        ScrollToRestore(state, latest, restoreFocusId)
+                                        ContentRow("Ajouté récemment", state = state) {
+                                            items(latest, key = { "latest:${it.id}" }) { item ->
+                                                PosterCard(
+                                                    item = item,
+                                                    onClick = { onOpenItem(item) },
+                                                    width = POSTER_WIDTH,
+                                                    onFocus = { focusedPick = CatalogFocus.Jellyfin(item, MediaText.added(item.dateCreated)) },
+                                                    restoreFocus = item.id == restoreFocusId && resume.none { it.id == restoreFocusId },
+                                                    onRestored = onRestored,
+                                                )
+                                            }
                                         }
                                     }
+                                }
+                                HomeRow.Memories -> memories()
                             }
-            
-                            }
-                            HomeRow.Memories -> memories()
                         }
                     }
+                    // De la place sous la dernière rangée, pour qu'elle puisse monter à son tour sous le haut de l'écran.
+                    Spacer(Modifier.height(96.dp))
                 }
             }
-
-            KeyHints("OK" to "ouvrir", "OK maintenu" to "options", modifier = Modifier.padding(vertical = 16.dp))
         }
+        BottomHints(Modifier.align(Alignment.BottomCenter))
     }
 }
 
+/** Rappel des touches en bas de l'écran, sur un voile : il ne prend pas de place aux rangées. */
+@Composable
+private fun BottomHints(modifier: Modifier = Modifier) {
+    if (!LocalDisplay.current.keyHints) return
+    Box(
+        modifier
+            .fillMaxWidth()
+            .background(Brush.verticalGradient(listOf(Color.Transparent, Nuit.copy(alpha = 0.92f))))
+            .padding(horizontal = ScreenMargin, vertical = 14.dp)
+            .padding(top = 18.dp),
+    ) {
+        KeyHints("OK" to "ouvrir", "OK maintenu" to "options")
+    }
+}
+
+private val HERO_HEIGHT = 176.dp
+private val POSTER_WIDTH = 112.dp
+private val APP_CARD_WIDTH = 176.dp
+
 @Composable
 private fun Welcome(welcome: HomeWelcome) {
-    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-        Text(welcome.kicker, style = MaterialTheme.typography.titleSmall, color = Focus)
-        Text(welcome.title, style = MaterialTheme.typography.displaySmall)
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(top = 12.dp)) {
+        Kicker(welcome.kicker)
+        Text(welcome.title, style = MaterialTheme.typography.displaySmall.copy(fontSize = 34.sp, lineHeight = 40.sp))
         Text(
             welcome.text,
             style = MaterialTheme.typography.bodyLarge,
@@ -261,11 +282,6 @@ private fun Welcome(welcome: HomeWelcome) {
             modifier = Modifier.width(620.dp),
         )
     }
-}
-
-@Composable
-private fun RowTitle(text: String) {
-    Text(text, style = MaterialTheme.typography.headlineSmall, modifier = Modifier.padding(top = 4.dp))
 }
 
 /** Haut de l'accueil quand Jellyfin ne répond plus : ce qui est en pause, ce qui marche, le prochain essai. */

@@ -1,5 +1,16 @@
 package io.github.touya0.nimbe.feature.films
 
+import io.github.touya0.nimbe.feature.media.HeroWidth
+import io.github.touya0.nimbe.feature.media.Kicker
+import io.github.touya0.nimbe.feature.media.Overview
+import io.github.touya0.nimbe.feature.media.ProgressBar
+import io.github.touya0.nimbe.ui.components.ContentRow
+import io.github.touya0.nimbe.ui.components.NimbeIcons
+import io.github.touya0.nimbe.ui.components.PivotScroll
+import io.github.touya0.nimbe.ui.components.ScreenMargin
+import io.github.touya0.nimbe.ui.components.rowCardTop
+import androidx.compose.foundation.layout.Spacer
+
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
@@ -80,38 +91,35 @@ fun FilmDetailScreen(item: MediaItem, onPlay: (MediaItem, Boolean) -> Unit, onCl
 
     Box(Modifier.fillMaxSize().background(Nuit)) {
         Backdrop(film.backdrop)
-        Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 48.dp, vertical = 28.dp)) {
-            Text("‹  Films", style = MaterialTheme.typography.titleSmall, color = LuneAttenuee)
-            Row(Modifier.padding(top = 16.dp), horizontalArrangement = Arrangement.spacedBy(28.dp)) {
-                Box(Modifier.width(150.dp).aspectRatio(2f / 3f).clip(RoundedCornerShape(12.dp)).background(Panneau)) {
-                    JellyfinImage(film.primary, width = 150.dp, height = null, modifier = Modifier.fillMaxSize())
-                }
-                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    SourceBadge("JELLYFIN")
-                    Text(film.name.uppercase(), style = titleStyle(film.name), maxLines = 1, overflow = TextOverflow.Ellipsis)
+        // La rangée « Distribution » vient se poser sous les boutons quand on y descend.
+        PivotScroll(rowCardTop()) {
+            Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = ScreenMargin)) {
+                Column(Modifier.padding(top = 64.dp).width(HeroWidth), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Kicker(if (film.resumable) "EN COURS" else "FILM")
+                    Text(film.name.uppercase(), style = titleStyle(film.name), maxLines = 2, overflow = TextOverflow.Ellipsis)
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
                         MetaLine(film)
                         detail?.video?.let { Chip(it) }
                     }
-                    film.overview?.let {
-                        Text(it, style = MaterialTheme.typography.bodyMedium, color = LuneAttenuee, maxLines = 4, overflow = TextOverflow.Ellipsis, modifier = Modifier.width(520.dp))
-                    }
+                    film.overview?.let { Overview(it, lines = 4) }
                     val resumable = film.resumable
                     if (resumable) Resume(film)
-                    Row(horizontalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.padding(top = 4.dp)) {
+                    Row(horizontalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.padding(top = 8.dp)) {
                         PillButton(
-                            text = if (resumable) "▶  Reprendre" else "▶  Lire",
+                            text = if (resumable) "Reprendre" else "Lire",
+                            icon = NimbeIcons.Play,
                             onClick = { onPlay(film, false) },
                             modifier = Modifier.focusRequester(playRequester),
                         )
-                        if (resumable) PillButton("Depuis le début", onClick = { onPlay(film, true) })
+                        if (resumable) PillButton("Depuis le début", icon = NimbeIcons.Restart, onClick = { onPlay(film, true) })
                         // Le même film sur une plateforme du profil : utile quand le Pi est coupé.
                         AlsoOnButtons(alsoOn)
                     }
                 }
+                if (detail != null) Facts(detail)
+                if (detail != null && detail.people.any { it.type == "Actor" }) Cast(detail)
+                Spacer(Modifier.height(48.dp))
             }
-            if (detail != null) Facts(detail)
-            if (detail != null && detail.people.any { it.type == "Actor" }) Cast(detail)
         }
     }
 }
@@ -119,14 +127,12 @@ fun FilmDetailScreen(item: MediaItem, onPlay: (MediaItem, Boolean) -> Unit, onCl
 /** « Arrêté à 1 h 21 ……… 47 min restantes », au-dessus de la barre. */
 @Composable
 private fun Resume(film: MediaItem) {
-    Column(Modifier.width(330.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+    Column(Modifier.width(340.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
         Row {
             Text(MediaText.stoppedAt(film), style = MaterialTheme.typography.labelMedium, color = LuneAttenuee, modifier = Modifier.weight(1f))
             MediaText.progressLine(film)?.let { Text(it, style = MaterialTheme.typography.labelMedium, color = LuneAttenuee) }
         }
-        Box(Modifier.fillMaxWidth().height(4.dp).background(PanneauClair, RoundedCornerShape(2.dp))) {
-            Box(Modifier.fillMaxWidth(film.progress).height(4.dp).background(Focus, RoundedCornerShape(2.dp)))
-        }
+        ProgressBar(film.progress, Modifier.fillMaxWidth())
     }
 }
 
@@ -135,7 +141,7 @@ private fun Resume(film: MediaItem) {
 private fun Facts(detail: ItemDetail) {
     val directors = detail.people.filter { it.type == "Director" }.joinToString(", ") { it.name }
     val file = listOfNotNull(detail.video, detail.sizeBytes?.let(::formatGigabytes)).joinToString(" · ")
-    Row(Modifier.fillMaxWidth().padding(top = 28.dp), horizontalArrangement = Arrangement.spacedBy(24.dp)) {
+    Row(Modifier.fillMaxWidth().padding(top = 36.dp, bottom = 12.dp), horizontalArrangement = Arrangement.spacedBy(24.dp)) {
         Fact("Réalisation", directors.ifEmpty { "Inconnue" })
         Fact("Audio", detail.audioLanguages.joinToString(" · ").ifEmpty { "Inconnu" })
         Fact("Sous-titres", (detail.subtitleLanguages + "Aucun").joinToString(", "))
@@ -154,18 +160,13 @@ private fun androidx.compose.foundation.layout.RowScope.Fact(label: String, valu
 /** Les acteurs, focalisables pour pouvoir faire défiler la rangée à la télécommande. */
 @Composable
 private fun Cast(detail: ItemDetail) {
-    Text("Distribution", style = MaterialTheme.typography.headlineSmall, modifier = Modifier.padding(top = 24.dp))
-    LazyRow(
-        modifier = Modifier.bleed(48.dp),
-        contentPadding = PaddingValues(horizontal = 48.dp, vertical = 12.dp),
-        horizontalArrangement = Arrangement.spacedBy(18.dp),
-    ) {
+    ContentRow("Distribution", modifier = Modifier.padding(top = 12.dp), spacing = 18.dp) {
         items(detail.people.filter { it.type == "Actor" }.take(20), key = { it.id + it.role }) { person ->
             var focused by remember { mutableStateOf(false) }
             Column(Modifier.width(96.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 Surface(
                     onClick = {},
-                    modifier = Modifier.size(72.dp).onFocusChanged { focused = it.isFocused }.focusRing(focused, 36.dp),
+                    modifier = Modifier.size(80.dp).onFocusChanged { focused = it.isFocused }.focusRing(focused, 40.dp),
                     shape = ClickableSurfaceDefaults.shape(CircleShape),
                     colors = ClickableSurfaceDefaults.colors(
                         containerColor = tileColor(person.name),
@@ -177,10 +178,10 @@ private fun Cast(detail: ItemDetail) {
                 ) {
                     Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                         Text(initials(person.name), style = MaterialTheme.typography.titleMedium)
-                        JellyfinImage(person.image, width = 72.dp, height = null, modifier = Modifier.fillMaxSize())
+                        JellyfinImage(person.image, width = 80.dp, height = null, modifier = Modifier.fillMaxSize())
                     }
                 }
-                Text(person.name, style = MaterialTheme.typography.labelMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text(person.name, style = MaterialTheme.typography.titleSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 person.role?.let { Text(it, style = MaterialTheme.typography.labelMedium, color = LuneAttenuee, maxLines = 1, overflow = TextOverflow.Ellipsis) }
             }
         }

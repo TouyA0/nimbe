@@ -6,6 +6,8 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -23,6 +25,14 @@ import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.lerp
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
+import io.github.touya0.nimbe.ui.components.NimbeIcon
+import io.github.touya0.nimbe.ui.theme.Nuit
+import io.github.touya0.nimbe.ui.theme.Panneau
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.key
@@ -43,6 +53,119 @@ import io.github.touya0.nimbe.ui.theme.TileColors
 /** Couleur stable par appli, pour que chaque tuile garde la même teinte d'un lancement à l'autre. */
 fun tileColor(packageName: String): Color = TileColors[Math.floorMod(packageName.hashCode(), TileColors.size)]
 
+/** Teinte de la tuile, assourdie vers le fond : la couleur repère l'appli sans crier. */
+private fun quietColor(packageName: String): Color = lerp(Panneau, tileColor(packageName), 0.55f)
+
+/**
+ * Carte 16:9 d'une appli, comme sur les accueils Android TV : sa bannière quand elle en fournit une,
+ * sinon son icône et son nom sur sa couleur. Même touche Menu et même appui long que [AppTile].
+ */
+@Composable
+fun AppCard(
+    app: InstalledApp,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    onMenu: ((FocusRequester) -> Unit)? = null,
+    offline: Boolean = false,
+) {
+    CardSurface(
+        onClick = onClick,
+        onMenu = onMenu,
+        label = app.label + if (offline) ", hors ligne" else "",
+        modifier = modifier,
+    ) {
+        Box(Modifier.fillMaxSize().alpha(if (offline) 0.45f else 1f)) {
+            if (app.banner != null) {
+                Image(bitmap = app.banner, contentDescription = null, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
+            } else {
+                Column(
+                    Modifier.fillMaxSize().background(quietColor(app.packageName)).padding(10.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterVertically),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                ) {
+                    AppIcon(app, 40.dp)
+                    Text(app.label, style = MaterialTheme.typography.titleSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                }
+            }
+        }
+        if (offline) {
+            Text(
+                "Hors ligne",
+                style = MaterialTheme.typography.labelMedium,
+                modifier = Modifier.align(Alignment.BottomStart).padding(8.dp).background(Nuit.copy(alpha = 0.8f), RoundedCornerShape(4.dp)).padding(horizontal = 6.dp, vertical = 2.dp),
+            )
+        }
+    }
+}
+
+/** Carte d'action 16:9 (« Toutes les applis ») : un pictogramme et son libellé. */
+@Composable
+fun ActionCard(icon: ImageVector, label: String, onClick: () -> Unit, modifier: Modifier = Modifier) {
+    CardSurface(onClick = onClick, onMenu = null, label = label, modifier = modifier) {
+        Column(
+            Modifier.fillMaxSize().background(Lune.copy(alpha = 0.08f)).padding(10.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterVertically),
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            NimbeIcon(icon, size = 28.dp)
+            Text(label, style = MaterialTheme.typography.titleSmall, maxLines = 1)
+        }
+    }
+}
+
+@Composable
+private fun AppIcon(app: InstalledApp, size: androidx.compose.ui.unit.Dp) {
+    val badge = Modifier.size(size).clip(RoundedCornerShape(size / 4))
+    if (app.icon != null) {
+        Image(bitmap = app.icon, contentDescription = null, modifier = badge)
+    } else {
+        Box(badge.background(Color.White.copy(alpha = 0.15f)), contentAlignment = Alignment.Center) {
+            Text(app.label.take(1).uppercase(), style = MaterialTheme.typography.titleMedium)
+        }
+    }
+}
+
+@Composable
+private fun CardSurface(
+    onClick: () -> Unit,
+    onMenu: ((FocusRequester) -> Unit)?,
+    label: String,
+    modifier: Modifier,
+    content: @Composable androidx.compose.foundation.layout.BoxScope.() -> Unit,
+) {
+    var focused by remember { mutableStateOf(false) }
+    val requester = remember { FocusRequester() }
+    Surface(
+        onClick = onClick,
+        onLongClick = onMenu?.let { { it(requester) } },
+        modifier = modifier
+            .aspectRatio(16f / 9f)
+            .focusRequester(requester)
+            .onFocusChanged { focused = it.isFocused }
+            .onKeyEvent { event ->
+                if (onMenu != null && event.key == Key.Menu && event.type == KeyEventType.KeyUp) {
+                    onMenu(requester)
+                    true
+                } else {
+                    false
+                }
+            }
+            .semantics { contentDescription = label }
+            .focusRing(focused, NimbeFocus.CardRadius),
+        shape = ClickableSurfaceDefaults.shape(NimbeFocus.CardShape),
+        colors = ClickableSurfaceDefaults.colors(
+            containerColor = Panneau,
+            contentColor = Lune,
+            focusedContainerColor = Panneau,
+            focusedContentColor = Lune,
+            pressedContainerColor = Panneau,
+        ),
+        scale = ClickableSurfaceDefaults.scale(focusedScale = 1f),
+    ) {
+        Box(Modifier.fillMaxSize(), content = content)
+    }
+}
+
 /**
  * Tuile d'une appli. [onMenu] s'ouvre avec la touche Menu ou un appui long sur OK
  * (la télécommande Xiaomi n'a pas de touche Menu) ; il reçoit de quoi rendre le focus à la tuile.
@@ -59,7 +182,7 @@ fun AppTile(
     dimmedNote: String? = null,
 ) {
     TileSurface(
-        color = tileColor(app.packageName),
+        color = quietColor(app.packageName),
         onClick = onClick,
         onMenu = onMenu,
         modifier = modifier,
@@ -96,7 +219,7 @@ fun AppTile(
 fun ActionTile(symbol: String, label: String, onClick: (FocusRequester) -> Unit, modifier: Modifier = Modifier) {
     val requester = remember { FocusRequester() }
     TileSurface(
-        color = Color(0xFF1A1F28),
+        color = Lune.copy(alpha = 0.08f),
         onClick = { onClick(requester) },
         onMenu = null,
         modifier = modifier.focusRequester(requester),

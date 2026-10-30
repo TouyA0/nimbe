@@ -25,7 +25,9 @@ import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.key
@@ -177,13 +179,13 @@ fun WideCard(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
     detail: String? = null,
-    badge: String? = "JELLYFIN",
+    badge: String? = null,
     width: Dp = 208.dp,
     onFocus: () -> Unit = {},
     restoreFocus: Boolean = false,
     onRestored: () -> Unit = {},
 ) {
-    Column(modifier.width(width), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+    Column(modifier.width(width), verticalArrangement = Arrangement.spacedBy(2.dp)) {
         MediaSurface(onClick, onFocus, restoreFocus, onRestored, label, Modifier.fillMaxWidth().aspectRatio(16f / 9f)) {
             Box(Modifier.fillMaxSize().background(PanneauClair)) {
                 // Un épisode a sa propre capture ; sinon, la vignette ou le fond de la série.
@@ -201,7 +203,7 @@ fun WideCard(
                 }
             }
         }
-        Text(label, style = MaterialTheme.typography.titleSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        Text(label, style = MaterialTheme.typography.titleSmall, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 8.dp))
         detail?.let { Text(it, style = MaterialTheme.typography.labelMedium, color = LuneAttenuee, maxLines = 1) }
     }
 }
@@ -225,16 +227,26 @@ private fun androidx.compose.foundation.layout.BoxScope.WatchedMarks(item: Media
         }
     }
     if (item.resumable) {
-        Box(Modifier.align(Alignment.BottomStart).fillMaxWidth().height(4.dp).background(Nuit.copy(alpha = 0.6f))) {
-            Box(Modifier.fillMaxWidth(item.progress).height(4.dp).background(Focus))
-        }
+        // Barre posée dans l'image, sur un léger voile pour rester visible sur une affiche claire.
+        Box(
+            Modifier
+                .align(Alignment.BottomStart)
+                .fillMaxWidth()
+                .height(22.dp)
+                .background(Brush.verticalGradient(listOf(Color.Transparent, Nuit.copy(alpha = 0.7f)))),
+        )
+        ProgressBar(item.progress, Modifier.align(Alignment.BottomStart).fillMaxWidth().padding(horizontal = 8.dp, vertical = 8.dp))
     }
 }
 
-/** Petite étiquette « JELLYFIN » de la maquette. */
+/** Petite étiquette de source (« JELLYFIN », « DISNEY+ »), à la couleur de la plateforme. */
 @Composable
 fun SourceBadge(text: String, modifier: Modifier = Modifier, color: Color = JellyfinPurple) {
-    Box(modifier.background(color, RoundedCornerShape(5.dp)).padding(horizontal = 6.dp, vertical = 2.dp)) {
-        Text(text, style = MaterialTheme.typography.labelMedium.copy(fontSize = 10.sp, letterSpacing = 0.5.sp), color = Lune)
+    Box(modifier.background(color, RoundedCornerShape(4.dp)).padding(horizontal = 6.dp, vertical = 2.dp)) {
+        Text(
+            text,
+            style = MaterialTheme.typography.labelMedium.copy(fontSize = 10.sp, lineHeight = 13.sp, letterSpacing = 0.6.sp, fontWeight = FontWeight.Bold),
+            color = Lune,
+        )
     }
 }

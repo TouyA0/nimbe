@@ -16,7 +16,14 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.animation.core.Animatable
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.staticCompositionLocalOf
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.text.style.TextOverflow
+import io.github.touya0.nimbe.ui.theme.Focus
+import io.github.touya0.nimbe.ui.theme.NimbeMotion
+import io.github.touya0.nimbe.ui.theme.nimbeTween
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.Stable
 import androidx.compose.runtime.getValue
@@ -47,11 +54,15 @@ import io.github.touya0.nimbe.ui.theme.Nuit
 import io.github.touya0.nimbe.ui.theme.Panneau
 import io.github.touya0.nimbe.ui.theme.PanneauClair
 
-/** Une ligne du panneau d'options. [icon] est un caractère simple (▶, ✕, ↗…). */
+/**
+ * Une ligne du panneau d'options. [icon] est un caractère simple (▶, ✕, ↗…), vide pour aucun.
+ * [selected] non nul fait du panneau une liste de choix : la ligne choisie est cochée et reçoit le focus.
+ */
 data class MenuOption(
     val icon: String,
     val title: String,
     val detail: String? = null,
+    val selected: Boolean? = null,
     val onSelect: () -> Unit,
 )
 
@@ -63,7 +74,12 @@ data class MenuRequest(
     val subject: String,
     val options: List<MenuOption>,
     val returnFocus: FocusRequester? = null,
+    /** Grand titre du panneau : « Options » par défaut, « Catégorie » ou « Trier par » pour un choix. */
+    val title: String = "Options",
 )
+
+/** Le panneau d'options de l'écran, pour les écrans qui en ouvrent un eux-mêmes (filtres). */
+val LocalMenu = staticCompositionLocalOf<MenuState?> { null }
 
 @Stable
 class MenuState {
@@ -105,18 +121,29 @@ fun MenuHost(state: MenuState, content: @Composable () -> Unit) {
 @Composable
 private fun OptionsPanel(request: MenuRequest, onDismiss: () -> Unit) {
     val requesters = remember(request) { request.options.map { FocusRequester() } }
-    var focusedIndex by remember(request) { mutableIntStateOf(0) }
+    val start = request.options.indexOfFirst { it.selected == true }.coerceAtLeast(0)
+    var focusedIndex by remember(request) { mutableIntStateOf(start) }
+    // Le panneau glisse depuis la droite pendant que le fond s'assombrit.
+    val shown = remember(request) { Animatable(0f) }
+    val enter = nimbeTween<Float>(NimbeMotion.MEDIUM_MS)
 
     BackHandler(onBack = onDismiss)
-    LaunchedEffect(request) { runCatching { requesters.first().requestFocus() } }
+    LaunchedEffect(request) {
+        runCatching { requesters[start].requestFocus() }
+        shown.animateTo(1f, enter)
+    }
 
     Row(Modifier.fillMaxSize()) {
         // Le contenu derrière reste visible mais assombri.
-        Spacer(Modifier.weight(1.5f).fillMaxHeight().background(Nuit.copy(alpha = 0.75f)))
+        Spacer(Modifier.weight(1.5f).fillMaxHeight().graphicsLayer { alpha = shown.value }.background(Nuit.copy(alpha = 0.7f)))
         Column(
             modifier = Modifier
                 .weight(1f)
                 .fillMaxHeight()
+                .graphicsLayer {
+                    translationX = (1f - shown.value) * size.width * 0.25f
+                    alpha = 0.4f + 0.6f * shown.value
+                }
                 .background(Panneau)
                 .padding(horizontal = 32.dp, vertical = 36.dp)
                 // Le focus ne quitte pas le panneau : haut et bas parcourent la liste, gauche et droite ne font rien.
@@ -132,14 +159,14 @@ private fun OptionsPanel(request: MenuRequest, onDismiss: () -> Unit) {
                     runCatching { requesters[target].requestFocus() }
                     true
                 },
-            verticalArrangement = Arrangement.spacedBy(10.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            Text(request.subject, style = MaterialTheme.typography.bodyMedium, color = LuneAttenuee)
-            Text("Options", style = MaterialTheme.typography.displaySmall, modifier = Modifier.padding(bottom = 8.dp))
+            Text(request.subject, style = MaterialTheme.typography.bodyMedium, color = LuneAttenuee, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(request.title, style = MaterialTheme.typography.displaySmall, modifier = Modifier.padding(bottom = 8.dp))
             // Défile si les options ne tiennent pas (longue liste d'applis masquées, par exemple).
             Column(
-                modifier = Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(6.dp),
-                verticalArrangement = Arrangement.spacedBy(10.dp),
+                modifier = Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(8.dp),
+                verticalArrangement = Arrangement.spacedBy(6.dp),
             ) { request.options.forEachIndexed { index, option ->
                 OptionRow(
                     option = option,
@@ -152,7 +179,7 @@ private fun OptionsPanel(request: MenuRequest, onDismiss: () -> Unit) {
                         .onFocusChanged { if (it.isFocused) focusedIndex = index },
                 )
             } }
-            Text("Retour ferme le menu sans rien changer", style = MaterialTheme.typography.bodyMedium, color = LuneAttenuee)
+            Text("Retour ferme sans rien changer", style = MaterialTheme.typography.labelMedium, color = LuneAttenuee)
         }
     }
 }
@@ -168,7 +195,7 @@ private fun OptionRow(option: MenuOption, onClick: () -> Unit, modifier: Modifie
             .focusRing(focused, NimbeFocus.CardRadius, grow = false),
         shape = ClickableSurfaceDefaults.shape(NimbeFocus.CardShape),
         colors = ClickableSurfaceDefaults.colors(
-            containerColor = PanneauClair.copy(alpha = 0.6f),
+            containerColor = Color.Transparent,
             contentColor = Lune,
             focusedContainerColor = Lune,
             focusedContentColor = Nuit,
@@ -178,22 +205,25 @@ private fun OptionRow(option: MenuOption, onClick: () -> Unit, modifier: Modifie
         scale = ClickableSurfaceDefaults.scale(focusedScale = 1f),
     ) {
         Row(
-            modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
+            modifier = Modifier.padding(horizontal = 14.dp, vertical = 11.dp),
             horizontalArrangement = Arrangement.spacedBy(12.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Box(
-                Modifier.size(28.dp).background(Color.Gray.copy(alpha = 0.25f), RoundedCornerShape(6.dp)),
-                contentAlignment = Alignment.Center,
-            ) {
-                Text(option.icon, style = MaterialTheme.typography.titleSmall)
+            if (option.icon.isNotBlank()) {
+                Box(
+                    Modifier.size(30.dp).background(if (focused) Nuit.copy(alpha = 0.1f) else PanneauClair, RoundedCornerShape(8.dp)),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Text(option.icon, style = MaterialTheme.typography.titleSmall)
+                }
             }
             Column(Modifier.width(0.dp).weight(1f)) {
-                Text(option.title, style = MaterialTheme.typography.titleSmall)
+                Text(option.title, style = MaterialTheme.typography.titleMedium)
                 option.detail?.let {
                     Text(it, style = MaterialTheme.typography.labelMedium, color = if (focused) Nuit.copy(alpha = 0.7f) else LuneAttenuee)
                 }
             }
+            if (option.selected == true) NimbeIcon(NimbeIcons.Check, size = 20.dp, tint = if (focused) Nuit else Focus)
         }
     }
 }

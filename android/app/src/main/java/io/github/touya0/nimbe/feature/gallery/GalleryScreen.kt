@@ -1,5 +1,6 @@
 package io.github.touya0.nimbe.feature.gallery
 
+import io.github.touya0.nimbe.ui.components.NimbeIcons
 import androidx.compose.foundation.background
 import androidx.compose.foundation.focusGroup
 import androidx.compose.foundation.layout.Arrangement
@@ -491,7 +492,7 @@ private fun OpenedScreen(
                 }
                 PillButton("‹ Retour", onClick = { nav.close() }, modifier = Modifier.focusRequester(back))
                 val photos = everything.filter { !it.isVideo }
-                if (photos.isNotEmpty()) PillButton("▶ Diaporama", onClick = { onView(photos, photos.first(), true) })
+                if (photos.isNotEmpty()) PillButton("Diaporama", icon = NimbeIcons.Play, onClick = { onView(photos, photos.first(), true) })
             }
             error?.let { Text("$it · contenu gardé sur la TV", style = MaterialTheme.typography.labelMedium, color = Alerte) }
         }

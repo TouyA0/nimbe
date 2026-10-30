@@ -1,5 +1,7 @@
 package io.github.touya0.nimbe.feature.streaming
 
+import io.github.touya0.nimbe.ui.components.NimbeIcons
+
 import androidx.compose.runtime.Composable
 import io.github.touya0.nimbe.data.jellyfin.MediaItem
 import io.github.touya0.nimbe.data.streaming.StreamingService
@@ -26,5 +28,5 @@ fun rememberAlsoOn(item: MediaItem, kind: TitleKind): Pair<StreamingTitle, List<
 fun AlsoOnButtons(alsoOn: Pair<StreamingTitle, List<StreamingService>>?) {
     val ui = LocalStreaming.current ?: return
     val (title, services) = alsoOn ?: return
-    services.forEach { service -> PillButton("Aussi sur ${service.label}", onClick = { ui.onLaunch(title, service, false) }) }
+    services.forEach { service -> PillButton("Aussi sur ${service.label}", icon = NimbeIcons.OpenInNew, onClick = { ui.onLaunch(title, service, false) }) }
 }

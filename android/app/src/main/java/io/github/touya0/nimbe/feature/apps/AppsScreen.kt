@@ -1,5 +1,13 @@
 package io.github.touya0.nimbe.feature.apps
 
+import androidx.compose.runtime.remember
+import androidx.compose.ui.focus.focusRequester
+import io.github.touya0.nimbe.ui.components.NimbeIcons
+import io.github.touya0.nimbe.ui.components.PivotScroll
+import io.github.touya0.nimbe.ui.components.RowCardPadding
+import io.github.touya0.nimbe.ui.components.ScreenMargin
+import io.github.touya0.nimbe.ui.theme.RowTitleStyle
+
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -39,7 +47,7 @@ fun AppsScreen(
     offline: Boolean,
     modifier: Modifier = Modifier,
 ) {
-    Column(modifier.fillMaxSize().padding(horizontal = 48.dp)) {
+    Column(modifier.fillMaxSize().padding(horizontal = ScreenMargin).padding(top = 16.dp)) {
         Text("Applis", style = MaterialTheme.typography.displaySmall)
         Text(
             text = when {
@@ -60,18 +68,19 @@ fun AppsScreen(
                     color = LuneAttenuee,
                     modifier = Modifier.align(Alignment.Center),
                 )
-                else -> LazyVerticalGrid(
-                    columns = GridCells.Fixed(6),
+                // La ligne focalisée se cale en haut de la grille : on voit toujours la suivante.
+                else -> PivotScroll(RowCardPadding) { LazyVerticalGrid(
+                    columns = GridCells.Fixed(5),
                     // Marge pour que l'anneau et l'agrandissement du focus ne soient pas coupés.
-                    modifier = Modifier.bleed(48.dp),
-                    contentPadding = PaddingValues(vertical = 16.dp, horizontal = 48.dp),
-                    horizontalArrangement = Arrangement.spacedBy(14.dp),
-                    verticalArrangement = Arrangement.spacedBy(14.dp),
+                    modifier = Modifier.bleed(ScreenMargin),
+                    contentPadding = PaddingValues(start = ScreenMargin, end = ScreenMargin, top = RowCardPadding, bottom = 72.dp),
+                    horizontalArrangement = Arrangement.spacedBy(18.dp),
+                    verticalArrangement = Arrangement.spacedBy(18.dp),
                 ) {
                     if (recents.isNotEmpty()) {
                         sectionTitle("Récemment utilisées")
                         items(recents, key = { "recent:${it.packageName}" }) { app ->
-                            AppTile(
+                            AppCard(
                                 app = app,
                                 onClick = { onOpen(app) },
                                 onMenu = { requester -> onMenu(app, requester) },
@@ -82,7 +91,7 @@ fun AppsScreen(
                         sectionTitle("Toutes les applis")
                     }
                     items(apps, key = { it.packageName }) { app ->
-                        AppTile(
+                        AppCard(
                             app = app,
                             onClick = { onOpen(app) },
                             onMenu = { requester -> onMenu(app, requester) },
@@ -92,21 +101,27 @@ fun AppsScreen(
                     }
                     if (hiddenCount > 0) {
                         // Deux colonnes, pour que le libellé tienne sur une ligne.
-                        item(key = "masquees", span = { GridItemSpan(2) }) {
-                            ActionTile("$hiddenCount", "Applis masquées", onClick = onShowHidden)
+                        item(key = "masquees") {
+                            val requester = remember { FocusRequester() }
+                            ActionCard(
+                                NimbeIcons.Apps,
+                                if (hiddenCount > 1) "$hiddenCount masquées" else "1 masquée",
+                                onClick = { onShowHidden(requester) },
+                                modifier = Modifier.focusRequester(requester),
+                            )
                         }
                     }
-                }
+                } }
             }
         }
 
-        KeyHints("OK" to "ouvrir", "OK maintenu" to "options", modifier = Modifier.padding(vertical = 20.dp))
+        KeyHints("OK" to "ouvrir", "OK maintenu" to "options", modifier = Modifier.padding(vertical = 14.dp))
     }
 }
 
 /** Titre de section sur toute la largeur de la grille. */
 private fun LazyGridScope.sectionTitle(text: String) {
     item(key = "titre:$text", span = { GridItemSpan(maxLineSpan) }) {
-        Text(text, style = MaterialTheme.typography.headlineSmall, modifier = Modifier.padding(top = 8.dp))
+        Text(text, style = RowTitleStyle, modifier = Modifier.padding(top = 8.dp))
     }
 }

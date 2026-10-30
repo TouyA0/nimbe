@@ -39,6 +39,10 @@ import io.github.touya0.nimbe.feature.media.MediaSurface
 import io.github.touya0.nimbe.feature.media.MediaText
 import io.github.touya0.nimbe.feature.media.SourceBadge
 import io.github.touya0.nimbe.feature.media.titleStyle
+import io.github.touya0.nimbe.feature.media.FadingBackdrop
+import io.github.touya0.nimbe.feature.media.HeroWidth
+import io.github.touya0.nimbe.feature.media.Kicker
+import io.github.touya0.nimbe.feature.media.Overview
 import io.github.touya0.nimbe.ui.theme.FilmTitleStyle
 import io.github.touya0.nimbe.ui.theme.Focus
 import io.github.touya0.nimbe.ui.theme.LuneAttenuee
@@ -191,20 +195,18 @@ fun StreamingHero(title: StreamingTitle, kicker: String?, modifier: Modifier = M
         title
     }
     val services = title.services.filter { ui == null || it in ui.services }.ifEmpty { title.services }
-    Column(modifier.width(560.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+    Column(modifier.width(HeroWidth), verticalArrangement = Arrangement.spacedBy(6.dp)) {
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
             services.take(3).forEach { ServiceBadge(it) }
             if (ui?.inJellyfin(title) != null) SourceBadge("AUSSI SUR JELLYFIN")
-            kicker?.let { Text(it, style = MaterialTheme.typography.titleSmall.copy(letterSpacing = 1.5.sp), color = Focus) }
+            kicker?.let { Kicker(it) }
         }
         Text(title.title.uppercase(), style = titleStyle(title.title), maxLines = 1, overflow = TextOverflow.Ellipsis)
         Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
             Text(StreamingText.meta(title), style = MaterialTheme.typography.bodyMedium)
             StreamingText.rating(title.certification)?.let { Chip(it) }
         }
-        title.overview?.let {
-            Text(it, style = MaterialTheme.typography.bodyMedium, color = LuneAttenuee, maxLines = overviewLines, overflow = TextOverflow.Ellipsis)
-        }
+        title.overview?.let { Overview(it, overviewLines) }
     }
 }
 
@@ -214,26 +216,7 @@ fun StreamingHero(title: StreamingTitle, kicker: String?, modifier: Modifier = M
  */
 @Composable
 fun StreamingBackdrop(template: String?, modifier: Modifier = Modifier) {
-    val shown by produceState(template, template) {
-        delay(350)
-        value = template
-    }
-    Box(modifier.fillMaxSize()) {
-        StreamingImage(
-            JustWatchImages.backdrop(shown),
-            Modifier.fillMaxHeight(0.78f).fillMaxWidth(0.72f).align(Alignment.TopEnd),
-        )
-        Box(
-            Modifier.fillMaxSize().background(
-                Brush.horizontalGradient(0f to Nuit, 0.35f to Nuit.copy(alpha = 0.9f), 0.65f to Nuit.copy(alpha = 0.4f), 1f to Color.Transparent),
-            ),
-        )
-        Box(
-            Modifier.fillMaxSize().background(
-                Brush.verticalGradient(0f to Nuit, 0.12f to Nuit.copy(alpha = 0.3f), 0.25f to Color.Transparent, 0.45f to Color.Transparent, 0.78f to Nuit),
-            ),
-        )
-    }
+    FadingBackdrop(JustWatchImages.backdrop(template), modifier)
 }
 
 /** « Ouvert aujourd'hui », « Ouvert hier », « Ouvert il y a 3 jours », en jours du calendrier. */

@@ -37,6 +37,12 @@ val Typography = Typography(
     labelMedium = TextStyle(fontFamily = Manrope, fontWeight = FontWeight.Medium, fontSize = 12.sp, lineHeight = 16.sp),
 )
 
+/** Accroche en capitales au-dessus d'un titre (« REPRENDRE », « AJOUTÉ LE 3 MARS »). */
+val KickerStyle = TextStyle(fontFamily = Manrope, fontWeight = FontWeight.Bold, fontSize = 13.sp, lineHeight = 18.sp, letterSpacing = 1.6.sp)
+
+/** Titre d'une rangée de cartes : présent sans écraser les affiches. */
+val RowTitleStyle = TextStyle(fontFamily = Manrope, fontWeight = FontWeight.Bold, fontSize = 18.sp, lineHeight = 24.sp)
+
 // Horloge de l'en-tête : grande et fine (Manrope 200 dans la maquette).
 val ClockStyle = TextStyle(fontFamily = Manrope, fontWeight = FontWeight.ExtraLight, fontSize = 22.sp)
 

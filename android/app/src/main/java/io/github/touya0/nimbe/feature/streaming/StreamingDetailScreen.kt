@@ -1,5 +1,14 @@
 package io.github.touya0.nimbe.feature.streaming
 
+import io.github.touya0.nimbe.feature.media.HeroWidth
+import io.github.touya0.nimbe.feature.media.Kicker
+import io.github.touya0.nimbe.feature.media.Overview
+import io.github.touya0.nimbe.ui.components.ContentRow
+import io.github.touya0.nimbe.ui.components.NimbeIcons
+import io.github.touya0.nimbe.ui.components.PivotScroll
+import io.github.touya0.nimbe.ui.components.ScreenMargin
+import io.github.touya0.nimbe.ui.components.rowCardTop
+
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -88,25 +97,20 @@ fun StreamingDetailScreen(initial: StreamingTitle, onOpenJellyfin: (MediaItem) -
 
     Box(Modifier.fillMaxSize().background(Nuit)) {
         StreamingBackdrop(title.backdrop)
-        Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 48.dp, vertical = 28.dp)) {
-            Text(if (title.kind == TitleKind.Movie) "‹  Films" else "‹  Séries", style = MaterialTheme.typography.titleSmall, color = LuneAttenuee)
-            Row(Modifier.padding(top = 16.dp), horizontalArrangement = Arrangement.spacedBy(28.dp)) {
-                Box(Modifier.width(150.dp).aspectRatio(2f / 3f).clip(RoundedCornerShape(12.dp)).background(Panneau)) {
-                    StreamingImage(JustWatchImages.poster(title.poster, large = true), Modifier.fillMaxSize())
-                }
-                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        PivotScroll(rowCardTop()) {
+            Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = ScreenMargin)) {
+                Column(Modifier.padding(top = 64.dp).width(HeroWidth), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
                         offers.map { it.service }.distinct().forEach { ServiceBadge(it) }
                         if (jellyfin != null) SourceBadge("JELLYFIN")
+                        Kicker(if (title.kind == TitleKind.Movie) "FILM" else "SÉRIE")
                     }
-                    Text(title.title.uppercase(), style = titleStyle(title.title), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    Text(title.title.uppercase(), style = titleStyle(title.title), maxLines = 2, overflow = TextOverflow.Ellipsis)
                     Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
                         Text(StreamingText.meta(title), style = MaterialTheme.typography.bodyMedium)
                         StreamingText.rating(title.certification)?.let { Chip(it) }
                     }
-                    title.overview?.let {
-                        Text(it, style = MaterialTheme.typography.bodyMedium, color = LuneAttenuee, maxLines = 4, overflow = TextOverflow.Ellipsis, modifier = Modifier.width(520.dp))
-                    }
+                    title.overview?.let { Overview(it, lines = 4) }
                     opened?.streamingService?.let { service ->
                         Text(
                             "${openedLabel(opened.openedAt)} sur ${service.label} · ta progression est gardée par l'appli",
@@ -117,15 +121,15 @@ fun StreamingDetailScreen(initial: StreamingTitle, onOpenJellyfin: (MediaItem) -
                     Buttons(title, jellyfin, offers.map { it.service }, firstRequester, onOpenJellyfin)
                     Availability(loader.state, offers.isEmpty() && jellyfin == null, { loader.retry() })
                 }
+                Facts(title, offers.map { it.service })
+                if (title.cast.isNotEmpty()) Cast(title.cast)
+                Text(
+                    "Disponibilités fournies par JustWatch · la lecture se fait dans l'appli de la plateforme, Retour ramène à Nimbe",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = LuneAttenuee,
+                    modifier = Modifier.padding(top = 20.dp, bottom = 32.dp),
+                )
             }
-            Facts(title, offers.map { it.service })
-            if (title.cast.isNotEmpty()) Cast(title.cast)
-            Text(
-                "Disponibilités fournies par JustWatch · la lecture se fait dans l'appli de la plateforme, Retour ramène à Nimbe",
-                style = MaterialTheme.typography.labelMedium,
-                color = LuneAttenuee,
-                modifier = Modifier.padding(top = 20.dp),
-            )
         }
     }
 }
@@ -147,7 +151,7 @@ private fun Buttons(
     FlowRow(
         horizontalArrangement = Arrangement.spacedBy(12.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
-        modifier = Modifier.padding(top = 4.dp),
+        modifier = Modifier.padding(top = 8.dp),
     ) {
         var first = true
         fun Modifier.firstFocus(): Modifier = if (first) {
@@ -157,13 +161,13 @@ private fun Buttons(
             this
         }
         if (jellyfin != null) {
-            PillButton("▶  Lire sur Jellyfin", onClick = { onOpenJellyfin(jellyfin) }, modifier = Modifier.firstFocus())
+            PillButton("Lire sur Jellyfin", icon = NimbeIcons.Play, onClick = { onOpenJellyfin(jellyfin) }, modifier = Modifier.firstFocus())
         }
         services.forEach { service ->
             val verb = if (ui?.history?.any { it.titleId == title.id && it.service == service.code } == true) "Reprendre" else "Lire"
-            PillButton("▶  $verb sur ${service.label}", onClick = { ui?.onLaunch?.invoke(title, service, false) }, modifier = Modifier.firstFocus())
+            PillButton("$verb sur ${service.label}", icon = NimbeIcons.Play, onClick = { ui?.onLaunch?.invoke(title, service, false) }, modifier = Modifier.firstFocus())
             if (title.offer(service)?.hasSeparatePage == true) {
-                PillButton("Fiche dans ${service.label}", onClick = { ui?.onLaunch?.invoke(title, service, true) })
+                PillButton("Fiche dans ${service.label}", icon = NimbeIcons.OpenInNew, onClick = { ui?.onLaunch?.invoke(title, service, true) })
             }
         }
     }
@@ -192,7 +196,7 @@ private fun Availability(state: Load<StreamingTitle?>, nothing: Boolean, onRetry
 
 @Composable
 private fun Facts(title: StreamingTitle, services: List<StreamingService>) {
-    Row(Modifier.fillMaxWidth().padding(top = 28.dp), horizontalArrangement = Arrangement.spacedBy(24.dp)) {
+    Row(Modifier.fillMaxWidth().padding(top = 36.dp, bottom = 12.dp), horizontalArrangement = Arrangement.spacedBy(24.dp)) {
         Fact("Réalisation", title.directors.joinToString(", ").ifEmpty { "Inconnue" })
         Fact("Genres", title.categoryLabels.joinToString(", ").ifEmpty { "Non précisés" })
         Fact("Classification", StreamingText.rating(title.certification) ?: "Non précisée")
@@ -211,12 +215,7 @@ private fun RowScope.Fact(label: String, value: String) {
 /** Les acteurs, focalisables pour pouvoir faire défiler la rangée à la télécommande. */
 @Composable
 private fun Cast(cast: List<CastMember>) {
-    Text("Distribution", style = MaterialTheme.typography.headlineSmall, modifier = Modifier.padding(top = 24.dp))
-    LazyRow(
-        modifier = Modifier.bleed(48.dp),
-        contentPadding = PaddingValues(horizontal = 48.dp, vertical = 12.dp),
-        horizontalArrangement = Arrangement.spacedBy(18.dp),
-    ) {
+    ContentRow("Distribution", modifier = Modifier.padding(top = 12.dp), spacing = 18.dp) {
         itemsIndexed(cast, key = { index, person -> "$index:${person.name}" }) { _, person ->
             var focused by remember { mutableStateOf(false) }
             val role = person.role?.removeSuffix(" (voice)")?.takeIf { it.isNotBlank() }

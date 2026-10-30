@@ -19,6 +19,12 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.Alignment
+import androidx.compose.foundation.layout.Row
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
+import io.github.touya0.nimbe.ui.components.NimbeIcon
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.unit.dp
 import androidx.tv.material3.ClickableSurfaceDefaults
@@ -98,19 +104,12 @@ fun JellyfinGrid(
             if (items.isEmpty()) {
                 StateMessage(emptyTitle, emptyDetail)
             } else {
-                LazyVerticalGrid(
-                    columns = GridCells.Fixed(8),
-                    state = gridState,
-                    modifier = Modifier.bleed(48.dp),
-                    contentPadding = PaddingValues(horizontal = 48.dp, vertical = 16.dp),
-                    horizontalArrangement = Arrangement.spacedBy(14.dp),
-                    verticalArrangement = Arrangement.spacedBy(18.dp),
-                ) {
+                PosterGrid(gridState) {
                     items(items, key = { it.id }) { item ->
                         PosterCard(
                             item = item,
                             onClick = { onOpenItem(item) },
-                            width = 96.dp,
+                            width = GRID_POSTER_WIDTH,
                             onFocus = { onFocus(item) },
                             restoreFocus = item.id == restoreFocusId,
                             onRestored = onRestored,
@@ -122,9 +121,20 @@ fun JellyfinGrid(
     }
 }
 
-/** Pilule de filtre ou de saison : pleine quand elle est choisie. */
+/**
+ * Pilule de filtre ou de saison : pleine quand elle est choisie, voile clair sinon. [trailing] signale
+ * qu'elle ouvre un choix (▾). [label] remplace le texte pour les lecteurs d'écran.
+ */
 @Composable
-fun FilterPill(text: String, selected: Boolean, onClick: () -> Unit, modifier: Modifier = Modifier, onFocus: () -> Unit = {}) {
+fun FilterPill(
+    text: String,
+    selected: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    onFocus: () -> Unit = {},
+    trailing: ImageVector? = null,
+    label: String? = null,
+) {
     var focused by remember { mutableStateOf(false) }
     Surface(
         onClick = onClick,
@@ -133,18 +143,26 @@ fun FilterPill(text: String, selected: Boolean, onClick: () -> Unit, modifier: M
                 focused = it.isFocused
                 if (it.isFocused) onFocus()
             }
-            .focusRing(focused, NimbeFocus.PillRadius, grow = false),
+            .then(if (label != null) Modifier.semantics { contentDescription = label } else Modifier)
+            .focusRing(focused, NimbeFocus.PillRadius, scale = NimbeFocus.SMALL_SCALE),
         shape = ClickableSurfaceDefaults.shape(NimbeFocus.PillShape),
         colors = ClickableSurfaceDefaults.colors(
-            containerColor = if (selected) Lune else PanneauClair,
+            containerColor = if (selected) Lune else Lune.copy(alpha = 0.12f),
             contentColor = if (selected) Nuit else Lune,
-            focusedContainerColor = if (selected) Lune else PanneauClair,
-            focusedContentColor = if (selected) Nuit else Lune,
+            focusedContainerColor = Lune,
+            focusedContentColor = Nuit,
             pressedContainerColor = Lune,
             pressedContentColor = Nuit,
         ),
         scale = ClickableSurfaceDefaults.scale(focusedScale = 1f),
     ) {
-        Text(text, style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(horizontal = 14.dp, vertical = 6.dp))
+        Row(
+            Modifier.padding(start = 16.dp, end = if (trailing != null) 10.dp else 16.dp, top = 7.dp, bottom = 7.dp),
+            horizontalArrangement = Arrangement.spacedBy(4.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(text, style = MaterialTheme.typography.titleSmall, maxLines = 1)
+            trailing?.let { NimbeIcon(it, size = 18.dp) }
+        }
     }
 }

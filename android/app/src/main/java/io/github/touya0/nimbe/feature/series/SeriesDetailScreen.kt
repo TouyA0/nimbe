@@ -1,5 +1,20 @@
 package io.github.touya0.nimbe.feature.series
 
+import io.github.touya0.nimbe.feature.media.HeroWidth
+import io.github.touya0.nimbe.feature.media.Kicker
+import io.github.touya0.nimbe.feature.media.Overview
+import io.github.touya0.nimbe.ui.components.ContentRow
+import io.github.touya0.nimbe.ui.components.NimbeIcons
+import io.github.touya0.nimbe.ui.components.PivotScroll
+import io.github.touya0.nimbe.ui.components.RowMessage
+import io.github.touya0.nimbe.ui.components.RowTitle
+import io.github.touya0.nimbe.ui.components.ScreenMargin
+import io.github.touya0.nimbe.ui.components.rowCardTop
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.focusGroup
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
@@ -90,88 +105,86 @@ fun SeriesDetailScreen(
 
     Box(Modifier.fillMaxSize().background(Nuit)) {
         Backdrop(seriesLoad.value?.backdrop)
-        Column(Modifier.fillMaxSize().padding(horizontal = 48.dp, vertical = 28.dp)) {
-            Text("‹  Séries", style = MaterialTheme.typography.titleSmall, color = LuneAttenuee)
-            LoadStates(seriesLoad, "cette série", takeFocus = true) { series ->
-                Column(Modifier.padding(top = 16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-                        SourceBadge("JELLYFIN")
+        LoadStates(seriesLoad, "cette série", takeFocus = true) { series ->
+            // Saisons et épisodes viennent se poser sous le haut de l'écran quand on y descend.
+            PivotScroll(rowCardTop()) {
+                Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = ScreenMargin)) {
+                    Column(Modifier.padding(top = 64.dp).width(HeroWidth), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                         val unplayed = series.unplayedCount ?: 0
-                        if (unplayed > 0) {
-                            Text(
-                                if (unplayed == 1) "1 ÉPISODE À VOIR" else "$unplayed ÉPISODES À VOIR",
-                                style = MaterialTheme.typography.titleSmall.copy(letterSpacing = 1.5.sp),
-                                color = Focus,
-                            )
-                        }
-                    }
-                    Text(series.name.uppercase(), style = titleStyle(series.name), maxLines = 1, overflow = TextOverflow.Ellipsis)
-                    MetaLine(series)
-                    series.overview?.let {
-                        Text(it, style = MaterialTheme.typography.bodyMedium, color = LuneAttenuee, maxLines = 3, overflow = TextOverflow.Ellipsis, modifier = Modifier.width(540.dp))
-                    }
-                    val alsoOn = rememberAlsoOn(series, TitleKind.Show)
-                    Row(Modifier.padding(top = 4.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                        if (next != null) {
-                            val code = next.episodeCode ?: next.name
-                            PillButton(
-                                text = if (next.resumable) "▶  Reprendre $code" else "▶  Regarder $code",
-                                onClick = { onPlay(next, false) },
-                                modifier = Modifier.focusRequester(playRequester),
-                            )
-                        }
-                        // La même série sur une plateforme du profil.
-                        AlsoOnButtons(alsoOn)
-                    }
-                }
-
-                Row(Modifier.padding(top = 20.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    seasons.forEachIndexed { index, season ->
-                        FilterPill(
-                            text = season.name,
-                            selected = season.id == seasonId,
-                            onClick = { chosenSeason = season.id },
-                            modifier = if (index == 0) Modifier.focusRequester(seasonRequester) else Modifier,
+                        Kicker(
+                            when {
+                                unplayed == 1 -> "1 ÉPISODE À VOIR"
+                                unplayed > 1 -> "$unplayed ÉPISODES À VOIR"
+                                else -> "SÉRIE"
+                            },
                         )
+                        Text(series.name.uppercase(), style = titleStyle(series.name), maxLines = 2, overflow = TextOverflow.Ellipsis)
+                        MetaLine(series)
+                        series.overview?.let { Overview(it, lines = 3) }
+                        val alsoOn = rememberAlsoOn(series, TitleKind.Show)
+                        Row(Modifier.padding(top = 8.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                            if (next != null) {
+                                val code = next.episodeCode ?: next.name
+                                PillButton(
+                                    text = if (next.resumable) "Reprendre $code" else "Regarder $code",
+                                    icon = NimbeIcons.Play,
+                                    onClick = { onPlay(next, false) },
+                                    modifier = Modifier.focusRequester(playRequester),
+                                )
+                            }
+                            // La même série sur une plateforme du profil.
+                            AlsoOnButtons(alsoOn)
+                        }
                     }
-                }
 
-                when {
-                    episodesLoad.value == null -> Text(
-                        "Chargement des épisodes…",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = LuneAttenuee,
-                        modifier = Modifier.padding(vertical = 24.dp),
-                    )
-                    episodes.isEmpty() -> Text(
-                        "Aucun épisode dans cette saison.",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = LuneAttenuee,
-                        modifier = Modifier.padding(vertical = 24.dp),
-                    )
-                    else -> {
-                        val state = rememberLazyListState()
-                        ScrollToRestore(state, episodes, focusEpisode)
-                        LazyRow(
-                            state = state,
-                            modifier = Modifier.bleed(48.dp).height(190.dp),
-                            contentPadding = PaddingValues(horizontal = 48.dp, vertical = 14.dp),
-                            horizontalArrangement = Arrangement.spacedBy(18.dp),
-                        ) {
-                            items(episodes, key = { it.id }) { episode ->
-                                WideCard(
-                                    item = episode,
-                                    label = episode.name,
-                                    detail = MediaText.progressLine(episode),
-                                    badge = episode.episodeNumber?.let { "É$it" },
-                                    onClick = { onRequestPlay(episode) },
-                                    width = 200.dp,
-                                    restoreFocus = episode.id == focusEpisode,
-                                    onRestored = { focusEpisode = null },
+                    // Les saisons, puis les épisodes de la saison choisie : une seule saison, pas de choix à faire.
+                    if (seasons.size > 1) {
+                        Row(Modifier.padding(top = 28.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                            seasons.forEachIndexed { index, season ->
+                                FilterPill(
+                                    text = season.name,
+                                    selected = season.id == seasonId,
+                                    onClick = { chosenSeason = season.id },
+                                    modifier = if (index == 0) Modifier.focusRequester(seasonRequester) else Modifier,
                                 )
                             }
                         }
                     }
+                    val episodesTitle = seasons.firstOrNull { it.id == seasonId }?.name?.let { "Épisodes · $it" } ?: "Épisodes"
+                    when {
+                        episodesLoad.value == null -> Column(Modifier.padding(top = 20.dp)) {
+                            RowTitle(episodesTitle)
+                            RowMessage("Chargement des épisodes…")
+                        }
+                        episodes.isEmpty() -> Column(Modifier.padding(top = 20.dp)) {
+                            RowTitle(episodesTitle)
+                            RowMessage("Aucun épisode dans cette saison.")
+                        }
+                        else -> {
+                            val state = rememberLazyListState()
+                            ScrollToRestore(state, episodes, focusEpisode)
+                            ContentRow(
+                                episodesTitle,
+                                modifier = Modifier.padding(top = 20.dp).then(if (seasons.size <= 1) Modifier.focusRequester(seasonRequester).focusGroup() else Modifier),
+                                state = state,
+                                spacing = 18.dp,
+                                count = episodes.size,
+                            ) {
+                                items(episodes, key = { it.id }) { episode ->
+                                    WideCard(
+                                        item = episode,
+                                        label = listOfNotNull(episode.episodeNumber?.let { "$it." }, episode.name).joinToString(" "),
+                                        detail = MediaText.progressLine(episode) ?: episode.overview,
+                                        onClick = { onRequestPlay(episode) },
+                                        width = 224.dp,
+                                        restoreFocus = episode.id == focusEpisode,
+                                        onRestored = { focusEpisode = null },
+                                    )
+                                }
+                            }
+                        }
+                    }
+                    Spacer(Modifier.height(48.dp))
                 }
             }
         }

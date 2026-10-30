@@ -6,6 +6,7 @@ import android.content.Intent
 import android.content.IntentFilter
 import android.content.pm.ApplicationInfo
 import android.os.Bundle
+import android.view.KeyEvent
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.runtime.getValue
@@ -110,6 +111,20 @@ class MainActivity : ComponentActivity() {
         super.onDestroy()
     }
 
+    /**
+     * Touche fléchée maintenue : la télécommande répète l'appui bien plus vite que l'œil ne suit,
+     * et le focus file au-delà de ce qu'on visait. On ne laisse passer qu'une répétition toutes les [REPEAT_MS].
+     */
+    override fun dispatchKeyEvent(event: KeyEvent): Boolean {
+        if (event.action == KeyEvent.ACTION_DOWN && event.repeatCount > 0 && event.keyCode in DPAD_KEYS) {
+            if (event.eventTime - lastRepeatAt < REPEAT_MS) return true
+            lastRepeatAt = event.eventTime
+        }
+        return super.dispatchKeyEvent(event)
+    }
+
+    private var lastRepeatAt = 0L
+
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         if (intent.hasCategory(Intent.CATEGORY_HOME)) homePresses.tryEmit(Unit)
@@ -134,5 +149,7 @@ class MainActivity : ComponentActivity() {
 
     private companion object {
         const val EXTRA_SIMULATE_CRASH = "nimbe.simulate_crash"
+        const val REPEAT_MS = 85L
+        val DPAD_KEYS = setOf(KeyEvent.KEYCODE_DPAD_UP, KeyEvent.KEYCODE_DPAD_DOWN, KeyEvent.KEYCODE_DPAD_LEFT, KeyEvent.KEYCODE_DPAD_RIGHT)
     }
 }

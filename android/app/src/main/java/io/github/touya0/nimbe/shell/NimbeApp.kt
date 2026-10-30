@@ -54,6 +54,8 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
+import io.github.touya0.nimbe.ui.components.LocalMenu
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -821,9 +823,10 @@ private fun NimbeShell(
         }
     }
 
-    CompositionLocalProvider(LocalStreaming provides streamingUi) { MenuHost(menu) {
-        Column(Modifier.fillMaxSize().background(Nuit)) {
-            Header(
+    CompositionLocalProvider(LocalStreaming provides streamingUi, LocalMenu provides menu) { MenuHost(menu) {
+        // L'en-tête flotte par-dessus les écrans : les images de fond montent jusqu'en haut de la TV.
+        Box(Modifier.fillMaxSize().background(Nuit)) {
+            val header: @Composable () -> Unit = { Header(
                 tabs = visibleTabs,
                 selected = tab,
                 onSelect = { tab = it },
@@ -840,19 +843,22 @@ private fun NimbeShell(
                 settingsRequester = settingsRequester,
                 profile = profilesState.active,
                 onProfile = { whoOpen = true },
-            )
+            ) }
             // En remontant depuis le contenu, le focus va sur l'onglet affiché, même depuis une carte
             // placée sous la roue crantée : sinon la recherche géométrique choisit l'élément le plus proche.
+            // La zone de focus commence sous l'en-tête (sinon Bas, depuis un onglet, ne trouve rien en dessous),
+            // mais l'écran est dessiné depuis le haut de la TV, sous l'en-tête.
             Box(
                 Modifier
-                    .weight(1f)
-                    .fillMaxWidth()
+                    .fillMaxSize()
+                    .padding(top = HeaderHeight)
                     .focusProperties {
                         onExit = {
                             if (requestedFocusDirection == FocusDirection.Up) runCatching { requesters.getValue(tab).requestFocus() }
                         }
                     }
-                    .focusGroup(),
+                    .focusGroup()
+                    .extendUp(HeaderHeight),
             ) {
                 when (tab) {
                     Tab.Home -> HomeScreen(
@@ -886,6 +892,7 @@ private fun NimbeShell(
                         onRestored = { restoreFocusId = null },
                     )
                     Tab.Apps -> AppsScreen(
+                        modifier = Modifier.padding(top = HeaderHeight),
                         apps = visibleApps,
                         recents = recents,
                         // L'invité et l'enfant ne voient pas la tuile « Masquées » : ils ne peuvent rien remettre.
@@ -924,15 +931,18 @@ private fun NimbeShell(
                         restoreFocusId = restoreFocusId,
                         onRestored = { restoreFocusId = null },
                     )
-                    Tab.Gallery -> GalleryScreen(
-                        gallery,
-                        profilesState.active,
-                        onOpenSettings = { openSettings(SettingsSection.Servers) },
-                        nav = galleryNav,
-                        onOpen = { galleryViewer = it },
-                    )
+                    Tab.Gallery -> Box(Modifier.padding(top = HeaderHeight)) {
+                        GalleryScreen(
+                            gallery,
+                            profilesState.active,
+                            onOpenSettings = { openSettings(SettingsSection.Servers) },
+                            nav = galleryNav,
+                            onOpen = { galleryViewer = it },
+                        )
+                    }
                 }
             }
+            header()
         }
     } }
 }

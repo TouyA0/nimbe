@@ -23,6 +23,8 @@ data class InstalledApp(
     val label: String,
     val category: AppCategory,
     val icon: ImageBitmap?,
+    /** Bannière 16:9 que les applis TV fournissent pour les accueils (logo sur fond), null sinon. */
+    val banner: ImageBitmap? = null,
     /** Faux pour les applis du système, qu'Android ne laisse pas désinstaller. */
     val removable: Boolean,
 )
@@ -48,6 +50,7 @@ class AppsRepository(private val context: Context) {
                     label = info.loadLabel(pm).toString(),
                     category = categoryOf(info.activityInfo.applicationInfo),
                     icon = runCatching { info.loadIcon(pm).toBitmap(ICON_PX, ICON_PX).asImageBitmap() }.getOrNull(),
+                    banner = runCatching { info.activityInfo.loadBanner(pm)?.toBitmap(BANNER_W_PX, BANNER_H_PX)?.asImageBitmap() }.getOrNull(),
                     removable = info.activityInfo.applicationInfo.flags and ApplicationInfo.FLAG_SYSTEM == 0,
                 )
             }
@@ -69,5 +72,9 @@ class AppsRepository(private val context: Context) {
     private companion object {
         // Icônes réduites : le stick a peu de mémoire.
         const val ICON_PX = 96
+
+        // Bannières à la taille où l'accueil les montre, pas plus : une trentaine d'applis tient en 7 Mo.
+        const val BANNER_W_PX = 320
+        const val BANNER_H_PX = 180
     }
 }

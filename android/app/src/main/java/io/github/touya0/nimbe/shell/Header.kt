@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -20,6 +21,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.layout.layout
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.focusRestorer
@@ -32,6 +34,12 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.text.style.TextDecoration
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
+import io.github.touya0.nimbe.ui.components.NimbeIcon
+import io.github.touya0.nimbe.ui.components.NimbeIcons
+import io.github.touya0.nimbe.ui.components.ScreenMargin
 import androidx.compose.ui.unit.dp
 import androidx.tv.material3.ClickableSurfaceDefaults
 import androidx.tv.material3.MaterialTheme
@@ -94,7 +102,8 @@ fun Header(
     modifier: Modifier = Modifier,
 ) {
     Row(
-        modifier = modifier.fillMaxWidth().padding(horizontal = 40.dp, vertical = 20.dp),
+        // Le texte du premier onglet s'aligne sur la marge des écrans, sa pilule déborde dans la marge.
+        modifier = modifier.fillMaxWidth().height(HeaderHeight).padding(start = ScreenMargin - TabPadding, end = ScreenMargin),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         // En remontant depuis le contenu, le focus revient sur l'onglet quitté.
@@ -122,10 +131,14 @@ fun Header(
     }
 }
 
+/**
+ * Onglet : texte atténué au repos, voile clair quand c'est l'onglet affiché, blanc plein sous le focus.
+ * On voit ainsi où l'on est sans que l'onglet affiché vole la vedette au contenu.
+ */
 @Composable
 private fun TabPill(tab: Tab, selected: Boolean, onSelect: () -> Unit, struck: Boolean, modifier: Modifier) {
-    val container = if (selected) Lune else Color.Transparent
-    val content = if (selected) Nuit else LuneAttenuee
+    val container = if (selected) Lune.copy(alpha = 0.14f) else Color.Transparent
+    val content = if (selected) Lune else LuneAttenuee
     var focused by remember { mutableStateOf(false) }
     Surface(
         onClick = onSelect,
@@ -139,8 +152,8 @@ private fun TabPill(tab: Tab, selected: Boolean, onSelect: () -> Unit, struck: B
         colors = ClickableSurfaceDefaults.colors(
             containerColor = container,
             contentColor = content,
-            focusedContainerColor = if (selected) Lune else PanneauClair,
-            focusedContentColor = if (selected) Nuit else Lune,
+            focusedContainerColor = Lune,
+            focusedContentColor = Nuit,
             pressedContainerColor = Lune,
             pressedContentColor = Nuit,
         ),
@@ -148,9 +161,10 @@ private fun TabPill(tab: Tab, selected: Boolean, onSelect: () -> Unit, struck: B
     ) {
         Text(
             text = tab.label,
-            style = MaterialTheme.typography.titleMedium,
+            // Même graisse partout : changer d'onglet ne décale pas les voisins.
+            style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold),
             textDecoration = if (struck) TextDecoration.LineThrough else null,
-            modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+            modifier = Modifier.padding(horizontal = TabPadding, vertical = 7.dp),
         )
     }
 }
@@ -164,10 +178,11 @@ private fun SettingsButton(onClick: () -> Unit, modifier: Modifier) {
         modifier = modifier
             .size(40.dp)
             .onFocusChanged { focused = it.isFocused }
+            .semantics { contentDescription = "Réglages" }
             .focusRing(focused, 20.dp, grow = false),
         shape = ClickableSurfaceDefaults.shape(CircleShape),
         colors = ClickableSurfaceDefaults.colors(
-            containerColor = PanneauClair,
+            containerColor = Lune.copy(alpha = 0.12f),
             contentColor = Lune,
             focusedContainerColor = Lune,
             focusedContentColor = Nuit,
@@ -175,7 +190,7 @@ private fun SettingsButton(onClick: () -> Unit, modifier: Modifier) {
         scale = ClickableSurfaceDefaults.scale(focusedScale = 1f),
     ) {
         Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-            Text("⚙", style = MaterialTheme.typography.titleMedium)
+            NimbeIcon(NimbeIcons.Settings, size = 20.dp)
         }
     }
 }
@@ -190,6 +205,7 @@ private fun ProfileButton(profile: Profile, onClick: () -> Unit) {
         modifier = Modifier
             .size(40.dp)
             .onFocusChanged { focused = it.isFocused }
+            .semantics { contentDescription = "Profil ${profile.name}, changer de profil" }
             .focusRing(focused, 20.dp, grow = false),
         shape = ClickableSurfaceDefaults.shape(CircleShape),
         colors = ClickableSurfaceDefaults.colors(
@@ -229,7 +245,7 @@ private fun StatusPill(status: ServerVerdict, onClick: () -> Unit) {
             .then(if (status.level == ServerLevel.Unknown) Modifier.dashedPill(LuneAttenuee) else Modifier),
         shape = ClickableSurfaceDefaults.shape(NimbeFocus.PillShape),
         colors = ClickableSurfaceDefaults.colors(
-            containerColor = if (tinted) dot.copy(alpha = 0.22f) else PanneauClair,
+            containerColor = if (tinted) dot.copy(alpha = 0.22f) else Lune.copy(alpha = 0.12f),
             contentColor = Lune,
             focusedContainerColor = Lune,
             focusedContentColor = Nuit,
@@ -264,6 +280,12 @@ private fun Modifier.dashedPill(color: Color): Modifier = drawWithContent {
     )
 }
 
+/** Hauteur de l'en-tête, posé par-dessus les écrans : leur contenu commence en dessous. */
+val HeaderHeight = 72.dp
+
+/** Marge intérieure d'un onglet : son texte s'aligne sur la marge des écrans. */
+private val TabPadding = 14.dp
+
 private val ClockFormat = DateTimeFormatter.ofPattern("HH:mm")
 
 @Composable
@@ -278,4 +300,16 @@ private fun Clock() {
     }
     // Jamais sur deux lignes, même quand l'en-tête est plein.
     Text(now.format(ClockFormat), style = ClockStyle, color = Lune, maxLines = 1, softWrap = false)
+}
+
+/**
+ * Dessine le contenu [by] plus haut que sa place, sur toute la hauteur gagnée : l'écran passe sous l'en-tête
+ * tandis que sa zone de focus reste en dessous.
+ */
+fun Modifier.extendUp(by: androidx.compose.ui.unit.Dp): Modifier = layout { measurable, constraints ->
+    val extra = by.roundToPx()
+    val placeable = measurable.measure(
+        constraints.copy(minHeight = constraints.minHeight + extra, maxHeight = constraints.maxHeight + extra),
+    )
+    layout(placeable.width, placeable.height - extra) { placeable.place(0, -extra) }
 }

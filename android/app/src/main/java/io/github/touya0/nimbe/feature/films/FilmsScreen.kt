@@ -6,7 +6,7 @@ import io.github.touya0.nimbe.data.jellyfin.MovieSort
 import io.github.touya0.nimbe.data.streaming.TitleKind
 import io.github.touya0.nimbe.feature.media.CatalogScreen
 import io.github.touya0.nimbe.feature.media.CatalogState
-import io.github.touya0.nimbe.feature.media.FilterPill
+import io.github.touya0.nimbe.feature.media.SortChoice
 import io.github.touya0.nimbe.feature.media.JellyfinSection
 import io.github.touya0.nimbe.feature.media.MediaText
 
@@ -45,11 +45,7 @@ fun FilmsScreen(
             pageKey = "movies:$sort:${genres?.joinToString("|")}",
             loadPage = { auth, start, limit -> movies(auth, sort, start, limit, genres) },
             kicker = { item -> if (item.resumable) "EN COURS" else MediaText.added(item.dateCreated) },
-            sorts = {
-                MovieSort.entries.forEach { option ->
-                    FilterPill(option.label, selected = option == sort, onClick = { onSortChange(option) })
-                }
-            },
+            sort = SortChoice(MovieSort.entries.map { it.label }, sort.ordinal) { onSortChange(MovieSort.entries[it]) },
         ),
         onOpenItem = onOpenItem,
         onPlayItem = onPlayItem,
