@@ -8,7 +8,9 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.sp
 import io.github.touya0.nimbe.feature.apps.ActionCard
 import io.github.touya0.nimbe.feature.apps.AppCard
+import io.github.touya0.nimbe.feature.media.FadingBackdrop
 import io.github.touya0.nimbe.feature.media.FocusHero
+import io.github.touya0.nimbe.feature.media.rememberWatchNext
 import io.github.touya0.nimbe.feature.media.Kicker
 import io.github.touya0.nimbe.shell.HeaderHeight
 import io.github.touya0.nimbe.ui.components.ContentRow
@@ -106,6 +108,8 @@ fun HomeScreen(
     onOpen: (InstalledApp) -> Unit,
     onMenu: (InstalledApp, FocusRequester) -> Unit,
     onAllApps: () -> Unit,
+    /** Applis masquées pour ce profil : leurs contenus en cours non plus. */
+    hiddenApps: Set<String> = emptySet(),
     connectivity: ConnectivityStatus,
     onNetworkSettings: () -> Unit,
     onOpenItem: (MediaItem) -> Unit,
@@ -121,9 +125,10 @@ fun HomeScreen(
     val continueRow = rememberJellyfin("continue") { continueWatching(it) }
     val latestRow = rememberJellyfin("latest") { latest(it) }
     // Une rangée masquée ne nourrit pas non plus le haut de l'écran.
-    // « Continuer à regarder » mêle les reprises Jellyfin et les titres ouverts sur les plateformes.
+    // « Continuer à regarder » mêle les reprises Jellyfin, les titres ouverts sur les plateformes et Watch Next.
+    val watchNext = rememberWatchNext(enabled = HomeRow.Continue in rows, hidden = hiddenApps)
     val resume = if (HomeRow.Continue in rows) {
-        ContinueEntry.merge(continueRow.value.orEmpty(), streaming?.history.orEmpty(), sameAs = { streaming?.inJellyfin(it.toTitle()) })
+        ContinueEntry.merge(continueRow.value.orEmpty(), streaming?.history.orEmpty(), sameAs = { streaming?.inJellyfin(it.toTitle()) }, watchNext = watchNext)
     } else {
         emptyList()
     }
@@ -142,6 +147,7 @@ fun HomeScreen(
             when (hero) {
                 is CatalogFocus.Jellyfin -> Backdrop(hero.item.backdrop)
                 is CatalogFocus.Streaming -> StreamingBackdrop(hero.title.backdrop)
+                is CatalogFocus.WatchNext -> FadingBackdrop(hero.program.image)
                 null -> Unit
             }
         }

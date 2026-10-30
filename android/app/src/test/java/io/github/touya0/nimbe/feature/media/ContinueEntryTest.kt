@@ -4,6 +4,7 @@ import io.github.touya0.nimbe.data.jellyfin.ItemKind
 import io.github.touya0.nimbe.data.jellyfin.MediaItem
 import io.github.touya0.nimbe.data.streaming.StreamingOpen
 import io.github.touya0.nimbe.data.streaming.TitleKind
+import io.github.touya0.nimbe.data.watchnext.WatchNextProgram
 import org.junit.Assert.assertEquals
 import org.junit.Test
 import java.time.Instant
@@ -35,5 +36,12 @@ class ContinueEntryTest {
         val opens = listOf(open("tm1", TitleKind.Movie, 9_000))
         val merged = ContinueEntry.merge(listOf(film), opens, sameAs = { if (it.titleId == "tm1") film else null })
         assertEquals(listOf("jellyfin:f1"), merged.map { it.key })
+    }
+
+    @Test
+    fun `Watch Next se trie avec le reste et remplace le même titre ouvert sur une plateforme`() {
+        val program = WatchNextProgram(7, "com.disney.disneyplus", "Disney+", "Tm1", lastEngagement = 5_000, durationMs = 1_000)
+        val merged = ContinueEntry.merge(listOf(film), listOf(open("tm1", TitleKind.Movie, 9_000), open("ts1", TitleKind.Show, 4_000)), watchNext = listOf(program))
+        assertEquals(listOf("watchnext:7", "streaming:ts1", "jellyfin:f1"), merged.map { it.key })
     }
 }

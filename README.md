@@ -63,6 +63,13 @@ Alerte critique par-dessus une autre appli (Google TV n'a pas ce réglage) :
 adb shell appops set io.github.touya0.nimbe SYSTEM_ALERT_WINDOW allow
 ```
 
+« Continuer à regarder » des autres applis (Watch Next) : Android demande l'accord à la première ouverture de
+l'accueil. Si on l'a refusé, il se redonne dans les réglages d'Android, ou ainsi :
+
+```bash
+adb shell pm grant io.github.touya0.nimbe android.permission.READ_TV_LISTINGS
+```
+
 ## Publier une version
 
 Un tag `v*` lance [`release.yml`](.github/workflows/release.yml) : tests, APK signé, empreinte SHA-256

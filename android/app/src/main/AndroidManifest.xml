@@ -23,11 +23,17 @@
     <!-- Dictée de la recherche, avec le micro de la télécommande. Demandée la première fois qu'on s'en sert. -->
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
 
+    <!-- « Continuer à regarder » des autres applis (Watch Next). Demandée à la première ouverture de l'accueil. -->
+    <uses-permission android:name="android.permission.READ_TV_LISTINGS" />
+    <uses-permission android:name="com.android.providers.tv.permission.READ_EPG_DATA" />
+
     <!-- Alerte critique pendant une autre appli. Google TV ne propose pas ce réglage : il s'accorde par adb (voir README). -->
     <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
 
     <!-- Android 11+ : rendre visibles les applis lançables, pour l'écran Applis. -->
     <queries>
+        <!-- Lire la liste Watch Next d'Android TV. -->
+        <provider android:authorities="android.media.tv" />
         <intent>
             <action android:name="android.intent.action.MAIN" />
             <category android:name="android.intent.category.LEANBACK_LAUNCHER" />

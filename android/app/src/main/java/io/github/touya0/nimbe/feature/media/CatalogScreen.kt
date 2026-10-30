@@ -79,6 +79,7 @@ import io.github.touya0.nimbe.data.streaming.StreamingPage
 import io.github.touya0.nimbe.data.streaming.StreamingService
 import io.github.touya0.nimbe.data.streaming.StreamingSort
 import io.github.touya0.nimbe.data.streaming.StreamingTitle
+import io.github.touya0.nimbe.data.watchnext.WatchNextProgram
 import io.github.touya0.nimbe.data.streaming.TitleKind
 import io.github.touya0.nimbe.feature.streaming.LocalStreaming
 import io.github.touya0.nimbe.feature.streaming.StreamingBackdrop
@@ -129,6 +130,10 @@ sealed interface CatalogFocus {
 
     data class Streaming(val title: StreamingTitle, val kicker: String?) : CatalogFocus {
         override val id get() = title.id
+    }
+
+    data class WatchNext(val program: WatchNextProgram) : CatalogFocus {
+        override val id get() = "watchnext:${program.id}"
     }
 }
 
@@ -195,6 +200,7 @@ fun CatalogScreen(
         when (hero) {
             is CatalogFocus.Jellyfin -> Backdrop(hero.item.backdrop)
             is CatalogFocus.Streaming -> StreamingBackdrop(hero.title.backdrop)
+            is CatalogFocus.WatchNext -> FadingBackdrop(hero.program.image)
             null -> Unit
         }
         // La zone de focus commence sous l'en-tête : Bas, depuis un onglet, la trouve en dessous de lui.
@@ -588,6 +594,7 @@ fun ContinueCard(
                 onRestored = onRestored,
             )
         }
+        is ContinueEntry.WatchNext -> WatchNextCard(entry.program, onFocus = { onFocus(CatalogFocus.WatchNext(entry.program)) }, width = width)
     }
 }
 
@@ -597,6 +604,7 @@ const val CONTINUE_KICKER = "REPRENDRE LÀ OÙ TU T'ES ARRÊTÉ"
 fun ContinueEntry.focus(ui: StreamingUi?): CatalogFocus = when (this) {
     is ContinueEntry.Jellyfin -> CatalogFocus.Jellyfin(item, CONTINUE_KICKER)
     is ContinueEntry.Streaming -> CatalogFocus.Streaming(open.toTitle(), "REPRENDRE SUR ${open.streamingService?.label?.uppercase().orEmpty()}")
+    is ContinueEntry.WatchNext -> CatalogFocus.WatchNext(program)
 }
 
 /** Identifiant de la carte, celui que l'écran cherche pour lui rendre le focus au retour d'une fiche. */
@@ -604,6 +612,7 @@ val ContinueEntry.id: String
     get() = when (this) {
         is ContinueEntry.Jellyfin -> item.id
         is ContinueEntry.Streaming -> open.titleId
+        is ContinueEntry.WatchNext -> "watchnext:${program.id}"
     }
 
 /** Rangée d'une plateforme (ou de toutes) : titres populaires ou tendances. */

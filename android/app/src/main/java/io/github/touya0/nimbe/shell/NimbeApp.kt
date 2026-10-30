@@ -1046,6 +1046,7 @@ private fun NimbeShell(
                         onOpen = openApp,
                         onMenu = { app, back -> menu.open(if (restricted) lockedAppMenu(app, openApp, back) else appMenu(app, dockPackages, actions, back)) },
                         onAllApps = { focusTab(Tab.Apps) },
+                        hiddenApps = shownHidden,
                         connectivity = connectivity,
                         onNetworkSettings = launcher::openNetworkSettings,
                         onOpenItem = ::openItem,

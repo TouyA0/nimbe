@@ -146,6 +146,7 @@ fun FocusHero(focus: CatalogFocus?, overviewLines: Int, modifier: Modifier = Mod
         when (shown) {
             is CatalogFocus.Jellyfin -> Hero(shown.item, shown.kicker, overviewLines = overviewLines)
             is CatalogFocus.Streaming -> StreamingHero(shown.title, shown.kicker, overviewLines = overviewLines)
+            is CatalogFocus.WatchNext -> WatchNextHero(shown.program)
             null -> placeholder()
         }
     }
