@@ -47,6 +47,7 @@ import androidx.compose.runtime.Stable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
@@ -96,6 +97,7 @@ import io.github.touya0.nimbe.ui.theme.Lune
 import io.github.touya0.nimbe.ui.theme.LuneAttenuee
 import io.github.touya0.nimbe.ui.theme.Panneau
 import io.github.touya0.nimbe.ui.theme.PanneauClair
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 /** Ce qui est affiché : tout ([ALL]), seulement Jellyfin ([JELLYFIN]), ou le code d'une plateforme. */
@@ -481,16 +483,26 @@ private fun AllRows(
     val ui = LocalStreaming.current ?: return
     val jellyfinUi = LocalJellyfin.current
     val category = state.category
+    // Les rangées arrivent une à une : d'un coup, elles figent le stick plus d'une seconde, et l'appui suivant
+    // sur la télécommande, mis en attente, saute alors l'onglet. Au retour d'une fiche, la carte d'origine doit exister tout de suite.
+    val revealed by produceState(if (restoreFocusId != null) Int.MAX_VALUE else 0) {
+        while (value < MAX_ROWS) {
+            delay(ROW_REVEAL_MS)
+            value++
+        }
+    }
     PivotScroll(rowCardTop()) { Column(
         Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = ScreenMargin).padding(top = 8.dp),
         verticalArrangement = Arrangement.spacedBy(6.dp),
     ) {
-        if (category == null) ContinueRow(kind, onPlayItem, onFocus, onFallback, state, restoreFocusId, onRestored)
+        // Compté ici : ce bloc se recompose seul à chaque nouvelle rangée.
+        var rowIndex = 0
+        if (category == null && rowIndex++ < revealed) ContinueRow(kind, onPlayItem, onFocus, onFallback, state, restoreFocusId, onRestored)
 
         if (jellyfinUi?.link != null) {
             if (category == null && jellyfin.shelves.isNotEmpty()) {
                 jellyfin.shelves.forEachIndexed { index, shelf ->
-                    JellyfinRow(
+                    if (rowIndex++ < revealed) JellyfinRow(
                         title = shelf.title,
                         rowKey = shelf.key,
                         load = shelf.loadPage,
@@ -506,7 +518,7 @@ private fun AllRows(
                         onRestored = onRestored,
                     )
                 }
-            } else {
+            } else if (rowIndex++ < revealed) {
                 JellyfinRow(
                     title = jellyfin.rowTitle,
                     rowKey = jellyfin.pageKey,
@@ -525,7 +537,7 @@ private fun AllRows(
         }
 
         services.forEach { service ->
-            StreamingRow(
+            if (rowIndex++ < revealed) StreamingRow(
                 state = state,
                 title = "Populaires sur ${service.label}",
                 load = { catalog(kind, listOf(service), category, StreamingSort.Popular, ui.kids, first = ROW_SIZE) },
@@ -539,7 +551,7 @@ private fun AllRows(
                 onRestored = onRestored,
             )
         }
-        if (services.size > 1) {
+        if (services.size > 1 && rowIndex++ < revealed) {
             StreamingRow(
                 state = state,
                 title = "Tendances sur tes plateformes",
@@ -867,6 +879,8 @@ val GRID_POSTER_WIDTH = 116.dp
 private val CATALOG_HERO_HEIGHT = 156.dp
 private const val ROW_SIZE = 20
 private const val SHELF_MIN_ITEMS = 4
+private const val MAX_ROWS = 20
+private const val ROW_REVEAL_MS = 120L
 private val CONTINUE_WIDTH = 164.dp
 private const val SKELETON_POSTERS = 7
 private const val CONTINUE_ROW = "continue"
