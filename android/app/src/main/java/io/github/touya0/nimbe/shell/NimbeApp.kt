@@ -125,6 +125,7 @@ import io.github.touya0.nimbe.feature.apps.appMenu
 import io.github.touya0.nimbe.feature.apps.lockedAppMenu
 import io.github.touya0.nimbe.feature.apps.hiddenAppsMenu
 import io.github.touya0.nimbe.feature.apps.rememberInstalledApps
+import io.github.touya0.nimbe.feature.home.HomeNav
 import io.github.touya0.nimbe.feature.home.HomeScreen
 import io.github.touya0.nimbe.feature.home.HomeWelcome
 import io.github.touya0.nimbe.feature.layout.HomeEditScreen
@@ -140,6 +141,13 @@ import io.github.touya0.nimbe.update.UpdateScreen
 import io.github.touya0.nimbe.update.UpdateState
 import kotlinx.coroutines.launch
 import android.widget.Toast
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.input.key.type
+import io.github.touya0.nimbe.data.jellyfin.ItemKind
+import io.github.touya0.nimbe.data.watchnext.WatchNextProgram
+import io.github.touya0.nimbe.data.watchnext.WatchNextReader
+import io.github.touya0.nimbe.feature.media.MediaText
 import androidx.compose.runtime.produceState
 import io.github.touya0.nimbe.data.jellyfin.JellyfinException
 import io.github.touya0.nimbe.data.streaming.StreamingCatalog
@@ -377,6 +385,12 @@ private fun NimbeShell(
 
     // Mise en page du profil actif : celle par défaut le temps de la lire.
     val activeId = profilesState.active?.id.orEmpty()
+    val homeNav = remember(activeId) { HomeNav() }
+    // L'accueil arrive au premier plan : un seul OK doit suffire à reprendre, le focus va sur sa première carte.
+    fun focusHomeStart() {
+        focusTab(Tab.Home)
+        homeNav.startFocus = true
+    }
     val savedLayout by remember(activeId) { layouts.layout(activeId) }.collectAsStateWithLifecycle(initialValue = null)
     val layout = when {
         guest -> LayoutRules.normalize(GuestMode.Layout)
@@ -393,7 +407,8 @@ private fun NimbeShell(
         val loaded = savedLayout ?: return@LaunchedEffect
         if (startedFor != activeId) {
             startedFor = activeId
-            focusTab(Tab.fromKey(loaded.startTab) ?: Tab.Home)
+            val start = Tab.fromKey(loaded.startTab) ?: Tab.Home
+            if (start == Tab.Home) focusHomeStart() else focusTab(start)
         }
     }
     LaunchedEffect(visibleTabs) { if (tab !in visibleTabs) focusTab(Tab.Home) }
@@ -449,6 +464,7 @@ private fun NimbeShell(
         when {
             tab == Tab.Gallery && galleryNav.open != null -> galleryNav.close()
             tab == Tab.Gallery && galleryNav.backToTop() -> Unit
+            tab == Tab.Home && homeNav.backToTop() -> Unit
             else -> focusTab(Tab.Home)
         }
     }
@@ -465,7 +481,7 @@ private fun NimbeShell(
             homeEditOpen = false
             leavingTo = null
             returnToSettingsButton = false
-            focusTab(Tab.Home)
+            focusHomeStart()
         }
     }
 
@@ -696,6 +712,13 @@ private fun NimbeShell(
         }
         if (!guest) scope.launch { streamingHistory.record(StreamingOpen.of(activeId, title, service, System.currentTimeMillis())) }
     }
+    // Depuis l'accueil, tout menu d'un adulte propose aussi de le personnaliser, comme sur la maquette.
+    fun List<MenuOption>.withEditHome(): List<MenuOption> =
+        if (tab != Tab.Home || restricted) {
+            this
+        } else {
+            this + MenuOption("✎", "Personnaliser l'accueil", "Rangées et ordre") { homeEditOpen = true }
+        }
     // Options d'un titre de « Continuer à regarder » : le relancer (la fiche est rechargée pour avoir son lien), voir sa fiche, le retirer.
     fun streamingMenu(open: StreamingOpen, back: FocusRequester) {
         val service = open.streamingService ?: return
@@ -722,7 +745,7 @@ private fun NimbeShell(
                         leaveTile()
                         scope.launch { streamingHistory.forget(open.profileId, open.titleId) }
                     },
-                ),
+                ).withEditHome(),
                 returnFocus = back,
             ),
         )
@@ -763,6 +786,68 @@ private fun NimbeShell(
     fun requestPlay(item: MediaItem) {
         restoreFocusId = item.id
         if (ResumeRule.shouldAsk(item)) askResume = item else playing = ResumeRule.direct(item)
+    }
+    fun setPlayed(item: MediaItem, played: Boolean) {
+        scope.launch {
+            try {
+                library.auth()?.let { library.setPlayed(it, item.id, played) }
+                homeNav.reloads++
+            } catch (_: JellyfinException) {
+                Toast.makeText(context, "Jellyfin ne répond pas : rien n'a changé", Toast.LENGTH_LONG).show()
+            }
+        }
+    }
+    // Options d'un contenu Jellyfin de l'accueil. L'invité et l'enfant ne changent rien à ce qui est enregistré sur le serveur.
+    fun itemMenu(item: MediaItem, back: FocusRequester) {
+        val options = buildList {
+            if (item.resumable) {
+                add(MenuOption("▶", "Reprendre", MediaText.progressLine(item)) {
+                    restoreFocusId = item.id
+                    playing = ResumeRule.resume(item)
+                })
+                add(MenuOption("↺", "Depuis le début") {
+                    restoreFocusId = item.id
+                    playing = PlayRequest(item, 0)
+                })
+            } else if (item.kind != ItemKind.Series) {
+                add(MenuOption("▶", "Lire", MediaText.progressLine(item)) { requestPlay(item) })
+            }
+            if (item.kind == ItemKind.Episode) {
+                add(MenuOption("≡", "Tous les épisodes", MediaText.title(item)) { openItem(item) })
+            } else {
+                add(MenuOption("ℹ", "Voir la fiche", "Résumé, distribution") { openItem(item) })
+            }
+            if (!restricted) {
+                // Sur une série, le serveur marquerait d'un coup tous ses épisodes : cela se fait depuis sa fiche.
+                if (!item.played && item.kind != ItemKind.Series) {
+                    add(MenuOption("✓", "Marquer comme vu", if (item.kind == ItemKind.Episode) "Passe à l'épisode suivant" else null) {
+                        if (item.resumable) leaveTile()
+                        setPlayed(item, played = true)
+                    })
+                }
+                if (item.resumable) {
+                    add(MenuOption("✕", "Retirer de « Continuer à regarder »", "Efface aussi l'endroit où tu t'es arrêté") {
+                        leaveTile()
+                        setPlayed(item, played = false)
+                    })
+                }
+            }
+        }
+        menu.open(MenuRequest(subject = MediaText.title(item), options = options.withEditHome(), returnFocus = back))
+    }
+    fun watchNextMenu(program: WatchNextProgram, back: FocusRequester, dismiss: () -> Unit) {
+        val options = listOf(
+            MenuOption("▶", "Ouvrir dans ${program.appLabel}", program.episodeLine) {
+                if (!WatchNextReader(context.applicationContext).open(program)) {
+                    Toast.makeText(context, "Impossible d'ouvrir ${program.appLabel}", Toast.LENGTH_SHORT).show()
+                }
+            },
+            MenuOption("✕", "Retirer de « Continuer à regarder »", "Revient si tu le reprends dans ${program.appLabel}") {
+                leaveTile()
+                dismiss()
+            },
+        )
+        menu.open(MenuRequest(subject = program.title, options = options.withEditHome(), returnFocus = back))
     }
     // Depuis une fiche, le bouton dit déjà s'il reprend ou repart du début.
     val onPlay: (MediaItem, Boolean) -> Unit = { item, fromStart ->
@@ -967,6 +1052,8 @@ private fun NimbeShell(
         } else if (returnToSettingsButton) {
             returnToSettingsButton = false
             runCatching { settingsRequester.requestFocus() }
+        } else if (tab == Tab.Home) {
+            focusHomeStart()
         } else {
             focusTab(tab)
         }
@@ -974,7 +1061,13 @@ private fun NimbeShell(
 
     CompositionLocalProvider(LocalStreaming provides streamingUi, LocalMenu provides menu) { MenuHost(menu) {
         // L'en-tête flotte par-dessus les écrans : les images de fond montent jusqu'en haut de la TV.
-        Box(Modifier.fillMaxSize().background(Nuit)) {
+        // Toucher à la télécommande annule le focus de démarrage : il ne vole jamais la main à quelqu'un.
+        Box(
+            Modifier.fillMaxSize().background(Nuit).onPreviewKeyEvent { event ->
+                if (event.type == KeyEventType.KeyDown) homeNav.startFocus = false
+                false
+            },
+        ) {
             val header: @Composable () -> Unit = { Header(
                 tabs = visibleTabs,
                 selected = tab,
@@ -1024,8 +1117,15 @@ private fun NimbeShell(
             ) {
                 when (tab) {
                     Tab.Home -> HomeScreen(
-                        memories = { GalleryHomeRow(gallery, profilesState.active, onOpen = { galleryViewer = it }) },
+                        memories = { onFocus, state, first ->
+                            GalleryHomeRow(gallery, profilesState.active, onOpen = { galleryViewer = it }, onFocus = onFocus, state = state, first = first)
+                        },
                         rows = layout.visibleRows,
+                        profileName = active?.name,
+                        canEdit = !restricted,
+                        nav = homeNav,
+                        onItemMenu = ::itemMenu,
+                        onWatchNextMenu = ::watchNextMenu,
                         welcome = when {
                             guest -> HomeWelcome(
                                 "PROFIL INVITÉ",
@@ -1044,7 +1144,15 @@ private fun NimbeShell(
                         },
                         dock = dock,
                         onOpen = openApp,
-                        onMenu = { app, back -> menu.open(if (restricted) lockedAppMenu(app, openApp, back) else appMenu(app, dockPackages, actions, back)) },
+                        onMenu = { app, back ->
+                            menu.open(
+                                if (restricted) {
+                                    lockedAppMenu(app, openApp, back)
+                                } else {
+                                    appMenu(app, dockPackages, actions, back).let { it.copy(options = it.options.withEditHome()) }
+                                },
+                            )
+                        },
                         onAllApps = { focusTab(Tab.Apps) },
                         hiddenApps = shownHidden,
                         connectivity = connectivity,

@@ -58,38 +58,43 @@ import io.github.touya0.nimbe.ui.theme.Nuit
 import io.github.touya0.nimbe.ui.theme.nimbeTween
 import kotlinx.coroutines.delay
 
+/** Adresse d'un fond Jellyfin, à la taille utile : 640 dp, soit 1280 pixels sur un écran 1080p. */
+@Composable
+fun rememberBackdropUrl(ref: ImageRef?): String? {
+    val server = LocalJellyfin.current?.link?.serverUrl
+    val density = LocalDensity.current
+    return remember(ref, server) { if (ref == null || server == null) null else ref.url(server, maxWidth = with(density) { 640.dp.roundToPx() }) }
+}
+
 /**
  * Image de fond de l'élément focalisé, fondue vers la gauche et le bas pour garder le texte lisible.
  * Elle ne change qu'après un court arrêt sur une carte : parcourir une rangée ne télécharge pas tous les fonds.
  */
 @Composable
 fun Backdrop(ref: ImageRef?, modifier: Modifier = Modifier) {
-    val server = LocalJellyfin.current?.link?.serverUrl
-    val density = LocalDensity.current
-    // 640 dp : 1280 pixels sur un écran 1080p, assez pour un fond fondu.
-    val url = remember(ref, server) { if (ref == null || server == null) null else ref.url(server, maxWidth = with(density) { 640.dp.roundToPx() }) }
-    FadingBackdrop(url, modifier)
+    FadingBackdrop(rememberBackdropUrl(ref), modifier)
 }
 
 /**
  * Fond plein écran qui passe d'une image à l'autre en fondu enchaîné : la nouvelle image est d'abord
  * chargée en coulisse, l'ancienne reste affichée jusque-là. Jamais d'écran noir entre deux cartes.
+ * [image] : une adresse, ou une [ImageRequest] quand le serveur demande un en-tête (Nextcloud).
  */
 @Composable
-fun FadingBackdrop(url: String?, modifier: Modifier = Modifier) {
+fun FadingBackdrop(image: Any?, modifier: Modifier = Modifier) {
     val context = LocalContext.current
-    val wanted by produceState(url, url) {
+    val wanted by produceState(image, image) {
         delay(BACKDROP_DELAY_MS)
-        value = url
+        value = image
     }
-    var shown by remember { mutableStateOf(url) }
+    var shown by remember { mutableStateOf(image) }
     LaunchedEffect(wanted) {
         val target = wanted
         if (target == null) {
             shown = null
             return@LaunchedEffect
         }
-        val result = SingletonImageLoader.get(context).execute(ImageRequest.Builder(context).data(target).build())
+        val result = SingletonImageLoader.get(context).execute(target as? ImageRequest ?: ImageRequest.Builder(context).data(target).build())
         // Une image introuvable laisse la précédente en place plutôt qu'un trou.
         if (result is SuccessResult) shown = target
     }
@@ -99,9 +104,9 @@ fun FadingBackdrop(url: String?, modifier: Modifier = Modifier) {
             animationSpec = nimbeTween(NimbeMotion.SLOW_MS),
             modifier = Modifier.fillMaxHeight(0.86f).fillMaxWidth(0.74f).align(Alignment.TopEnd),
             label = "fond",
-        ) { image ->
-            if (image != null) {
-                AsyncImage(model = image, contentDescription = null, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
+        ) { current ->
+            if (current != null) {
+                AsyncImage(model = current, contentDescription = null, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
             }
         }
         BackdropScrim()
@@ -125,24 +130,29 @@ fun BackdropScrim(modifier: Modifier = Modifier) {
 
 private const val BACKDROP_DELAY_MS = 300L
 
+/** Change le haut d'un écran en fondu bref, quand [key] change. Avec « Réduire les animations », ces durées valent zéro. */
+@Composable
+fun <T> HeroSwitch(target: T, key: (T) -> Any?, modifier: Modifier = Modifier, content: @Composable (T) -> Unit) {
+    val enter = nimbeTween<Float>(NimbeMotion.MEDIUM_MS, delayMs = 60)
+    val rise = nimbeTween<IntOffset>(NimbeMotion.MEDIUM_MS)
+    val exit = nimbeTween<Float>(NimbeMotion.FAST_MS)
+    AnimatedContent(
+        targetState = target,
+        contentKey = key,
+        transitionSpec = { (fadeIn(enter) + slideInVertically(rise) { it / 24 }) togetherWith fadeOut(exit) },
+        contentAlignment = Alignment.TopStart,
+        modifier = modifier,
+        label = "haut",
+    ) { content(it) }
+}
+
 /**
  * Le haut d'un écran de catalogue : le titre focalisé, qui change en fondu bref quand le focus passe
  * d'une carte à l'autre. [placeholder] s'affiche avant le premier titre.
  */
 @Composable
 fun FocusHero(focus: CatalogFocus?, overviewLines: Int, modifier: Modifier = Modifier, placeholder: @Composable () -> Unit = {}) {
-    // Avec « Réduire les animations », ces durées valent zéro : le texte change d'un coup.
-    val enter = nimbeTween<Float>(NimbeMotion.MEDIUM_MS, delayMs = 60)
-    val rise = nimbeTween<IntOffset>(NimbeMotion.MEDIUM_MS)
-    val exit = nimbeTween<Float>(NimbeMotion.FAST_MS)
-    AnimatedContent(
-        targetState = focus,
-        contentKey = { it?.id },
-        transitionSpec = { (fadeIn(enter) + slideInVertically(rise) { it / 24 }) togetherWith fadeOut(exit) },
-        contentAlignment = Alignment.TopStart,
-        modifier = modifier,
-        label = "haut",
-    ) { shown ->
+    HeroSwitch(focus, key = { it?.id }, modifier = modifier) { shown ->
         when (shown) {
             is CatalogFocus.Jellyfin -> Hero(shown.item, shown.kicker, overviewLines = overviewLines)
             is CatalogFocus.Streaming -> StreamingHero(shown.title, shown.kicker, overviewLines = overviewLines)

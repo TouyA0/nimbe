@@ -41,4 +41,24 @@ class WatchNextRulesTest {
         assertEquals("S2 É1 · Ouroboros", program(1).copy(season = "2", episode = "1", episodeTitle = "Ouroboros").episodeLine)
         assertEquals(null, program(1).episodeLine)
     }
+
+    @Test
+    fun `un titre retiré ne revient pas tant qu'on ne le reprend pas`() {
+        val entries = WatchNextRules.dismiss(emptySet(), program(1, title = "Zootopie", at = 100))
+        val select = { at: Long -> WatchNextRules.select(listOf(program(1, title = "Zootopie", at = at)), "nimbe", dismissed = entries).size }
+        assertEquals(0, select(100))
+        assertEquals(1, select(101))
+    }
+
+    @Test
+    fun `retirer à nouveau remplace l'ancienne note`() {
+        val once = WatchNextRules.dismiss(emptySet(), program(1, title = "Zootopie", at = 100))
+        assertEquals(setOf(WatchNextRules.dismissEntry(program(1, title = "Zootopie", at = 200))), WatchNextRules.dismiss(once, program(1, title = "Zootopie", at = 200)))
+    }
+
+    @Test
+    fun `un titre contenant une barre verticale reste reconnu`() {
+        val entries = WatchNextRules.dismiss(emptySet(), program(1, title = "A | B", at = 100))
+        assertEquals(true, WatchNextRules.isDismissed(program(1, title = "A | B", at = 100), entries))
+    }
 }

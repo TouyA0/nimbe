@@ -747,6 +747,8 @@ internal fun CollectionCard(
     /** Revenue de ce qu'elle ouvrait : elle reprend le focus. */
     restore: Boolean = false,
     onRestored: () -> Unit = {},
+    modifier: Modifier = Modifier,
+    onFocus: () -> Unit = {},
 ) {
     var focused by remember { mutableStateOf(false) }
     val requester = remember { FocusRequester() }
@@ -758,10 +760,14 @@ internal fun CollectionCard(
     }
     Surface(
         onClick = onClick,
-        modifier = (if (width != null) Modifier.width(width.dp) else Modifier.fillMaxWidth())
+        modifier = modifier
+            .then(if (width != null) Modifier.width(width.dp) else Modifier.fillMaxWidth())
             .focusRequester(requester)
             .aspectRatio(16f / 9f)
-            .onFocusChanged { focused = it.isFocused }
+            .onFocusChanged {
+                focused = it.isFocused
+                if (it.isFocused) onFocus()
+            }
             .focusRing(focused, NimbeFocus.CardRadius),
         shape = ClickableSurfaceDefaults.shape(NimbeFocus.CardShape),
         colors = ClickableSurfaceDefaults.colors(containerColor = PanneauClair, focusedContainerColor = PanneauClair),

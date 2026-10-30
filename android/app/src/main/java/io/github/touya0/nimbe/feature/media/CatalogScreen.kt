@@ -566,6 +566,11 @@ fun ContinueCard(
     restoreFocusId: String?,
     onRestored: () -> Unit,
     width: Dp = 196.dp,
+    /** Options d'une carte Jellyfin (OK maintenu) ; sans lui, pas de menu. */
+    onJellyfinMenu: ((MediaItem, FocusRequester) -> Unit)? = null,
+    onWatchNextMenu: ((WatchNextProgram, FocusRequester) -> Unit)? = null,
+    /** Plus d'internet : les plateformes sont grisées, leur lien ne mènerait à rien. */
+    offline: Boolean = false,
 ) {
     val ui = LocalStreaming.current
     when (entry) {
@@ -578,6 +583,7 @@ fun ContinueCard(
             onFocus = { onFocus(CatalogFocus.Jellyfin(entry.item, CONTINUE_KICKER)) },
             restoreFocus = entry.item.id == restoreFocusId,
             onRestored = onRestored,
+            onMenu = onJellyfinMenu?.let { menu -> { requester -> menu(entry.item, requester) } },
         )
         is ContinueEntry.Streaming -> {
             val service = entry.open.streamingService ?: return
@@ -592,9 +598,16 @@ fun ContinueCard(
                 onMenu = ui?.let { streaming -> { requester -> streaming.onMenu(entry.open, requester) } },
                 restoreFocus = title.id == restoreFocusId,
                 onRestored = onRestored,
+                dimmed = offline,
             )
         }
-        is ContinueEntry.WatchNext -> WatchNextCard(entry.program, onFocus = { onFocus(CatalogFocus.WatchNext(entry.program)) }, width = width)
+        is ContinueEntry.WatchNext -> WatchNextCard(
+            entry.program,
+            onFocus = { onFocus(CatalogFocus.WatchNext(entry.program)) },
+            width = width,
+            dimmed = offline,
+            onMenu = onWatchNextMenu?.let { menu -> { requester -> menu(entry.program, requester) } },
+        )
     }
 }
 

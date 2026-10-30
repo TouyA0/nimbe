@@ -152,6 +152,7 @@ fun StreamingWideCard(
     onMenu: ((FocusRequester) -> Unit)? = null,
     restoreFocus: Boolean = false,
     onRestored: () -> Unit = {},
+    dimmed: Boolean = false,
 ) {
     Column(modifier.width(width), verticalArrangement = Arrangement.spacedBy(6.dp)) {
         MediaSurface(
@@ -161,7 +162,7 @@ fun StreamingWideCard(
             onRestored = onRestored,
             label = listOfNotNull(StreamingText.spoken(title, listOf(service)), detail).joinToString(", "),
             modifier = Modifier.fillMaxWidth().aspectRatio(16f / 9f),
-            dimmed = false,
+            dimmed = dimmed,
             onLongClick = onMenu,
         ) {
             Box(Modifier.fillMaxSize().background(PanneauClair)) {
@@ -176,7 +177,7 @@ fun StreamingWideCard(
                 ServiceBadge(service, Modifier.align(Alignment.TopStart).padding(8.dp))
             }
         }
-        Text(title.title, style = MaterialTheme.typography.titleSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        Text(title.title, style = MaterialTheme.typography.titleSmall, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 6.dp))
         detail?.let { Text(it, style = MaterialTheme.typography.labelMedium, color = LuneAttenuee, maxLines = 1) }
     }
 }

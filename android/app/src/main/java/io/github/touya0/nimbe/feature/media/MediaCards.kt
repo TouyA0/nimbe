@@ -151,8 +151,9 @@ fun PosterCard(
     onFocus: () -> Unit = {},
     restoreFocus: Boolean = false,
     onRestored: () -> Unit = {},
+    onMenu: ((FocusRequester) -> Unit)? = null,
 ) {
-    MediaSurface(onClick, onFocus, restoreFocus, onRestored, item.name, modifier.width(width).aspectRatio(2f / 3f)) {
+    MediaSurface(onClick, onFocus, restoreFocus, onRestored, item.name, modifier.width(width).aspectRatio(2f / 3f), onLongClick = onMenu) {
         Box(Modifier.fillMaxSize()) {
             // Sans affiche, le titre en grand, comme sur la maquette.
             Text(
@@ -184,9 +185,10 @@ fun WideCard(
     onFocus: () -> Unit = {},
     restoreFocus: Boolean = false,
     onRestored: () -> Unit = {},
+    onMenu: ((FocusRequester) -> Unit)? = null,
 ) {
     Column(modifier.width(width), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-        MediaSurface(onClick, onFocus, restoreFocus, onRestored, label, Modifier.fillMaxWidth().aspectRatio(16f / 9f)) {
+        MediaSurface(onClick, onFocus, restoreFocus, onRestored, label, Modifier.fillMaxWidth().aspectRatio(16f / 9f), onLongClick = onMenu) {
             Box(Modifier.fillMaxSize().background(PanneauClair)) {
                 // Un épisode a sa propre capture ; sinon, la vignette ou le fond de la série.
                 val image = if (item.kind == ItemKind.Episode) item.primary ?: item.thumb ?: item.backdrop else item.thumb ?: item.backdrop ?: item.primary

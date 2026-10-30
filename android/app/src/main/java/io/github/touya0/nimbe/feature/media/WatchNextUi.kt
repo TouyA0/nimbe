@@ -24,6 +24,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextAlign
@@ -49,6 +50,10 @@ import kotlinx.coroutines.withContext
 
 private const val PREFS = "watch_next"
 private const val ASKED = "permission_asked"
+private const val DISMISSED = "dismissed"
+
+/** Les contenus en cours des autres applis. [loaded] : la liste a été lue une fois. [dismiss] : les retirer de la rangée. */
+class WatchNextState(val programs: List<WatchNextProgram>, val loaded: Boolean, val dismiss: (WatchNextProgram) -> Unit)
 
 /**
  * Les contenus en cours des autres applis, relus à chaque retour sur Nimbe. Android demande l'accord une fois, à la
@@ -56,11 +61,12 @@ private const val ASKED = "permission_asked"
  * [enabled] à false (Invité, Enfant, rangée masquée) : rien n'est demandé ni lu, cette liste est celle de toute la maison.
  */
 @Composable
-fun rememberWatchNext(enabled: Boolean, hidden: Set<String>): List<WatchNextProgram> {
+fun rememberWatchNext(enabled: Boolean, hidden: Set<String>): WatchNextState {
     val context = LocalContext.current
     val reader = remember(context) { WatchNextReader(context.applicationContext) }
     var programs by remember { mutableStateOf(emptyList<WatchNextProgram>()) }
     var attempt by remember { mutableIntStateOf(0) }
+    var loaded by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
     val permission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { attempt++ }
 
@@ -74,14 +80,22 @@ fun rememberWatchNext(enabled: Boolean, hidden: Set<String>): List<WatchNextProg
     LifecycleResumeEffect(enabled, attempt, hidden) {
         val job = scope.launch {
             programs = if (enabled && reader.allowed()) {
-                withContext(Dispatchers.IO) { WatchNextRules.select(reader.read(), context.packageName, hidden) }
+                withContext(Dispatchers.IO) {
+                    val dismissed = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getStringSet(DISMISSED, emptySet()).orEmpty()
+                    WatchNextRules.select(reader.read(), context.packageName, hidden, dismissed)
+                }
             } else {
                 emptyList()
             }
+            loaded = true
         }
         onPauseOrDispose { job.cancel() }
     }
-    return programs
+    return WatchNextState(programs, loaded) { program ->
+        val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+        prefs.edit().putStringSet(DISMISSED, WatchNextRules.dismiss(prefs.getStringSet(DISMISSED, emptySet()).orEmpty(), program)).apply()
+        programs = programs - program
+    }
 }
 
 /** La couleur de la plateforme si Nimbe la connaît, sinon celle de la tuile de l'appli. */
@@ -96,7 +110,14 @@ private fun detail(program: WatchNextProgram): String = when {
 
 /** Vignette 16:9 d'un contenu en cours dans une autre appli : image, appli d'origine, progression. */
 @Composable
-fun WatchNextCard(program: WatchNextProgram, onFocus: () -> Unit, modifier: Modifier = Modifier, width: Dp = 196.dp) {
+fun WatchNextCard(
+    program: WatchNextProgram,
+    onFocus: () -> Unit,
+    modifier: Modifier = Modifier,
+    width: Dp = 196.dp,
+    dimmed: Boolean = false,
+    onMenu: ((FocusRequester) -> Unit)? = null,
+) {
     val context = LocalContext.current
     val line = detail(program)
     Column(modifier.width(width), verticalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -111,7 +132,8 @@ fun WatchNextCard(program: WatchNextProgram, onFocus: () -> Unit, modifier: Modi
             onRestored = {},
             label = listOfNotNull(program.title, program.episodeLine, line).joinToString(", "),
             modifier = Modifier.fillMaxWidth().aspectRatio(16f / 9f),
-            dimmed = false,
+            dimmed = dimmed,
+            onLongClick = onMenu,
         ) {
             Box(Modifier.fillMaxSize().background(PanneauClair)) {
                 Text(
@@ -128,7 +150,7 @@ fun WatchNextCard(program: WatchNextProgram, onFocus: () -> Unit, modifier: Modi
                 }
             }
         }
-        Text(program.title, style = MaterialTheme.typography.titleSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        Text(program.title, style = MaterialTheme.typography.titleSmall, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 6.dp))
         Text(line, style = MaterialTheme.typography.labelMedium, color = LuneAttenuee, maxLines = 1, overflow = TextOverflow.Ellipsis)
     }
 }

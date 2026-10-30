@@ -62,8 +62,14 @@ object WatchNextRules {
      * avec une durée (sans elle, c'est du direct : il n'y a rien à reprendre), sans les applis [hidden],
      * une carte par titre, et [PER_APP] par appli pour que Twitch ne remplisse pas la rangée.
      */
-    fun select(programs: List<WatchNextProgram>, ownPackage: String, hidden: Set<String> = emptySet()): List<WatchNextProgram> =
+    fun select(
+        programs: List<WatchNextProgram>,
+        ownPackage: String,
+        hidden: Set<String> = emptySet(),
+        dismissed: Set<String> = emptySet(),
+    ): List<WatchNextProgram> =
         programs
+            .filterNot { isDismissed(it, dismissed) }
             .filter { it.watchNextType == WatchNextProgram.TYPE_CONTINUE || it.watchNextType == WatchNextProgram.TYPE_NEXT }
             .filter { it.durationMs > 0 && it.title.isNotBlank() && it.programType !in NOT_VIDEO }
             .filter { it.packageName != ownPackage && it.packageName != JELLYFIN_APP && it.packageName !in hidden }
@@ -73,6 +79,21 @@ object WatchNextRules {
             .values
             .flatMap { it.take(PER_APP) }
             .sortedByDescending { it.lastEngagement }
+
+    /**
+     * Les applis seules peuvent effacer leurs lignes : Nimbe note ce qu'on a retiré, avec la date de la dernière activité.
+     * Le titre revient de lui-même si on le reprend dans l'appli (l'activité est alors plus récente).
+     */
+    fun dismissEntry(program: WatchNextProgram): String = "${program.lastEngagement}|${program.packageName}|${program.title}"
+
+    /** Remplace une ancienne note du même titre : la liste ne grandit pas à chaque retrait. */
+    fun dismiss(entries: Set<String>, program: WatchNextProgram): Set<String> =
+        entries.filterNot { it.substringAfter('|') == "${program.packageName}|${program.title}" }.toSet() + dismissEntry(program)
+
+    fun isDismissed(program: WatchNextProgram, entries: Set<String>): Boolean = entries.any { entry ->
+        entry.substringAfter('|') == "${program.packageName}|${program.title}" &&
+            (entry.substringBefore('|').toLongOrNull() ?: 0) >= program.lastEngagement
+    }
 }
 
 /** Lit Watch Next et ouvre ses contenus. Tout est local : ça marche serveurs coupés. */

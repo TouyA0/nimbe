@@ -71,6 +71,14 @@ class JellyfinLibrary(private val account: JellyfinAccount, private val cache: C
         }
     }
 
+    /**
+     * Marque un contenu comme vu, ou efface sa lecture : le serveur remet alors la position à zéro,
+     * et le contenu quitte « Continuer à regarder ». L'erreur remonte à l'écran, rien n'est mis en attente.
+     */
+    suspend fun setPlayed(auth: JellyfinAuth, id: String, played: Boolean) {
+        if (played) account.api.post(auth, "/UserPlayedItems/$id", JSONObject()) else account.api.delete(auth, "/UserPlayedItems/$id")
+    }
+
     /** Ajouts récents, films et épisodes ; les épisodes d'une même série sont regroupés par le serveur. */
     suspend fun latest(auth: JellyfinAuth): List<MediaItem> = remember(auth, "latest") {
         page(auth, "/Items/Latest", mapOf("includeItemTypes" to "Movie,Episode", "groupItems" to true, "limit" to 16)).items

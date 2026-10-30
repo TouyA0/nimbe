@@ -95,6 +95,11 @@ class JellyfinApi(private val client: suspend () -> ClientInfo) {
         return call("POST", "${auth.server}$path" + if (query.isEmpty()) "" else "?$query", auth.token, body.toString())
     }
 
+    /** Suppression authentifiée : la réponse n'a pas de contenu utile. */
+    suspend fun delete(auth: JellyfinAuth, path: String) {
+        request("DELETE", "${auth.server}$path", auth.token)
+    }
+
     /** En-tête Authorization complet, pour le lecteur vidéo qui fait ses propres requêtes. */
     suspend fun authorizationFor(token: String): String = authorization(client(), token)
 

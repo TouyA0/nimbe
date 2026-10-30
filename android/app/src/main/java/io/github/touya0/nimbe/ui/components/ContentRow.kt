@@ -1,6 +1,8 @@
 package io.github.touya0.nimbe.ui.components
 
+import androidx.compose.foundation.focusGroup
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -12,6 +14,9 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusDirection
+import androidx.compose.ui.focus.focusProperties
+import androidx.compose.ui.focus.focusRestorer
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -39,6 +44,7 @@ fun rowCardTop(): Dp = with(LocalDensity.current) { RowTitleStyle.lineHeight.toD
 /**
  * Rangée titrée de cartes, commune à tous les écrans : titre à la marge, cartes qui défilent sous
  * le focus resté à gauche (voir [PivotScroll]), anneau jamais coupé au bord de l'écran.
+ * En revenant sur la rangée, le focus retrouve la dernière carte visitée.
  * [count] s'affiche discrètement après le titre.
  */
 @Composable
@@ -53,13 +59,24 @@ fun ContentRow(
     Column(modifier) {
         RowTitle(title, count, Modifier.padding(bottom = RowTitleGap))
         PivotScroll(ScreenMargin) {
-            LazyRow(
-                state = state,
-                modifier = Modifier.bleed(ScreenMargin),
-                contentPadding = PaddingValues(horizontal = ScreenMargin, vertical = RowCardPadding),
-                horizontalArrangement = Arrangement.spacedBy(spacing),
-                content = content,
-            )
+            // Au bout de la rangée, le focus reste sur place : il ne saute pas vers l'élément le plus proche, un onglet par exemple.
+            Box(
+                Modifier
+                    .focusProperties {
+                        onExit = {
+                            if (requestedFocusDirection == FocusDirection.Left || requestedFocusDirection == FocusDirection.Right) cancelFocusChange()
+                        }
+                    }
+                    .focusGroup(),
+            ) {
+                LazyRow(
+                    state = state,
+                    modifier = Modifier.focusRestorer().bleed(ScreenMargin),
+                    contentPadding = PaddingValues(horizontal = ScreenMargin, vertical = RowCardPadding),
+                    horizontalArrangement = Arrangement.spacedBy(spacing),
+                    content = content,
+                )
+            }
         }
     }
 }
