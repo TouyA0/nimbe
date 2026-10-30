@@ -44,6 +44,8 @@ data class StreamingTitle(
     val offers: List<StreamingOffer> = emptyList(),
     val cast: List<CastMember> = emptyList(),
     val directors: List<String> = emptyList(),
+    /** Note du public (TMDB), sur 10. */
+    val score: Float? = null,
 ) {
     /** Plateformes qui le proposent, sans doublon, dans l'ordre de JustWatch. */
     val services: List<StreamingService> get() = offers.map { it.service }.distinct()
@@ -62,8 +64,8 @@ data class StreamingPage(val items: List<StreamingTitle>, val total: Int, val ne
 object JustWatchImages {
     private const val HOST = "https://images.justwatch.com"
 
-    /** Affiche : s166 pour une grille, s332 pour une fiche. */
-    fun poster(template: String?, large: Boolean = false): String? = template?.let { url(it, if (large) "s332" else "s166") }
+    /** Affiche : s276 pour une carte (230 pixels de large en 1080p), s332 pour une fiche. */
+    fun poster(template: String?, large: Boolean = false): String? = template?.let { url(it, if (large) "s332" else "s276") }
 
     /** Fond : s1440 pour l'écran entier, s640 pour une vignette. */
     fun backdrop(template: String?, large: Boolean = true): String? = template?.let { url(it, if (large) "s1440" else "s640") }
@@ -82,7 +84,7 @@ object JustWatchJson {
 
     private val CONTENT = """
         title originalReleaseYear shortDescription runtime ageCertification posterUrl
-        backdrops { backdropUrl } genres { shortName } externalIds { tmdbId }
+        backdrops { backdropUrl } genres { shortName } externalIds { tmdbId } scoring { tmdbScore }
     """.trimIndent()
 
     private val OFFERS = """
@@ -190,6 +192,7 @@ object JustWatchJson {
                 person.text("name")?.let { CastMember(it, person.text("characterName")) }
             },
             directors = credits.filter { it.text("role") == "DIRECTOR" }.mapNotNull { it.text("name") },
+            score = content.optJSONObject("scoring")?.takeUnless { it.isNull("tmdbScore") }?.optDouble("tmdbScore")?.takeIf { it > 0 }?.toFloat(),
         )
     }
 

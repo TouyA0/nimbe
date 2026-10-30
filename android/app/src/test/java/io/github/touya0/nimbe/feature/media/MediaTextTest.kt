@@ -31,6 +31,8 @@ class MediaTextTest {
     fun classifications() {
         assertEquals("12+", MediaText.rating("FR-12"))
         assertEquals("PG-13", MediaText.rating("PG-13"))
+        assertEquals("Tous publics", MediaText.rating("TP"))
+        assertEquals("Tous publics", MediaText.rating("FR-TP"))
         assertNull(MediaText.rating(null))
     }
 
@@ -55,5 +57,25 @@ class MediaTextTest {
         assertEquals("Saison 2 · Épisode 4 · Ce que cache la forêt", MediaText.episodeLine(episode))
         assertEquals("Arrêté à 34 min", MediaText.stoppedAt(episode))
         assertEquals("52 min · vu", MediaText.progressLine(episode.copy(played = true, positionTicks = 0)))
+    }
+
+    @Test
+    fun `la note est a la francaise et absente sans valeur`() {
+        assertEquals("7,8", MediaText.score(7.84f))
+        assertNull(MediaText.score(null))
+        assertNull(MediaText.score(0f))
+    }
+
+    @Test
+    fun `l heure de fin compte ce qui reste a voir`() {
+        val film = MediaItem(
+            id = "1",
+            kind = ItemKind.Movie,
+            name = "Film",
+            runTimeTicks = 120 * MediaItem.TICKS_PER_MINUTE,
+            positionTicks = 30 * MediaItem.TICKS_PER_MINUTE,
+        )
+        assertEquals("Fin à 01:10", MediaText.endsAt(film, java.time.LocalTime.of(23, 40)))
+        assertNull(MediaText.endsAt(film.copy(runTimeTicks = null)))
     }
 }

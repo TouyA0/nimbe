@@ -7,7 +7,7 @@ import java.time.format.DateTimeParseException
 
 enum class ItemKind { Movie, Series, Season, Episode, Other }
 
-enum class ImageType(val path: String) { Primary("Primary"), Backdrop("Backdrop/0"), Thumb("Thumb") }
+enum class ImageType(val path: String) { Primary("Primary"), Backdrop("Backdrop/0"), Thumb("Thumb"), Logo("Logo") }
 
 /**
  * Une image d'un élément Jellyfin : l'élément qui la porte (parfois le parent), son type
@@ -57,6 +57,12 @@ data class MediaItem(
     val seriesPrimary: ImageRef? = null,
     /** Identifiant TMDB (film ou série), pour retrouver le même titre sur les plateformes de streaming. */
     val tmdbId: String? = null,
+    /** Note du public, sur 10. */
+    val score: Float? = null,
+    /** Phrase d'accroche du film (« Le passé n'attend pas »). */
+    val tagline: String? = null,
+    /** Titre dessiné du film, sur fond transparent. */
+    val logo: ImageRef? = null,
 ) {
     /** Part déjà vue, entre 0 et 1 ; 0 si rien n'a été commencé. */
     val progress: Float
@@ -100,6 +106,11 @@ data class ItemDetail(
     val subtitleLanguages: List<String>,
     val video: String?,
     val sizeBytes: Long?,
+    /** « 4K », « Full HD », « HD » ou « SD », lisible de loin. */
+    val quality: String? = null,
+    val hdr: Boolean = false,
+    /** « 5.1 » ou « 7.1 » ; rien pour la stéréo. */
+    val surround: String? = null,
 )
 
 /** Lecture des réponses JSON de Jellyfin. Tout champ absent reste null : le serveur omet ce qui est vide. */
@@ -144,6 +155,10 @@ object JellyfinJson {
                 ?: ref(json.text("ParentThumbItemId"), json.text("ParentThumbImageTag"), ImageType.Thumb),
             seriesPrimary = ref(json.text("SeriesId"), json.text("SeriesPrimaryImageTag")),
             tmdbId = json.optJSONObject("ProviderIds")?.let { ids -> ids.text("Tmdb") ?: ids.text("tmdb") },
+            score = json.takeUnless { it.isNull("CommunityRating") }?.optDouble("CommunityRating")?.takeIf { it > 0 }?.toFloat(),
+            tagline = json.optJSONArray("Taglines").strings().firstOrNull(),
+            logo = imageTags?.text("Logo")?.let { ImageRef(id, it, ImageType.Logo) }
+                ?: ref(json.text("ParentLogoItemId"), json.text("ParentLogoImageTag"), ImageType.Logo),
         )
     }
 
@@ -163,7 +178,8 @@ object JellyfinJson {
         fun languages(type: String) = streams.filter { it.optString("Type") == type }
             .map { it.text("DisplayLanguage") ?: languageName(it.text("Language")) ?: it.text("DisplayTitle") ?: "Inconnue" }
             .distinct()
-        val video = streams.firstOrNull { it.optString("Type") == "Video" }?.let { stream ->
+        val videoStream = streams.firstOrNull { it.optString("Type") == "Video" }
+        val video = videoStream?.let { stream ->
             listOfNotNull(stream.text("Codec")?.uppercase(), stream.int("Height")?.let { "${it}p" }).joinToString(" · ").ifEmpty { null }
         }
         return ItemDetail(
@@ -182,7 +198,23 @@ object JellyfinJson {
             subtitleLanguages = languages("Subtitle"),
             video = video,
             sizeBytes = source?.long("Size"),
+            quality = videoStream?.let { quality(it.int("Width"), it.int("Height")) },
+            hdr = videoStream?.text("VideoRange")?.let { !it.equals("SDR", ignoreCase = true) } ?: false,
+            surround = when (streams.filter { it.optString("Type") == "Audio" }.mapNotNull { it.int("Channels") }.maxOrNull()) {
+                6 -> "5.1"
+                8 -> "7.1"
+                else -> null
+            },
         )
+    }
+
+    /** Par la largeur d'abord : un film au format large fait 1920 × 800 et reste du Full HD. */
+    private fun quality(width: Int?, height: Int?): String? = when {
+        width == null && height == null -> null
+        (width ?: 0) >= 3000 || (height ?: 0) >= 1600 -> "4K"
+        (width ?: 0) >= 1800 || (height ?: 0) >= 1000 -> "Full HD"
+        (width ?: 0) >= 1200 || (height ?: 0) >= 700 -> "HD"
+        else -> "SD"
     }
 
     /** Codes ISO 639-2 courants ; les autres restent en code. */

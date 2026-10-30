@@ -100,7 +100,7 @@ fun JellyfinGrid(
     ScrollToRestore(gridState, items, restoreFocusId)
 
     Box(modifier.fillMaxSize()) {
-        LoadStates(first, what, takeFocus = false) {
+        LoadStates(first, what, takeFocus = false, loading = { PosterGridSkeleton() }) {
             if (items.isEmpty()) {
                 StateMessage(emptyTitle, emptyDetail)
             } else {

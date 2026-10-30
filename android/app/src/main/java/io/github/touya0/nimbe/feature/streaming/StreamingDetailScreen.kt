@@ -59,8 +59,10 @@ import io.github.touya0.nimbe.data.streaming.StreamingService
 import io.github.touya0.nimbe.data.streaming.StreamingTitle
 import io.github.touya0.nimbe.data.streaming.TitleKind
 import io.github.touya0.nimbe.feature.apps.tileColor
+import io.github.touya0.nimbe.feature.media.BackdropDimmer
 import io.github.touya0.nimbe.feature.media.Chip
 import io.github.touya0.nimbe.feature.media.Load
+import io.github.touya0.nimbe.feature.media.ScoreLabel
 import io.github.touya0.nimbe.feature.media.SourceBadge
 import io.github.touya0.nimbe.feature.media.titleStyle
 import io.github.touya0.nimbe.ui.components.PillButton
@@ -96,10 +98,13 @@ fun StreamingDetailScreen(initial: StreamingTitle, onOpenJellyfin: (MediaItem) -
     }
 
     Box(Modifier.fillMaxSize().background(Nuit)) {
+        val scroll = rememberScrollState()
         StreamingBackdrop(title.backdrop)
-        PivotScroll(rowCardTop()) {
-            Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = ScreenMargin)) {
-                Column(Modifier.padding(top = 64.dp).width(HeroWidth), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        BackdropDimmer(scroll)
+        var topFocused by remember { mutableStateOf(false) }
+        PivotScroll(rowCardTop(), scrollToStart = { if (topFocused) scroll.value.toFloat() else null }) {
+            Column(Modifier.fillMaxSize().verticalScroll(scroll).padding(horizontal = ScreenMargin)) {
+                Column(Modifier.padding(top = 64.dp).width(HeroWidth).onFocusChanged { topFocused = it.hasFocus }, verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
                         offers.map { it.service }.distinct().forEach { ServiceBadge(it) }
                         if (jellyfin != null) SourceBadge("JELLYFIN")
@@ -107,6 +112,7 @@ fun StreamingDetailScreen(initial: StreamingTitle, onOpenJellyfin: (MediaItem) -
                     }
                     Text(title.title.uppercase(), style = titleStyle(title.title), maxLines = 2, overflow = TextOverflow.Ellipsis)
                     Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
+                        ScoreLabel(title.score)
                         Text(StreamingText.meta(title), style = MaterialTheme.typography.bodyMedium)
                         StreamingText.rating(title.certification)?.let { Chip(it) }
                     }

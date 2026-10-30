@@ -917,7 +917,17 @@ private fun NimbeShell(
     when (val target = destination) {
         is MediaDestination.Movie -> {
             CompositionLocalProvider(LocalStreaming provides streamingUi) {
-                FilmDetailScreen(target.item, onPlay = onPlay, onClose = { destination = null })
+                // Un autre film repart du haut de sa fiche.
+                key(target.item.id) {
+                    FilmDetailScreen(
+                        target.item,
+                        onPlay = onPlay,
+                        onOpenSimilar = { destination = MediaDestination.Movie(it, parent = target) },
+                        // L'invité et l'enfant ne changent rien à ce qui est enregistré sur le serveur.
+                        onSetPlayed = if (restricted) null else ::setPlayed,
+                        onClose = { destination = target.parent },
+                    )
+                }
             }
             return
         }

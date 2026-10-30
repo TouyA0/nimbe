@@ -51,6 +51,19 @@ class JellyfinJsonTest {
     }
 
     @Test
+    fun `note, accroche et titre dessiné, y compris hérités du parent`() {
+        val film = JellyfinJson.item(
+            JSONObject("""{"Id":"m","Type":"Movie","Name":"Nord","CommunityRating":7.8,"Taglines":["Plein nord"],"ImageTags":{"Logo":"l1"}}"""),
+        )
+        assertEquals(7.8f, film.score)
+        assertEquals("Plein nord", film.tagline)
+        assertEquals(ImageRef("m", "l1", ImageType.Logo), film.logo)
+        val episode = JellyfinJson.item(JSONObject("""{"Id":"e","Type":"Episode","ParentLogoItemId":"s","ParentLogoImageTag":"l2"}"""))
+        assertEquals(ImageRef("s", "l2", ImageType.Logo), episode.logo)
+        assertEquals(null, episode.score)
+    }
+
+    @Test
     fun `fiche avec langues, fichier et équipe`() {
         val detail = JellyfinJson.detail(
             JSONObject(
@@ -58,13 +71,16 @@ class JellyfinJsonTest {
                 {"Id":"m","Type":"Movie","Name":"Sable rouge",
                  "People":[{"Id":"p1","Name":"Inès Varenne","Type":"Director"},{"Id":"p2","Name":"Léa Moreau","Role":"Nora","Type":"Actor","PrimaryImageTag":"t"}],
                  "MediaSources":[{"Size":14000000000,"MediaStreams":[
-                   {"Type":"Video","Codec":"hevc","Height":2160},
-                   {"Type":"Audio","Language":"fre"},{"Type":"Audio","Language":"eng"},
+                   {"Type":"Video","Codec":"hevc","Height":2160,"VideoRange":"HDR"},
+                   {"Type":"Audio","Language":"fre","Channels":6},{"Type":"Audio","Language":"eng"},
                    {"Type":"Subtitle","Language":"fre"},{"Type":"Subtitle","DisplayLanguage":"English"}]}]}
                 """,
             ),
         )
         assertEquals("HEVC · 2160p", detail.video)
+        assertEquals("4K", detail.quality)
+        assertEquals(true, detail.hdr)
+        assertEquals("5.1", detail.surround)
         assertEquals(listOf("Français", "Anglais"), detail.audioLanguages)
         assertEquals(listOf("Français", "English"), detail.subtitleLanguages)
         assertEquals(14_000_000_000, detail.sizeBytes)

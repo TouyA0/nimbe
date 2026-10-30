@@ -4,6 +4,7 @@ import io.github.touya0.nimbe.data.jellyfin.ItemKind
 import io.github.touya0.nimbe.data.jellyfin.MediaItem
 import java.time.Instant
 import java.time.LocalDate
+import java.time.LocalTime
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.time.temporal.ChronoUnit
@@ -32,10 +33,23 @@ object MediaText {
         return if (item.kind == ItemKind.Series && end != null && end != start) "$start – $end" else "$start"
     }
 
-    /** « FR-12 » devient « 12+ », « PG-13 » reste tel quel. */
+    /** « FR-12 » devient « 12+ », « TP » devient « Tous publics », « PG-13 » reste tel quel. */
     fun rating(raw: String?): String? {
         val value = raw?.substringAfter("FR-")?.trim()?.ifEmpty { null } ?: return null
-        return if (value.all(Char::isDigit)) "$value+" else value
+        return when {
+            value == "TP" || value == "U" -> "Tous publics"
+            value.all(Char::isDigit) -> "$value+"
+            else -> value
+        }
+    }
+
+    /** « 7,8 », à la française ; rien sans note. */
+    fun score(value: Float?): String? = value?.takeIf { it > 0f }?.let { String.format(Locale.FRENCH, "%.1f", it) }
+
+    /** « Fin à 22:14 » si on lance (ou reprend) le film maintenant. */
+    fun endsAt(item: MediaItem, now: LocalTime = LocalTime.now()): String? {
+        val minutes = item.remainingMinutes?.takeIf { it > 0 } ?: return null
+        return "Fin à " + now.plusMinutes(minutes.toLong()).format(DateTimeFormatter.ofPattern("HH:mm"))
     }
 
     /** « AJOUTÉ HIER », « AJOUTÉ IL Y A 3 JOURS », « AJOUTÉ LE 2 OCTOBRE ». */

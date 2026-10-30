@@ -118,6 +118,9 @@ class CatalogState {
     var category by mutableStateOf<Category?>(null)
     var streamingSort by mutableStateOf(StreamingSort.Popular)
     val pages = mutableStateMapOf<String, StreamingGridPages>()
+
+    /** La rangée de la carte focalisée : un film peut être dans plusieurs, le retour d'une fiche retrouve la bonne. */
+    var focusedRow by mutableStateOf<String?>(null)
 }
 
 /** Ce qui est en haut de l'écran : un contenu Jellyfin ou un titre des plateformes, et son accroche. */
@@ -150,7 +153,12 @@ class JellyfinSection(
     val loadPage: suspend JellyfinLibrary.(JellyfinAuth, Int, Int) -> ItemPage,
     val kicker: (MediaItem) -> String?,
     val sort: SortChoice? = null,
+    /** Rangées de la page d'ouverture ; sans elles, une seule rangée [rowTitle]. */
+    val shelves: List<JellyfinShelf> = emptyList(),
 )
+
+/** Une rangée Jellyfin de la page d'ouverture, avec sa clé de mémoire et sa liste. */
+class JellyfinShelf(val title: String, val key: String, val loadPage: suspend JellyfinLibrary.(JellyfinAuth, Int, Int) -> ItemPage)
 
 /** Un tri proposé dans la barre de filtres : ses libellés, celui choisi, et quoi faire d'un nouveau choix. */
 class SortChoice(val labels: List<String>, val selected: Int, val onSelect: (Int) -> Unit)
@@ -175,9 +183,11 @@ fun CatalogScreen(
     val streaming = LocalStreaming.current
     val jellyfinUi = LocalJellyfin.current
     val services = streaming?.services.orEmpty()
+    // Sans plateforme, la page d'ouverture existe quand même si Jellyfin a de quoi remplir ses rangées.
+    val hasOverview = streaming != null && (services.isNotEmpty() || (jellyfin.shelves.isNotEmpty() && jellyfinUi?.link != null))
     val source = state.source?.takeIf { key ->
-        key == CatalogSources.JELLYFIN || (key == CatalogSources.ALL && services.isNotEmpty()) || services.any { it.code == key }
-    } ?: if (services.isEmpty()) CatalogSources.JELLYFIN else CatalogSources.ALL
+        key == CatalogSources.JELLYFIN || (key == CatalogSources.ALL && hasOverview) || services.any { it.code == key }
+    } ?: if (hasOverview) CatalogSources.ALL else CatalogSources.JELLYFIN
     val service = services.firstOrNull { it.code == source }
 
     var focused by remember(source, state.category) { mutableStateOf<CatalogFocus?>(null) }
@@ -198,9 +208,10 @@ fun CatalogScreen(
     }
     Box(modifier.fillMaxSize()) {
         when (hero) {
-            is CatalogFocus.Jellyfin -> Backdrop(hero.item.backdrop)
-            is CatalogFocus.Streaming -> StreamingBackdrop(hero.title.backdrop)
-            is CatalogFocus.WatchNext -> FadingBackdrop(hero.program.image)
+            // L'image s'efface avant les affiches : elles ne se détachent bien que sur le fond uni.
+            is CatalogFocus.Jellyfin -> Backdrop(hero.item.backdrop, compact = true)
+            is CatalogFocus.Streaming -> StreamingBackdrop(hero.title.backdrop, compact = true)
+            is CatalogFocus.WatchNext -> FadingBackdrop(hero.program.image, compact = true)
             null -> Unit
         }
         // La zone de focus commence sous l'en-tête : Bas, depuis un onglet, la trouve en dessous de lui.
@@ -220,7 +231,7 @@ fun CatalogScreen(
         ) {
             // Résumé sur deux lignes : la place va aux affiches, la fiche donne le reste.
             Box(Modifier.padding(horizontal = ScreenMargin).padding(top = 10.dp).height(CATALOG_HERO_HEIGHT)) {
-                FocusHero(hero, overviewLines = 2) {
+                FocusHero(hero, overviewLines = 2, compact = true) {
                     HeroPlaceholder(kind, hasServices = services.isNotEmpty(), canChoose = streaming?.onOpenSettings != null)
                 }
             }
@@ -230,7 +241,7 @@ fun CatalogScreen(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(10.dp),
             ) {
-                SourcePills(source, services, streaming, sourceRequester, onSelect = { state.source = it })
+                SourcePills(source, services, streaming, hasOverview, if (jellyfin.shelves.isEmpty()) "Tout" else "À la une", sourceRequester, onSelect = { state.source = it })
                 Spacer(Modifier.weight(1f))
                 // Pendant une coupure, l'en-tête et les cartes grisées le disent déjà : pas de troisième rappel ici.
                 total?.takeIf { it > 0 }?.let {
@@ -320,13 +331,15 @@ private fun SourcePills(
     source: String,
     services: List<StreamingService>,
     streaming: StreamingUi?,
+    hasOverview: Boolean,
+    overviewLabel: String,
     selectedRequester: FocusRequester,
     onSelect: (String) -> Unit,
 ) {
     fun Modifier.selected(key: String) = if (key == source) focusRequester(selectedRequester) else this
     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        if (services.isNotEmpty()) {
-            FilterPill("Tout", selected = source == CatalogSources.ALL, onClick = { onSelect(CatalogSources.ALL) }, modifier = Modifier.selected(CatalogSources.ALL))
+        if (hasOverview) {
+            FilterPill(overviewLabel, selected = source == CatalogSources.ALL, onClick = { onSelect(CatalogSources.ALL) }, modifier = Modifier.selected(CatalogSources.ALL))
         }
         // Jellyfin seul, sans plateforme à ajouter : rien à choisir, pas de pilule.
         if (services.isNotEmpty() || streaming?.onOpenSettings != null) FilterPill(
@@ -415,7 +428,7 @@ private fun StreamingGrid(
     }
 
     when (first.state) {
-        Load.Loading -> StateMessage("Chargement…", null)
+        Load.Loading -> PosterGridSkeleton()
         is Load.Failed -> StateMessage(
             "Catalogue ${service.label} indisponible",
             "Le stick n'arrive pas à joindre JustWatch, qui donne le catalogue des plateformes. Vérifie la connexion internet : " +
@@ -472,40 +485,48 @@ private fun AllRows(
         Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = ScreenMargin).padding(top = 8.dp),
         verticalArrangement = Arrangement.spacedBy(6.dp),
     ) {
-        if (category == null) ContinueRow(kind, onPlayItem, onFocus, onFallback, restoreFocusId, onRestored)
+        if (category == null) ContinueRow(kind, onPlayItem, onFocus, onFallback, state, restoreFocusId, onRestored)
 
         if (jellyfinUi?.link != null) {
-            val rowKey = "${jellyfin.pageKey}:0:$ROW_SIZE"
-            val loader = rememberJellyfin(rowKey, rowKey) { jellyfin.loadPage(this, it, 0, ROW_SIZE) }
-            val items = loader.value?.items.orEmpty()
-            LaunchedEffect(items.firstOrNull()?.id) { items.firstOrNull()?.let { onFallback(CatalogFocus.Jellyfin(it, jellyfin.kicker(it))) } }
-            CatalogRow(
-                title = jellyfin.rowTitle,
-                message = when {
-                    loader.state is Load.Loading -> "Chargement…"
-                    loader.state is Load.Failed -> "Jellyfin ne répond pas : ta bibliothèque reviendra avec le serveur."
-                    items.isEmpty() -> if (category != null) "Rien en « ${category.label} » sur Jellyfin." else jellyfin.emptyDetail
-                    else -> null
-                },
-                keys = items.map { it.id },
-                restoreFocusId = restoreFocusId,
-            ) {
-                items(items, key = { "jellyfin:${it.id}" }) { item ->
-                    PosterCard(
-                        item = item,
-                        onClick = { onOpenItem(item) },
-                        width = POSTER_WIDTH,
-                        onFocus = { onFocus(CatalogFocus.Jellyfin(item, jellyfin.kicker(item))) },
-                        restoreFocus = item.id == restoreFocusId,
+            if (category == null && jellyfin.shelves.isNotEmpty()) {
+                jellyfin.shelves.forEachIndexed { index, shelf ->
+                    JellyfinRow(
+                        title = shelf.title,
+                        rowKey = shelf.key,
+                        load = shelf.loadPage,
+                        // Seule la première parle du serveur et a une carte « Tout voir » : le reste s'efface s'il n'a rien à montrer.
+                        primary = index == 0,
+                        jellyfin = jellyfin,
+                        state = state,
+                        category = category,
+                        onOpenItem = onOpenItem,
+                        onFocus = onFocus,
+                        onFallback = onFallback,
+                        restoreFocusId = restoreFocusId,
                         onRestored = onRestored,
                     )
                 }
-                item(key = "jellyfin:all") { SeeAllCard("Tout Jellyfin", onClick = { state.source = CatalogSources.JELLYFIN }) }
+            } else {
+                JellyfinRow(
+                    title = jellyfin.rowTitle,
+                    rowKey = jellyfin.pageKey,
+                    load = jellyfin.loadPage,
+                    primary = true,
+                    jellyfin = jellyfin,
+                    state = state,
+                    category = category,
+                    onOpenItem = onOpenItem,
+                    onFocus = onFocus,
+                    onFallback = onFallback,
+                    restoreFocusId = restoreFocusId,
+                    onRestored = onRestored,
+                )
             }
         }
 
         services.forEach { service ->
             StreamingRow(
+                state = state,
                 title = "Populaires sur ${service.label}",
                 load = { catalog(kind, listOf(service), category, StreamingSort.Popular, ui.kids, first = ROW_SIZE) },
                 key = StreamingCatalog.pageKey(kind, listOf(service), category, StreamingSort.Popular, ui.kids, null, ROW_SIZE),
@@ -520,6 +541,7 @@ private fun AllRows(
         }
         if (services.size > 1) {
             StreamingRow(
+                state = state,
                 title = "Tendances sur tes plateformes",
                 load = { catalog(kind, services, category, StreamingSort.Trending, ui.kids, first = ROW_SIZE) },
                 key = StreamingCatalog.pageKey(kind, services, category, StreamingSort.Trending, ui.kids, null, ROW_SIZE),
@@ -537,6 +559,59 @@ private fun AllRows(
     } }
 }
 
+/**
+ * Rangée Jellyfin de « Tout » ou « À la une ». [primary] : elle dit ce qui manque et finit par « Tout Jellyfin ».
+ * Les autres n'apparaissent que si elles ont assez de titres pour valoir une rangée.
+ */
+@Composable
+private fun JellyfinRow(
+    title: String,
+    rowKey: String,
+    load: suspend JellyfinLibrary.(JellyfinAuth, Int, Int) -> ItemPage,
+    primary: Boolean,
+    jellyfin: JellyfinSection,
+    state: CatalogState,
+    category: Category?,
+    onOpenItem: (MediaItem) -> Unit,
+    onFocus: (CatalogFocus) -> Unit,
+    onFallback: (CatalogFocus) -> Unit,
+    restoreFocusId: String?,
+    onRestored: () -> Unit,
+) {
+    val cacheKey = "$rowKey:0:$ROW_SIZE"
+    val loader = rememberJellyfin(cacheKey, cacheKey) { load(this, it, 0, ROW_SIZE) }
+    val items = loader.value?.items.orEmpty()
+    if (!primary && loader.state !is Load.Loading && items.size < SHELF_MIN_ITEMS) return
+    if (primary) LaunchedEffect(items.firstOrNull()?.id) { items.firstOrNull()?.let { onFallback(CatalogFocus.Jellyfin(it, jellyfin.kicker(it))) } }
+    val restore = restoreFocusId?.takeIf { state.focusedRow == rowKey }
+    CatalogRow(
+        title = title,
+        loading = loader.state is Load.Loading,
+        message = when {
+            loader.state is Load.Failed -> "Jellyfin ne répond pas : ta bibliothèque reviendra avec le serveur."
+            items.isEmpty() -> if (category != null) "Rien en « ${category.label} » sur Jellyfin." else jellyfin.emptyDetail
+            else -> null
+        },
+        keys = items.map { it.id },
+        restoreFocusId = restore,
+    ) {
+        items(items, key = { "$rowKey:${it.id}" }) { item ->
+            PosterCard(
+                item = item,
+                onClick = { onOpenItem(item) },
+                width = POSTER_WIDTH,
+                onFocus = {
+                    state.focusedRow = rowKey
+                    onFocus(CatalogFocus.Jellyfin(item, jellyfin.kicker(item)))
+                },
+                restoreFocus = item.id == restore,
+                onRestored = onRestored,
+            )
+        }
+        if (primary) item(key = "$rowKey:all") { SeeAllCard("Tout Jellyfin", onClick = { state.source = CatalogSources.JELLYFIN }) }
+    }
+}
+
 /** « Continuer à regarder » de l'onglet : reprises Jellyfin et titres ouverts sur les plateformes, de ce type seulement. */
 @Composable
 private fun ContinueRow(
@@ -544,6 +619,7 @@ private fun ContinueRow(
     onPlayItem: (MediaItem) -> Unit,
     onFocus: (CatalogFocus) -> Unit,
     onFallback: (CatalogFocus) -> Unit,
+    state: CatalogState,
     restoreFocusId: String?,
     onRestored: () -> Unit,
 ) {
@@ -552,8 +628,13 @@ private fun ContinueRow(
     val entries = ContinueEntry.merge(jellyfin.value.orEmpty(), ui.history, kind, sameAs = { ui.inJellyfin(it.toTitle()) })
     if (entries.isEmpty()) return
     LaunchedEffect(entries.first().key) { onFallback(entries.first().focus(ui)) }
-    CatalogRow(title = "Continuer à regarder", message = null, keys = entries.map { it.id }, restoreFocusId = restoreFocusId) {
-        items(entries, key = { it.key }) { entry -> ContinueCard(entry, onPlayItem, onFocus, restoreFocusId, onRestored) }
+    val restore = restoreFocusId?.takeIf { state.focusedRow == CONTINUE_ROW }
+    val focusHere: (CatalogFocus) -> Unit = {
+        state.focusedRow = CONTINUE_ROW
+        onFocus(it)
+    }
+    CatalogRow(title = "Continuer à regarder", message = null, keys = entries.map { it.id }, restoreFocusId = restore) {
+        items(entries, key = { it.key }) { entry -> ContinueCard(entry, onPlayItem, focusHere, restore, onRestored, width = CONTINUE_WIDTH) }
     }
 }
 
@@ -631,6 +712,7 @@ val ContinueEntry.id: String
 /** Rangée d'une plateforme (ou de toutes) : titres populaires ou tendances. */
 @Composable
 private fun StreamingRow(
+    state: CatalogState,
     title: String,
     load: suspend StreamingCatalog.() -> StreamingPage,
     key: String,
@@ -646,16 +728,17 @@ private fun StreamingRow(
     val loader = rememberStreaming(key, key) { load() }
     val items = loader.value?.items.orEmpty()
     LaunchedEffect(items.firstOrNull()?.id) { items.firstOrNull()?.let { onFallback(CatalogFocus.Streaming(it, null)) } }
+    val restore = restoreFocusId?.takeIf { state.focusedRow == key }
     CatalogRow(
         title = title,
+        loading = loader.state is Load.Loading,
         message = when {
-            loader.state is Load.Loading -> "Chargement…"
             loader.state is Load.Failed -> "Catalogue indisponible : le stick n'arrive pas à joindre JustWatch."
             items.isEmpty() -> emptyText
             else -> null
         },
         keys = items.map { it.id },
-        restoreFocusId = restoreFocusId,
+        restoreFocusId = restore,
     ) {
         items(items, key = { "${service?.code}:${it.id}" }) { item ->
             StreamingPosterCard(
@@ -665,8 +748,11 @@ private fun StreamingRow(
                 // Le badge ne sert que dans la rangée qui mêle les plateformes.
                 service = if (service == null) item.services.firstOrNull { it in ui.services } else null,
                 inJellyfin = ui.inJellyfin(item) != null,
-                onFocus = { onFocus(CatalogFocus.Streaming(item, null)) },
-                restoreFocus = item.id == restoreFocusId,
+                onFocus = {
+                    state.focusedRow = key
+                    onFocus(CatalogFocus.Streaming(item, null))
+                },
+                restoreFocus = item.id == restore,
                 onRestored = onRestored,
             )
         }
@@ -675,8 +761,8 @@ private fun StreamingRow(
 }
 
 /**
- * Une rangée titrée : soit ses cartes, soit une phrase (chargement, vide, erreur) à la même place,
- * pour que l'écran ne saute pas. Au retour d'une fiche, la rangée défile jusqu'à la carte d'origine.
+ * Une rangée titrée : soit ses cartes, soit leur forme grise pendant le chargement, soit une phrase (vide, erreur)
+ * à la même place, pour que l'écran ne saute pas. Au retour d'une fiche, la rangée défile jusqu'à la carte d'origine.
  */
 @Composable
 private fun CatalogRow(
@@ -684,8 +770,18 @@ private fun CatalogRow(
     message: String?,
     keys: List<String>,
     restoreFocusId: String?,
+    loading: Boolean = false,
     content: LazyListScope.() -> Unit,
 ) {
+    if (loading) {
+        Column {
+            RowTitle(title)
+            Row(Modifier.padding(vertical = RowCardPadding), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                repeat(SKELETON_POSTERS) { SkeletonBlock(Modifier.width(POSTER_WIDTH).aspectRatio(2f / 3f), radius = 10.dp) }
+            }
+        }
+        return
+    }
     if (message != null) {
         Column {
             RowTitle(title)
@@ -701,8 +797,19 @@ private fun CatalogRow(
     ContentRow(title, state = listState, content = content)
 }
 
+/** La forme de [PosterGrid] pendant son chargement. */
+@Composable
+fun PosterGridSkeleton() {
+    Row(
+        Modifier.fillMaxWidth().padding(horizontal = ScreenMargin).padding(top = RowCardPadding),
+        horizontalArrangement = Arrangement.spacedBy(16.dp),
+    ) {
+        repeat(GRID_COLUMNS) { SkeletonBlock(Modifier.weight(1f).aspectRatio(2f / 3f), radius = 10.dp) }
+    }
+}
+
 /**
- * Grille d'affiches des onglets Films et Séries : sept colonnes, assez grandes pour se lire de loin.
+ * Grille d'affiches des onglets Films et Séries : six colonnes, assez grandes pour se lire de loin.
  * La ligne focalisée se cale en haut de la grille et la suivante dépasse dessous, pour qu'on sache qu'il y a une suite.
  */
 @Composable
@@ -711,7 +818,6 @@ fun PosterGrid(state: LazyGridState, content: LazyGridScope.() -> Unit) {
         LazyVerticalGrid(
             columns = GridCells.Fixed(GRID_COLUMNS),
             state = state,
-            modifier = Modifier.bleed(ScreenMargin),
             contentPadding = PaddingValues(start = ScreenMargin, end = ScreenMargin, top = RowCardPadding, bottom = 96.dp),
             horizontalArrangement = Arrangement.spacedBy(16.dp),
             verticalArrangement = Arrangement.spacedBy(20.dp),
@@ -756,7 +862,11 @@ private fun SeeAllCard(label: String, onClick: () -> Unit) {
 private fun kindWord(kind: TitleKind) = if (kind == TitleKind.Movie) "films" else "séries"
 
 private val POSTER_WIDTH = 112.dp
-private const val GRID_COLUMNS = 7
-val GRID_POSTER_WIDTH = 108.dp
+private const val GRID_COLUMNS = 6
+val GRID_POSTER_WIDTH = 116.dp
 private val CATALOG_HERO_HEIGHT = 156.dp
 private const val ROW_SIZE = 20
+private const val SHELF_MIN_ITEMS = 4
+private val CONTINUE_WIDTH = 164.dp
+private const val SKELETON_POSTERS = 7
+private const val CONTINUE_ROW = "continue"

@@ -5,7 +5,9 @@ import androidx.compose.foundation.gestures.BringIntoViewSpec
 import androidx.compose.foundation.gestures.LocalBringIntoViewSpec
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.Dp
 
@@ -17,8 +19,13 @@ import androidx.compose.ui.unit.Dp
  * [fraction] décale le point de repère vers le milieu (grilles) : 0 le garde contre [leading].
  */
 @OptIn(ExperimentalFoundationApi::class)
-private class PivotSpec(private val leadingPx: Float, private val fraction: Float) : BringIntoViewSpec {
+private class PivotSpec(
+    private val leadingPx: Float,
+    private val fraction: Float,
+    private val toStart: () -> Float?,
+) : BringIntoViewSpec {
     override fun calculateScrollDistance(offset: Float, size: Float, containerSize: Float): Float {
+        toStart()?.let { return -it }
         val target = leadingPx + fraction * containerSize
         // Un élément qui ne tient pas sous le repère se cale sur la fin de la liste.
         val placed = if (target + size > containerSize) (containerSize - size).coerceAtLeast(0f) else target
@@ -26,11 +33,16 @@ private class PivotSpec(private val leadingPx: Float, private val fraction: Floa
     }
 }
 
-/** Les listes défilantes de [content] posent le focus à [leading] de leur début (voir [PivotSpec]). */
+/**
+ * Les listes défilantes de [content] posent le focus à [leading] de leur début (voir [PivotSpec]).
+ * [scrollToStart] : si elle donne une valeur (la position actuelle), la liste remonte tout en haut au lieu de suivre ce repère.
+ * Sert au haut d'une fiche : son titre et son résumé ne prennent jamais le focus, seuls ses boutons peuvent les ramener à l'écran.
+ */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-fun PivotScroll(leading: Dp, fraction: Float = 0f, content: @Composable () -> Unit) {
+fun PivotScroll(leading: Dp, fraction: Float = 0f, scrollToStart: () -> Float? = { null }, content: @Composable () -> Unit) {
     val density = LocalDensity.current
-    val spec = remember(leading, fraction, density) { PivotSpec(with(density) { leading.toPx() }, fraction) }
+    val toStart by rememberUpdatedState(scrollToStart)
+    val spec = remember(leading, fraction, density) { PivotSpec(with(density) { leading.toPx() }, fraction) { toStart() } }
     CompositionLocalProvider(LocalBringIntoViewSpec provides spec, content = content)
 }

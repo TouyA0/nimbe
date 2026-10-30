@@ -18,6 +18,8 @@ enum class MovieSort(val label: String) {
     Recent("Récents"),
     Unwatched("Non vus"),
     Alphabetical("A–Z"),
+    TopRated("Mieux notés"),
+    Newest("Année de sortie"),
 }
 
 /**
@@ -113,6 +115,8 @@ class JellyfinLibrary(private val account: JellyfinAccount, private val cache: C
             val order = when (sort) {
                 MovieSort.Recent, MovieSort.Unwatched -> mapOf("sortBy" to "DateCreated,SortName", "sortOrder" to "Descending")
                 MovieSort.Alphabetical -> mapOf("sortBy" to "SortName", "sortOrder" to "Ascending")
+                MovieSort.TopRated -> mapOf("sortBy" to "CommunityRating,SortName", "sortOrder" to "Descending")
+                MovieSort.Newest -> mapOf("sortBy" to "ProductionYear,SortName", "sortOrder" to "Descending")
             }
             page(
                 auth,
@@ -128,6 +132,11 @@ class JellyfinLibrary(private val account: JellyfinAccount, private val cache: C
                 ),
             )
         }
+
+    /** Films proches de celui-ci, selon le serveur (genres, équipe, étiquettes). */
+    suspend fun similar(auth: JellyfinAuth, id: String): List<MediaItem> = remember(auth, "similar:$id") {
+        page(auth, "/Items/$id/Similar", mapOf("limit" to 14)).items.filter { it.kind == ItemKind.Movie }
+    }
 
     suspend fun series(auth: JellyfinAuth, startIndex: Int, limit: Int, genres: List<String>? = null): ItemPage =
         remember(auth, "series:${genres?.joinToString("|")}:$startIndex:$limit") {
@@ -212,7 +221,7 @@ class JellyfinLibrary(private val account: JellyfinAccount, private val cache: C
         val common = mapOf(
             "userId" to auth.userId,
             "fields" to FIELDS,
-            "enableImageTypes" to "Primary,Backdrop,Thumb",
+            "enableImageTypes" to "Primary,Backdrop,Thumb,Logo",
             "imageTypeLimit" to 1,
             "enableUserData" to true,
         )
@@ -265,7 +274,7 @@ class JellyfinLibrary(private val account: JellyfinAccount, private val cache: C
     companion object {
         private const val SEARCH_LIMIT = 20
 
-        private const val FIELDS = "Overview,Genres,DateCreated,ChildCount,PrimaryImageAspectRatio,ProviderIds"
+        private const val FIELDS = "Overview,Genres,DateCreated,ChildCount,PrimaryImageAspectRatio,ProviderIds,Taglines"
 
         /** Clé d'enregistrement : serveur, utilisateur, route et paramètres triés (l'ordre ne compte pas). */
         fun cacheKey(auth: JellyfinAuth, path: String, params: Map<String, Any?>): String {

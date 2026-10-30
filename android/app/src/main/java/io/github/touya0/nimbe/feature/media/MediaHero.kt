@@ -6,6 +6,7 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.togetherWith
+import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
@@ -30,6 +31,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
@@ -48,6 +50,8 @@ import io.github.touya0.nimbe.data.jellyfin.ImageRef
 import io.github.touya0.nimbe.data.jellyfin.ItemKind
 import io.github.touya0.nimbe.data.jellyfin.MediaItem
 import io.github.touya0.nimbe.feature.streaming.StreamingHero
+import io.github.touya0.nimbe.ui.components.NimbeIcon
+import io.github.touya0.nimbe.ui.components.NimbeIcons
 import io.github.touya0.nimbe.ui.theme.FilmTitleStyle
 import io.github.touya0.nimbe.ui.theme.Focus
 import io.github.touya0.nimbe.ui.theme.KickerStyle
@@ -71,8 +75,8 @@ fun rememberBackdropUrl(ref: ImageRef?): String? {
  * Elle ne change qu'après un court arrêt sur une carte : parcourir une rangée ne télécharge pas tous les fonds.
  */
 @Composable
-fun Backdrop(ref: ImageRef?, modifier: Modifier = Modifier) {
-    FadingBackdrop(rememberBackdropUrl(ref), modifier)
+fun Backdrop(ref: ImageRef?, modifier: Modifier = Modifier, compact: Boolean = false) {
+    FadingBackdrop(rememberBackdropUrl(ref), modifier, compact)
 }
 
 /**
@@ -81,7 +85,7 @@ fun Backdrop(ref: ImageRef?, modifier: Modifier = Modifier) {
  * [image] : une adresse, ou une [ImageRequest] quand le serveur demande un en-tête (Nextcloud).
  */
 @Composable
-fun FadingBackdrop(image: Any?, modifier: Modifier = Modifier) {
+fun FadingBackdrop(image: Any?, modifier: Modifier = Modifier, compact: Boolean = false) {
     val context = LocalContext.current
     val wanted by produceState(image, image) {
         delay(BACKDROP_DELAY_MS)
@@ -102,29 +106,44 @@ fun FadingBackdrop(image: Any?, modifier: Modifier = Modifier) {
         Crossfade(
             targetState = shown,
             animationSpec = nimbeTween(NimbeMotion.SLOW_MS),
-            modifier = Modifier.fillMaxHeight(0.86f).fillMaxWidth(0.74f).align(Alignment.TopEnd),
+            modifier = Modifier.fillMaxHeight(if (compact) 0.62f else 0.86f).fillMaxWidth(0.74f).align(Alignment.TopEnd),
             label = "fond",
         ) { current ->
             if (current != null) {
                 AsyncImage(model = current, contentDescription = null, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
             }
         }
-        BackdropScrim()
+        if (compact) BackdropScrim(fadeStart = 0.26f, fadeEnd = 0.6f) else BackdropScrim()
     }
 }
 
-/** Voiles du fond : le texte à gauche et les rangées du bas restent lisibles, l'en-tête aussi. */
+/**
+ * Voiles du fond : le texte à gauche et les rangées du bas restent lisibles, l'en-tête aussi.
+ * L'image s'efface de [fadeStart] à [fadeEnd] de la hauteur.
+ */
 @Composable
-fun BackdropScrim(modifier: Modifier = Modifier) {
+fun BackdropScrim(modifier: Modifier = Modifier, fadeStart: Float = 0.5f, fadeEnd: Float = 0.84f) {
     Box(
         modifier.fillMaxSize().background(
-            Brush.horizontalGradient(0f to Nuit, 0.3f to Nuit.copy(alpha = 0.92f), 0.6f to Nuit.copy(alpha = 0.35f), 1f to Color.Transparent),
+            Brush.horizontalGradient(0.26f to Nuit, 0.42f to Nuit.copy(alpha = 0.75f), 0.65f to Nuit.copy(alpha = 0.3f), 1f to Color.Transparent),
         ),
     )
     Box(
         modifier.fillMaxSize().background(
-            Brush.verticalGradient(0f to Nuit.copy(alpha = 0.7f), 0.16f to Color.Transparent, 0.5f to Color.Transparent, 0.84f to Nuit),
+            Brush.verticalGradient(0f to Nuit.copy(alpha = 0.7f), 0.16f to Color.Transparent, fadeStart to Color.Transparent, fadeStart + (fadeEnd - fadeStart) * 0.7f to Nuit.copy(alpha = 0.8f), fadeEnd to Nuit),
         ),
+    )
+}
+
+/** Assombrit le fond à mesure qu'une fiche défile : les rangées du bas se lisent alors sur un fond calme. */
+@Composable
+fun BackdropDimmer(scroll: ScrollState) {
+    val range = with(LocalDensity.current) { 220.dp.toPx() }
+    Box(
+        Modifier
+            .fillMaxSize()
+            .graphicsLayer { alpha = (scroll.value / range).coerceIn(0f, 1f) * 0.88f }
+            .background(Nuit),
     )
 }
 
@@ -151,11 +170,11 @@ fun <T> HeroSwitch(target: T, key: (T) -> Any?, modifier: Modifier = Modifier, c
  * d'une carte à l'autre. [placeholder] s'affiche avant le premier titre.
  */
 @Composable
-fun FocusHero(focus: CatalogFocus?, overviewLines: Int, modifier: Modifier = Modifier, placeholder: @Composable () -> Unit = {}) {
+fun FocusHero(focus: CatalogFocus?, overviewLines: Int, modifier: Modifier = Modifier, compact: Boolean = false, placeholder: @Composable () -> Unit = {}) {
     HeroSwitch(focus, key = { it?.id }, modifier = modifier) { shown ->
         when (shown) {
-            is CatalogFocus.Jellyfin -> Hero(shown.item, shown.kicker, overviewLines = overviewLines)
-            is CatalogFocus.Streaming -> StreamingHero(shown.title, shown.kicker, overviewLines = overviewLines)
+            is CatalogFocus.Jellyfin -> Hero(shown.item, shown.kicker, overviewLines = overviewLines, compact = compact)
+            is CatalogFocus.Streaming -> StreamingHero(shown.title, shown.kicker, overviewLines = overviewLines, compact = compact)
             is CatalogFocus.WatchNext -> WatchNextHero(shown.program)
             null -> placeholder()
         }
@@ -167,14 +186,14 @@ fun FocusHero(focus: CatalogFocus?, overviewLines: Int, modifier: Modifier = Mod
  * Les films et séries ont leur titre en Bebas Neue ; un épisode affiche sa série puis sa ligne d'épisode.
  */
 @Composable
-fun Hero(item: MediaItem, kicker: String?, modifier: Modifier = Modifier, overviewLines: Int = 3) {
-    Column(modifier.width(HeroWidth), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+fun Hero(item: MediaItem, kicker: String?, modifier: Modifier = Modifier, overviewLines: Int = 3, compact: Boolean = false) {
+    Column(modifier.width(HeroWidth), verticalArrangement = Arrangement.spacedBy(if (compact) 4.dp else 6.dp)) {
         kicker?.let { Kicker(it) }
         if (item.kind == ItemKind.Episode) {
-            Text(MediaText.title(item).uppercase(), style = titleStyle(MediaText.title(item)), maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(MediaText.title(item).uppercase(), style = titleStyle(MediaText.title(item), compact), maxLines = 1, overflow = TextOverflow.Ellipsis)
             Text(MediaText.episodeLine(item), style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
         } else {
-            Text(item.name.uppercase(), style = titleStyle(item.name), maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(item.name.uppercase(), style = titleStyle(item.name, compact), maxLines = 1, overflow = TextOverflow.Ellipsis)
             MetaLine(item)
         }
         if (item.resumable) {
@@ -207,17 +226,34 @@ fun Overview(text: String, lines: Int, modifier: Modifier = Modifier) {
     )
 }
 
-/** Grand titre en Bebas Neue, réduit pour les titres longs plutôt que coupé. */
-fun titleStyle(name: String): TextStyle = when {
+/**
+ * Grand titre en Bebas Neue, réduit pour les titres longs plutôt que coupé.
+ * [compact] : plus petit encore en haut d'un catalogue, où le résumé doit tenir aussi.
+ */
+fun titleStyle(name: String, compact: Boolean = false): TextStyle = when {
+    compact && name.length <= 26 -> FilmTitleStyle.copy(fontSize = 46.sp, lineHeight = 48.sp)
+    compact && name.length <= 38 -> FilmTitleStyle.copy(fontSize = 38.sp, lineHeight = 48.sp)
+    compact -> FilmTitleStyle.copy(fontSize = 28.sp, lineHeight = 48.sp, letterSpacing = 0.5.sp)
     name.length <= 22 -> FilmTitleStyle
     name.length <= 32 -> FilmTitleStyle.copy(fontSize = 44.sp, lineHeight = 48.sp)
     else -> FilmTitleStyle.copy(fontSize = 34.sp, lineHeight = 38.sp)
 }
 
-/** « 2026 · 2 h 08 · Aventure, Drame » suivi de la classification encadrée. */
+/** « ★ 7,8 », l'étoile en ambre ; rien sans note. */
+@Composable
+fun ScoreLabel(score: Float?) {
+    val text = MediaText.score(score) ?: return
+    Row(horizontalArrangement = Arrangement.spacedBy(4.dp), verticalAlignment = Alignment.CenterVertically) {
+        NimbeIcon(NimbeIcons.Star, size = 16.dp, tint = Focus)
+        Text(text, style = MaterialTheme.typography.titleSmall, color = Lune)
+    }
+}
+
+/** « ★ 7,8  2026 · 2 h 08 · Aventure, Drame » suivi de la classification encadrée. */
 @Composable
 fun MetaLine(item: MediaItem) {
     Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
+        ScoreLabel(item.score)
         Text(MediaText.meta(item), style = MaterialTheme.typography.bodyMedium, color = Lune)
         MediaText.rating(item.officialRating)?.let { Chip(it) }
     }

@@ -71,14 +71,35 @@ private val CardShape = RoundedCornerShape(CardRadius)
  * ce qu'il montre. [width] et [height] sont en dp ; l'adresse est calculée en pixels.
  */
 @Composable
-fun JellyfinImage(ref: ImageRef?, width: Dp?, height: Dp?, modifier: Modifier = Modifier, contentScale: ContentScale = ContentScale.Crop) {
+fun JellyfinImage(
+    ref: ImageRef?,
+    width: Dp?,
+    height: Dp?,
+    modifier: Modifier = Modifier,
+    contentScale: ContentScale = ContentScale.Crop,
+    alignment: Alignment = Alignment.Center,
+    onError: () -> Unit = {},
+) {
     val server = LocalJellyfin.current?.link?.serverUrl
     if (ref == null || server == null) return
     val density = LocalDensity.current
     val url = remember(ref, server, width, height) {
         with(density) { ref.url(server, maxWidth = width?.roundToPx(), maxHeight = height?.roundToPx()) }
     }
-    AsyncImage(model = url, contentDescription = null, contentScale = contentScale, modifier = modifier)
+    AsyncImage(
+        model = url,
+        contentDescription = null,
+        contentScale = contentScale,
+        alignment = alignment,
+        onError = { onError() },
+        modifier = modifier,
+    )
+}
+
+/** Forme grise qui réserve la place d'un contenu en cours de chargement. */
+@Composable
+fun SkeletonBlock(modifier: Modifier, radius: Dp = 6.dp) {
+    Box(modifier.background(PanneauClair.copy(alpha = 0.55f), RoundedCornerShape(radius)))
 }
 
 /**

@@ -136,10 +136,16 @@ fun StateMessage(
 
 /** États communs d'un onglet Jellyfin ; [content] n'est appelé qu'avec des données. */
 @Composable
-fun <T> LoadStates(loader: Loader<T>, what: String, takeFocus: Boolean, content: @Composable (T) -> Unit) {
+fun <T> LoadStates(
+    loader: Loader<T>,
+    what: String,
+    takeFocus: Boolean,
+    loading: @Composable () -> Unit = { StateMessage("Chargement…", null) },
+    content: @Composable (T) -> Unit,
+) {
     val ui = LocalJellyfin.current
     when (val state = loader.state) {
-        Load.Loading -> StateMessage("Chargement…", null)
+        Load.Loading -> loading()
         Load.NotConnected -> StateMessage(
             title = "Jellyfin n'est pas connecté",
             detail = "Relie cette TV à ton serveur pour voir $what. Aucun mot de passe ne passe par la TV.",

@@ -39,6 +39,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -107,9 +108,11 @@ fun SeriesDetailScreen(
         Backdrop(seriesLoad.value?.backdrop)
         LoadStates(seriesLoad, "cette série", takeFocus = true) { series ->
             // Saisons et épisodes viennent se poser sous le haut de l'écran quand on y descend.
-            PivotScroll(rowCardTop()) {
-                Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = ScreenMargin)) {
-                    Column(Modifier.padding(top = 64.dp).width(HeroWidth), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            val scroll = rememberScrollState()
+            var topFocused by remember { mutableStateOf(false) }
+            PivotScroll(rowCardTop(), scrollToStart = { if (topFocused) scroll.value.toFloat() else null }) {
+                Column(Modifier.fillMaxSize().verticalScroll(scroll).padding(horizontal = ScreenMargin)) {
+                    Column(Modifier.padding(top = 64.dp).width(HeroWidth).onFocusChanged { topFocused = it.hasFocus }, verticalArrangement = Arrangement.spacedBy(10.dp)) {
                         val unplayed = series.unplayedCount ?: 0
                         Kicker(
                             when {

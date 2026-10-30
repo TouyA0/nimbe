@@ -37,6 +37,7 @@ import io.github.touya0.nimbe.data.streaming.TitleKind
 import io.github.touya0.nimbe.feature.media.Chip
 import io.github.touya0.nimbe.feature.media.MediaSurface
 import io.github.touya0.nimbe.feature.media.MediaText
+import io.github.touya0.nimbe.feature.media.ScoreLabel
 import io.github.touya0.nimbe.feature.media.SourceBadge
 import io.github.touya0.nimbe.feature.media.titleStyle
 import io.github.touya0.nimbe.feature.media.FadingBackdrop
@@ -187,7 +188,7 @@ fun StreamingWideCard(
  * grand titre en Bebas Neue, détails, résumé.
  */
 @Composable
-fun StreamingHero(title: StreamingTitle, kicker: String?, modifier: Modifier = Modifier, overviewLines: Int = 3) {
+fun StreamingHero(title: StreamingTitle, kicker: String?, modifier: Modifier = Modifier, overviewLines: Int = 3, compact: Boolean = false) {
     val ui = LocalStreaming.current
     // Un titre de « Continuer à regarder » n'a gardé que son nom et ses images : on complète avec sa fiche.
     val title = if (title.overview == null && ui != null) {
@@ -196,14 +197,15 @@ fun StreamingHero(title: StreamingTitle, kicker: String?, modifier: Modifier = M
         title
     }
     val services = title.services.filter { ui == null || it in ui.services }.ifEmpty { title.services }
-    Column(modifier.width(HeroWidth), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+    Column(modifier.width(HeroWidth), verticalArrangement = Arrangement.spacedBy(if (compact) 4.dp else 6.dp)) {
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
             services.take(3).forEach { ServiceBadge(it) }
             if (ui?.inJellyfin(title) != null) SourceBadge("AUSSI SUR JELLYFIN")
             kicker?.let { Kicker(it) }
         }
-        Text(title.title.uppercase(), style = titleStyle(title.title), maxLines = 1, overflow = TextOverflow.Ellipsis)
+        Text(title.title.uppercase(), style = titleStyle(title.title, compact), maxLines = 1, overflow = TextOverflow.Ellipsis)
         Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
+            ScoreLabel(title.score)
             Text(StreamingText.meta(title), style = MaterialTheme.typography.bodyMedium)
             StreamingText.rating(title.certification)?.let { Chip(it) }
         }
@@ -216,8 +218,8 @@ fun StreamingHero(title: StreamingTitle, kicker: String?, modifier: Modifier = M
  * sur une carte : parcourir une rangée ne télécharge pas tous les fonds.
  */
 @Composable
-fun StreamingBackdrop(template: String?, modifier: Modifier = Modifier) {
-    FadingBackdrop(JustWatchImages.backdrop(template), modifier)
+fun StreamingBackdrop(template: String?, modifier: Modifier = Modifier, compact: Boolean = false) {
+    FadingBackdrop(JustWatchImages.backdrop(template), modifier, compact)
 }
 
 /** « Ouvert aujourd'hui », « Ouvert hier », « Ouvert il y a 3 jours », en jours du calendrier. */

@@ -61,6 +61,7 @@ import io.github.touya0.nimbe.feature.apps.tileColor
 import io.github.touya0.nimbe.feature.media.CatalogFocus
 import io.github.touya0.nimbe.feature.media.ContinueCard
 import io.github.touya0.nimbe.feature.media.ContinueEntry
+import io.github.touya0.nimbe.feature.media.SkeletonBlock
 import io.github.touya0.nimbe.feature.media.FadingBackdrop
 import io.github.touya0.nimbe.feature.media.Hero
 import io.github.touya0.nimbe.feature.media.HeroSwitch
@@ -482,11 +483,6 @@ private fun LoadingRow(title: String) {
 }
 
 private const val SKELETON_CARDS = 5
-
-@Composable
-private fun SkeletonBlock(modifier: Modifier, radius: androidx.compose.ui.unit.Dp = 6.dp) {
-    Box(modifier.background(PanneauClair.copy(alpha = 0.55f), RoundedCornerShape(radius)))
-}
 
 /** Haut de l'accueil quand Jellyfin ne répond plus : ce qui est en pause, ce qui marche, le prochain essai. */
 @Composable

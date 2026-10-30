@@ -9,7 +9,8 @@ import io.github.touya0.nimbe.data.jellyfin.MediaItem
 
 /** Fiche ouverte par-dessus les onglets. */
 sealed interface MediaDestination {
-    data class Movie(val item: MediaItem) : MediaDestination
+    /** [parent] : la fiche d'où l'on vient (film similaire) ; Retour y ramène. */
+    data class Movie(val item: MediaItem, val parent: Movie? = null) : MediaDestination
 
     /** [focusEpisodeId] : l'épisode à mettre sous le focus en arrivant (depuis « Continuer à regarder »). */
     data class Series(val seriesId: String, val seasonId: String? = null, val focusEpisodeId: String? = null) : MediaDestination

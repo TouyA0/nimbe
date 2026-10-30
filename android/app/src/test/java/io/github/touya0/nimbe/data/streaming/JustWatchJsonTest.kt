@@ -113,7 +113,7 @@ class JustWatchJsonTest {
     @Test
     fun `adresses des images JustWatch`() {
         assertEquals(
-            "https://images.justwatch.com/poster/340617694/s166/zootopie-2.webp",
+            "https://images.justwatch.com/poster/340617694/s276/zootopie-2.webp",
             JustWatchImages.poster("/poster/340617694/{profile}/zootopie-2.{format}"),
         )
         assertEquals(
