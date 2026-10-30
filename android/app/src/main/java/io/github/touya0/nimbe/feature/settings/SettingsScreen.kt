@@ -36,6 +36,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.focusRestorer
+import io.github.touya0.nimbe.ui.components.PivotScroll
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
@@ -345,24 +346,33 @@ fun SettingsScreen(
 
     Row(Modifier.fillMaxSize().background(Nuit)) {
         Column(
-            Modifier.width(300.dp).fillMaxHeight().background(Panneau).padding(horizontal = 24.dp, vertical = 32.dp),
+            Modifier.width(300.dp).fillMaxHeight().background(Panneau).padding(horizontal = 24.dp, vertical = 24.dp),
             verticalArrangement = Arrangement.spacedBy(6.dp),
         ) {
             NavItem("‹  Retour à l'accueil", selected = false, onClick = onClose)
             Text("Réglages", style = MaterialTheme.typography.displaySmall, modifier = Modifier.padding(vertical = 12.dp))
-            Column(Modifier.focusRestorer(), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                SettingsSection.entries.forEach { item ->
-                    NavItem(
-                        label = item.label,
-                        selected = item == section,
-                        onClick = { onSectionChange(item) },
-                        onFocus = { onSectionChange(item) },
-                        badge = item == SettingsSection.Updates && updates.isNewer(updateState.available),
-                        modifier = Modifier.focusRequester(sectionRequesters.getValue(item)),
-                    )
+            // Les rubriques ne tiennent pas toutes à l'écran : la liste défile, le titre et la version restent en place.
+            PivotScroll(0.dp, fraction = 0.4f) {
+                Column(
+                    Modifier
+                        .weight(1f)
+                        .verticalScroll(rememberScrollState())
+                        .padding(vertical = 8.dp)
+                        .focusRestorer(),
+                    verticalArrangement = Arrangement.spacedBy(6.dp),
+                ) {
+                    SettingsSection.entries.forEach { item ->
+                        NavItem(
+                            label = item.label,
+                            selected = item == section,
+                            onClick = { onSectionChange(item) },
+                            onFocus = { onSectionChange(item) },
+                            badge = item == SettingsSection.Updates && updates.isNewer(updateState.available),
+                            modifier = Modifier.focusRequester(sectionRequesters.getValue(item)),
+                        )
+                    }
                 }
             }
-            Spacer(Modifier.weight(1f))
             about?.let { Text("Nimbe ${it.version}", style = MaterialTheme.typography.labelMedium, color = LuneAttenuee) }
         }
 
